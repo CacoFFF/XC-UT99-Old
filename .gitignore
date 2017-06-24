@@ -1,3 +1,18 @@
+*.sdf
+*.db
+*.pdb
+*.suo
+*.ncb
+*.opt
+*.plg
+.vc/
+ipch/
+Debug/
+Release/
+XC_Core___Win32_Debug/
+
+
+
 # Compiled Object files
 *.slo
 *.lo
@@ -58,10 +73,6 @@ Temporary Items
 
 # Windows
 # =========================
-
-# Windows image file caches
-Thumbs.db
-ehthumbs.db
 
 # Folder config file
 Desktop.ini

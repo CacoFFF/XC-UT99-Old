@@ -1,0 +1,33 @@
+LZMA library version 16.04 (LZMA SDK)
+
+DLL compiled with Visual C++ 6
+* From lzmalib.dsp
+
+SO compiled with GCC 4.6.3
+* From the following makefile:
+*************************
+CC = gcc
+
+CFLAGS = -c -m32 -O2 -Wall -D_7ZIP_ST
+LDFLAGS = -shared
+TARGET_LIB = LZMA.so
+
+SRCS = Alloc.c LzFind.c LzmaDec.c LzmaEnc.c LzmaLib.c
+OBJS = $(SRCS:.c=.o)
+
+.PHONY: all
+all: ${TARGET_LIB}
+
+$(TARGET_LIB): $(OBJS)
+	$(CC) ${LDFLAGS} -o $@ $^
+
+$(SRCS:.c=.d):%.d:%.c
+	$(CC) $(CFLAGS) -MM $< >$@
+
+include $(SRCS:.c=.d)
+
+.PHONY: clean
+clean:
+	-${RM} ${TARGET_LIB} ${OBJS} $(SRCS:.c=.o)
+	-${RM} ${TARGET_LIB} ${OBJS} $(SRCS:.c=.d)[/code]
+*************************
