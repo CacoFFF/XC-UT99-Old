@@ -35,7 +35,6 @@ XC_Core___Win32_Debug/
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe
