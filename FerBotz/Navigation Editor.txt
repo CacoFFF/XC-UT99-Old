@@ -1,0 +1,85 @@
+Navigation Editor guidelines:
+
+Editing:
+
+- Typing MUTATE EDITPATHS (botz mutator loaded) reloads with the Edit player (good choice as map restart as well)
+- Paths are automatically added at map start.
+- Do not use any Kind of AI pawn during the test session.
+- In order to reload, you must restart the map.
+- You can't move paths right now, just delete and reinsert.
+- In order to disable the special player, just select a new character.
+- Toggling the Navigation Edit mode (NavToggle) makes all navigation points visible.
+- In order to test changes, you need to save (NavSave) and reload the map.
+- Toggling One Way Incoming or outgoing rotates the node to where player is aiming at.
+- If you want to check if a new path will be visible to another, DUCK FIRST!
+
+Read the onscreen commands for info.
+
+NOTES:
+Code is still unoptimized and the extended navigation will not alter UT Bots behaviour yet, except for making them fail to jump or translocate.
+Reachspecs don't have any path flags set, so even stupid monsters will use the new nodes.
+
+
+Pathing logic for normal connections:
+Water to Water > must be visible
+Water to ground > Water point must be as high as possible (inside water zone), ground point on the exit (outside of water zone) as close as possible to water node.
+Ground to Water > One way paths work fine here, as long as you can do a jump from point A to B
+NOTES: Player-wide checks not done!!! so careful if you put 2 visible nodes without enough space to go thru the obstructions!!!
+
+======================
+== Node list:
+======================
+> NavBase:
+Similar to pathnodes
+Default distance = 950
+Normal connection types.
+
+> NavHighJump:
+Picks nearest node with similar Z altitude.
+Then picks nodes below as jump starts.
+Works for low grav, JumpBoots and translocators.
+Creates direct jump down from nearest node > low nodes to avoid passing thru the high jump in order to go down.
+Default distance = 480
+
+
+> NavHighTrans:
+Same as NavHighJump, higher distance, translocator only.
+Default distance = 700
+
+> NavDoor:
+Can see thru movers
+Normal connection types.
+
+> NavSpecialDoor:
+Locked if connected NavDoor is obstructed by mover.
+Unlocked otherwise.
+Normal connection types.
+
+> NavLiftCenter
+Attached to elevator
+Normal connection types.
+
+> NavLiftExit
+Aim at Lift Center in base position to force a special connection.
+Normal connection types.
+
+> NavLiftJumpExit
+Same as NavLiftExit, use as destination.
+
+> NavDodgeStart
+Aim at where you want the botz to do a dodge jump.
+Normal connection types.
+
+> NavDodgeEnd
+Dodge end destination marker, one marker per start only.
+Normal connection types.
+
+> NavAir
+Connects between air nodes at marked distance.
+Connects with land points at distance/10 or less.
+
+> NavRemover (radius)
+Removes level navigation points at specified radius.
+
+
+More to come...

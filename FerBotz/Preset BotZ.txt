@@ -1,0 +1,50 @@
+
+Specific Botz can be made and stored for quick addition
+
+The command is this one:
+mutate addbotzlist BOTZ_NAME BOTZ_TEAM
+mutate addbotzlist ALL BOTZ_TEAM
+mutate addbotzlist Index=INDEX
+
+The first commands adds the specified Botz, the second one adds all of them.
+This method is still bugged so careful when you type the Team.
+
+
+Defining new preset BotZ:
+Go to BotzDefault.ini and find [FerBotz.ServerBotzManager]
+See the properties:
+InfoSName[0]=Aegor
+InfoSTeam[0]=2
+InfoSClass[0]=Fernando.TFerBoss
+InfoSSkin[0]=BossSkinsFer2.Bozz
+InfoSFace[0]=BossSkinsFer2.Xan
+InfoSSkill[0]=70
+InfoSVoiceType[0]=BSodPackage.VoiceBSod
+InfoSWeapon[0]=BotPack.minigun2
+InfoSAccuracy[0]=200.000000
+InfoSCTime[0]=15
+InfoSCChance[0]=0.000000
+That is Aegor, max accuracy and skill and mainly a minigun user.
+The array contains up to 32 sets of properties for 32 BotZ.
+This is my main testing Botz and the one most likely to win a match.
+
+How to modify/add a BotZ:
+Add a new set of properties if you have to (make sure the index isn't in use).
+
+- InfoSName[] > BotZ name, don't use spaces
+- InfoSTeam[] > Preferred team, MUST use 255 if no preference.
+- InfoSClass[] > Playerclass to imitate, BotZ always defaults to BotPack.Boss
+- InfoSSkin[] > Skin to use
+- InfoSFace[] > Face to use
+- InfoSSkill[] > (70 is MAX) to (0 is MIN)
+- InfoSVoiceType[] > Botz can use any voice, regardless of class restrictions
+- InfoSWeapon[] > Favorite weapon, useful for nasty snipers (see NegroVictor as example with *Botpack.sniperrifle*)
+- InfoSAccuracy[] > (200 is MAX) to (0 is MIN)
+- InfoSCTime[] > Time botZ will stay defending/camping on a spot (seconds)
+- InfoSChance[] > How often botZ will attempt to camp at anything (percent chance: 0 to 100)
+
+BotZ indexes must be contiguous, if one isn't set, anything after the empty name is ignored.
+[0]
+[1]
+[2]
+[4] > must be a BotZ 3 or 4 will be ignored

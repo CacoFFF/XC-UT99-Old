@@ -1,0 +1,84 @@
+
+Installation is easy, but requires the additional packages in the Botz folder.
+
+In system/:
+- BotzDefault
+- FerBotz.int
+- FerBotz.u
+- FerBotz_cl_4.u
+- (Windows) FerBotz.dll
+- (Linux) FerBotz.so
+- Botz (folder) (On linux, put this in the */UT/System/* folder where INIS are saved, not the main installation folder)
+
+Open UnrealTournament.ini (if you have more than one UT.exe, open those as well)
+Go to [Core.System], below Paths=../System/*.u insert this line:
+
+Paths=../System/Botz/*.u
+
+The game will load game definitions and map addons.
+
+============:
+The native code is currently compiled under windows and Linux.
+Linux support hasn't been widely tested.
+
+Even if you play online on ACE servers, this is safe to install.
+
+============
+SERVER SETUP:
+
+FerBotz.u must not be sent
+
+>>>> Optional
+Go to [Engine.GameEngine] and replace:
+ServerActors=IpServer.UdpServerQuery
+with
+ServerActors=FerBotz.Botz_UdpServerQuery
+
+
+============
+Adding BotZ:
+
+"mutate addbotz"
+Typing "mutate addbotz help" will display a quick guide on adding BotZ.
+Typing "mutate addbotz ?" will do so, but in spanish.
+If player class isn't specified, one will be randomly picked.
+
+"mutate addbotzlist" isn't ready to be used yet, and most of the botz on that 
+list load custom skins and voices you don't have.
+This mode makes a BotZ immune to automatic playercount adjustment.
+You may add them via index, by using Index=x instead of bot name.
+
+"mutate botzmenu"
+Displays a menu used to customize a botz, click on the checkbox once to add.
+
+"mutate addbotzfaction"
+Typing "mutate addbotzfaction help" will display a quick guide on adding botz
+by faction.
+
+=======================
+Adding BotZ serverside:
+Modify MinTotalPlayers in BotzDefault.ini
+If you want this option to work on standalone games as well, disable bOnlyAdjustDedicated
+
+
+=================
+Players vs Botz!:
+Counts Botz and Bots added manually as players.
+Requires the main botz mutator loaded.
+- bRoundRatioCeil=True makes real rounding of the total ratio instead of FLOAT>INT conversion.
+Breaks team balancers, do not load this mutator with those.
+
+
+=============
+Order giving;
+Order giving via team say is possible, if you know spanish ;-)
+That includes patrolling.
+
+If you want to try patrolling anyways:
+1) Get in position and send a team message:
+ (bot name) NUEVA PATRULLA
+This will reset the bot's patrol stops
+2) Get in a different patrol stop and send a team message (do this for every position):
+ (bot name) PATRULLA
+
+The bot will now run between the assigned patrol stops.
