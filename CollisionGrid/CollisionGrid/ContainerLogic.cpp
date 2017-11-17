@@ -146,7 +146,7 @@ uint32 ActorLink::UnlinkInvalid( ActorLink** Container)
 void Grid::Init()
 {
 	//Zero these 16 bytes using one MOVAPS instruction
-	*(cg::Vector*)&NextGrid = cg::Vector(E_Zero);
+	*(cg::Vector*)&GlobalActors = cg::Vector(E_Zero);
 	for (int32 i = 0; i<Size.i ; i++)
 	for (int32 j = 0; j<Size.j ; j++)
 	for (int32 k = 0; k<Size.k ; k++)
@@ -223,7 +223,6 @@ bool Grid::InsertActor( AActor* Actor)
 	if ( !Actor->bCollideActors || Actor->bDeleteMe ) //Validate actor flags
 		return false;
 
-	//Multi-grid support
 	if ( Actor->CollisionTag != 0 )
 	{
 		//Attempt removal first, what to do upon failure?
@@ -240,48 +239,34 @@ bool Grid::InsertActor( AActor* Actor)
 	//Classify whether to add as boundary actor or inner actor
 	//It may even be possible that an actor actually doesn't fit here!!
 	cg::Box ActorBox = AInfo->cBox();
-	cg::Box ReducedActorBox = ActorBox * Grid_Mult; //[0,128)
 
-	Grid* Grids[MAX_GRID_COUNT];
-	int32 iGrids = 0;
 	GridElement* GridElements[MAX_NODE_LINKS];
 	int32 iLinks = 0;
 	bool bGlobalPlacement = false;
 
-	//Find out how many grids contain this
-	for ( Grid* Grid=this ; Grid ; Grid=Grid->NextGrid )
-		if ( ActorBox.Intersects( Grid->Box) )
-		{
-			Grids[iGrids++] = Grid;
-			if ( !bGlobalPlacement )
-			{
-				cg::Box RRActorBox = ReducedActorBox - (Grid->Box.Min*Grid_Mult); //Transform to local coords
-				cg::Integers Min = cg::Max(RRActorBox.Min, cg::Vector(E_Zero)).Truncate32();
-				cg::Integers Max = cg::Min(RRActorBox.Max, cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
+	cg::Box RRActorBox = (ActorBox-Box.Min) * Grid_Mult; //Transform to local coords
+	cg::Integers Min = cg::Max(RRActorBox.Min, cg::Vector(E_Zero)).Truncate32();
+	cg::Integers Max = cg::Min(RRActorBox.Max, cg::Vectorize( Size - XYZi_One) ).Truncate32();
 			
-				//Calculate how big the node list will be before doing any listing
-				cg::Integers Total = XYZi_One + Max - Min;
-				if ( iLinks + Total.i*Total.j*Total.k >= MAX_NODE_LINKS )
-				{
-					bGlobalPlacement = true;
-					continue;
-				}
-				for ( int i=Min.i ; i<=Max.i ; i++ )
-				for ( int j=Min.j ; j<=Max.j ; j++ )
-				for ( int k=Min.k ; k<=Max.k ; k++ )
-					GridElements[iLinks++] = Grid->Node(i,j,k);
-			}
-		}
-
-	AInfo->Flags.bSingleGrid = (iGrids == 1);
+	//Calculate how big the node list will be before doing any listing
+	cg::Integers Total = XYZi_One + Max - Min;
+	if ( Total.i <= 0 || Total.j <= 0 || Total.k <= 0 )
+	{} //Force a no-placement
+	else if ( Total.i*Total.j*Total.k >= MAX_NODE_LINKS )
+		bGlobalPlacement = true;
+	else
+	{
+		for ( int i=Min.i ; i<=Max.i ; i++ )
+		for ( int j=Min.j ; j<=Max.j ; j++ )
+		for ( int k=Min.k ; k<=Max.k ; k++ )
+			GridElements[iLinks++] = Node(i,j,k);
+	}
 
 	//Placement is uniform, this is required to keep the same ActorInfo in all grids
 	if ( bGlobalPlacement )
 	{
-		UE_DEV_THROW( iGrids == 0, "Global placement set without grids");
 		AInfo->LocationType = ELT_Global;
-		while ( iGrids-- > 0 )
-			G_ALH->GrabElement( Grids[iGrids]->GlobalActors, AInfo);
+		G_ALH->GrabElement( GlobalActors, AInfo);
 	}
 	else if ( iLinks > 1 )
 	{
@@ -291,18 +276,16 @@ bool Grid::InsertActor( AActor* Actor)
 	}
 	else if ( iLinks == 1 )
 	{
-		UE_DEV_THROW( iGrids != 1, "Tree placement set without single grid");
 		AInfo->LocationType = ELT_Tree;
 		if ( !GridElements[0]->Tree )
 		{
 			cg::Integers Coords( GridElements[0]->X, GridElements[0]->Y, GridElements[0]->Z, 0);
-			GridElements[0]->Tree = new(G_MTH) MiniTree( Grids[0], Coords);
+			GridElements[0]->Tree = new(G_MTH) MiniTree( this, Coords);
 		}
 		GridElements[0]->Tree->InsertActorInfo( AInfo, ActorBox);
 	}
 	else
 	{
-		debugf( *(PlainText(TEXT("[CG] Actor "))+Actor+TEXT(" unable to be placed in any grid.")) );
 		G_AIH->ReleaseElement( AInfo);
 		Actor->CollisionTag = 0;
 		return false;
@@ -318,38 +301,31 @@ bool Grid::RemoveActor( class AActor* OutActor)
 		return false;
 
 	ActorInfo* AInfo = reinterpret_cast<ActorInfo*>(OutActor->CollisionTag);
-	if ( G_AIH->IsValid(AInfo) ) //Can be auto-released, now unlink
+	if ( G_AIH->IsValid(AInfo) && AInfo->Flags.bCommited )
 	{
 		G_AIH->ReleaseElement( AInfo); //Fix IsValid (create AIH version for decommit flag)
 		OutActor->CollisionTag = 0;
 
 		cg::Box ActorBox = AInfo->cBox();
 
-		for ( Grid* Grid=this ; Grid ; Grid=Grid->NextGrid )
-			if ( ActorBox.Intersects( Grid->Box) )
-			{
-				if ( AInfo->LocationType == ELT_Global )
-					ActorLink::Unlink( &Grid->GlobalActors, AInfo);
-				else if ( AInfo->LocationType == ELT_Node )
-				{
-					cg::Box LocalBox = ActorBox - Grid->Box.Min;
-					cg::Integers Min = cg::Max((LocalBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
-					cg::Integers Max = cg::Min((LocalBox.Max * Grid_Mult), cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
-					for ( int i=Min.i ; i<=Max.i ; i++ )
-					for ( int j=Min.j ; j<=Max.j ; j++ )
-					for ( int k=Min.k ; k<=Max.k ; k++ )
-						ActorLink::Unlink( &Grid->Node(i,j,k)->BigActors, AInfo);
-				}
-				else if ( AInfo->LocationType == ELT_Tree )
-				{
-					cg::Integers GridSlot = cg::Max( (ActorBox.Min - Grid->Box.Min) * Grid_Mult, cg::Vector(E_Zero)).Truncate32(); //Pick lowest coord, then clamp to 0,0,0
-					if ( Grid->Node(GridSlot)->Tree )
-						Grid->Node(GridSlot)->Tree->RemoveActorInfo( AInfo, ActorBox.Min);
-				}
-
-				if ( AInfo->Flags.bSingleGrid )
-					break;
-			}
+		if ( AInfo->LocationType == ELT_Global )
+			ActorLink::Unlink( &GlobalActors, AInfo);
+		else if ( AInfo->LocationType == ELT_Node )
+		{
+			cg::Box LocalBox = ActorBox - Box.Min;
+			cg::Integers Min = cg::Max((LocalBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
+			cg::Integers Max = cg::Min((LocalBox.Max * Grid_Mult), cg::Vectorize(Size-XYZi_One) ).Truncate32();
+			for ( int i=Min.i ; i<=Max.i ; i++ )
+			for ( int j=Min.j ; j<=Max.j ; j++ )
+			for ( int k=Min.k ; k<=Max.k ; k++ )
+				ActorLink::Unlink( &Node(i,j,k)->BigActors, AInfo);
+		}
+		else if ( AInfo->LocationType == ELT_Tree )
+		{
+			cg::Integers GridSlot = cg::Max( (ActorBox.Min - Box.Min) * Grid_Mult, cg::Vector(E_Zero)).Truncate32(); //Pick lowest coord, then clamp to 0,0,0
+			if ( Node(GridSlot)->Tree )
+				Node(GridSlot)->Tree->RemoveActorInfo( AInfo, ActorBox.Min);
+		}
 		AInfo->LocationType = ELT_Max;
 	}
 	else

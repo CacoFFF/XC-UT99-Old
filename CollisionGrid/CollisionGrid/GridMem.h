@@ -213,8 +213,10 @@ public:
 	void ReleaseElement(ActorInfo* AI)
 	{
 		if ( AI->Flags.bCommited )
+		{
+			AI->Flags.bCommited = false;
 			ElementHolder<ActorInfo,36>::ReleaseElement(AI);
-		AI->Flags.bCommited = false;
+		}
 	}
 };
 

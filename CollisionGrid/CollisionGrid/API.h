@@ -142,7 +142,7 @@ extern uint32 Loaded;
 typedef void* (*vp_func_i) (int32);
 extern vp_func_i GetIndexedObject;
 
-typedef void (FOutputDevice::*v_foutputdevice_func_tcp) (const TCHAR*);
+typedef void (FOutputDevice::*v_foutputdevice_func_tcp)(const TCHAR*);
 extern v_foutputdevice_func_tcp Debugf;
 
 typedef void (VARARGS *v_func_acp_acp_i)(const char*, const char*, int32);

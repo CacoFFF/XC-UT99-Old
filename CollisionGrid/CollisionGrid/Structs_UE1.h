@@ -186,7 +186,13 @@ class FCollisionHashBase : public GNUFix
 {
 public:
 	// FCollisionHashBase interface.
+#ifdef __GNUC__
+	//GCC 2.95 uses a single destructor entry (instead of 2)
+	//TODO: See if this object is deallocated in Linux!!!
+	virtual void SimulatedDestructor() = 0;
+#else
 	virtual ~FCollisionHashBase() {};
+#endif
 	virtual void Tick() = 0;
 	virtual void AddActor(AActor *Actor) = 0;
 	virtual void RemoveActor(AActor *Actor) = 0;

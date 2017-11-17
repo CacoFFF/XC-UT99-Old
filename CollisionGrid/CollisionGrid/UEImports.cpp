@@ -13,8 +13,15 @@ i_aactor_v                   IsMovingBrushFunc   = nullptr;
 FOutputDevice**              Core_GLog           = nullptr;
 FNameEntry***                Core_NameTable      = nullptr;
 FMalloc**                    Core_GMalloc        = nullptr;
-
-typedef FMalloc** fmallocpp_var;
+/*
+static_assert( sizeof(GetIndexedObject) == 4, "Wrong size of GetIndexedObject pointer");
+static_assert( sizeof(Debugf) == 4, "Wrong size of Debugf pointer");
+static_assert( sizeof(AppFailAssert) == 4, "Wrong size of AppFailAssert pointer");
+static_assert( sizeof(IsMovingBrushFunc) == 4, "Wrong size of IsMovingBrushFunc pointer");
+static_assert( sizeof(Core_GLog) == 4, "Wrong size of Core_GLog pointer");
+static_assert( sizeof(Core_NameTable) == 4, "Wrong size of Core_NameTable pointer");
+static_assert( sizeof(Core_GMalloc) == 4, "Wrong size of Debugf Core_GMalloc");
+*/
 
 //#include <Windows.h>
 
@@ -44,6 +51,7 @@ bool LoadUE()
 	// Usually the cast<T> macro would work...
 	// But Visual Studio 2015 adds unnecessary memory assignments and breaks some of statics
 	// And MinGW doesn't like intel syntax too much
+	// Also, after an update VS 2015 makes member function pointers have wrong sizes
 	#ifdef __MINGW32__
 		#define Get(dest,module,symbol) { void* A=GetProcAddress(module,symbol); \
 										__asm__ ( "mov %%eax,(%%ecx)": : "a"(A), "c"(&dest) : "memory" ); }
@@ -56,7 +64,8 @@ bool LoadUE()
 												__asm mov dest,eax } }
 		#define GetF(dest,module,symbol) { void* A=GetProcAddress(module,symbol); SkipJump(A); __asm{ \
 												__asm mov eax,A \
-												__asm mov dest,eax } }
+												__asm lea ecx,dest \
+												__asm mov [ecx],eax } }
 	#endif
 
 	{

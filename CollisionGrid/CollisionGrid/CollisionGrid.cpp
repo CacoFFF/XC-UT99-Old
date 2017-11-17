@@ -29,7 +29,15 @@ public:
 		GridCount++;
 		Grid = Grid::AllocateFor( Level);
 	}
-	virtual ~FCollisionGrid();
+	~FCollisionGrid();
+
+#ifdef __GNUC__
+	void SimulatedDestructor()
+	{
+		delete this;
+	}
+#endif
+
 
 	// FCollisionHashBase interface.
 	virtual void Tick();
@@ -90,18 +98,17 @@ FCollisionGrid::~FCollisionGrid()
 	appFreeAligned( Grid);
 };
 
-void FCollisionGrid::Tick()
+GCC_STACK_ALIGN void FCollisionGrid::Tick()
 {
 	Grid->Tick();
 }
 
-void FCollisionGrid::AddActor( AActor* Actor)
+GCC_STACK_ALIGN void FCollisionGrid::AddActor( AActor* Actor)
 {
-	debugf_ansi("[CG] AddActor");
 	Grid->InsertActor( Actor);
 }
 
-void FCollisionGrid::RemoveActor(AActor *Actor)
+GCC_STACK_ALIGN void FCollisionGrid::RemoveActor(AActor *Actor)
 {
 	Grid->RemoveActor( Actor);
 }

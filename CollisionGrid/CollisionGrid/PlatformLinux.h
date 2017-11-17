@@ -13,7 +13,7 @@ enum { CACHE_LINE_SIZE = 32 }; // Cache line size.
 //__attribute__((packed,aligned(n)))
 #define GCC_ALIGN(n) __attribute__((aligned(n)))
 #define MS_ALIGN(n) 
-#define GCC_STACK_ALIGN
+#define GCC_STACK_ALIGN __attribute__((force_align_arg_pointer))
 
 #define DLLIMPORT 
 #define TEST_EXPORT	extern "C"
@@ -23,5 +23,5 @@ enum { CACHE_LINE_SIZE = 32 }; // Cache line size.
 #define ENABLE_OPTIMIZATION
 
 #if UNICODE
-	#error "DLL should have UNICODE=OFF"
+	#error "SO should have UNICODE=OFF"
 #endif

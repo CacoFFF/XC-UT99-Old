@@ -51,7 +51,13 @@ public:
 public:
 
 	// Virtual methods.
+#ifdef __GNUC__
+	//GCC 2.95 uses a single destructor entry (instead of 2)
+	//TODO: See if this object is deallocated in Linux!!!
+	virtual void SimulatedDestructor() = 0;
+#else
 	virtual ~UObject() {};
+#endif
 
 	// UObject interface.
 	virtual void ProcessEvent( class UFunction* Function, void* Parms, void* Result=NULL )=0;

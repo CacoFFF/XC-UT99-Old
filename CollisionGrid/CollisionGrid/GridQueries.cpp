@@ -660,29 +660,26 @@ GenericQueryHelper::GenericQueryHelper( const FVector& Loc3, uint32 InENF, Actor
 	, Query( NewQuery)
 {}
 
-FCheckResult* GenericQueryHelper::QueryGrids( Grid* Grids)
+FCheckResult* GenericQueryHelper::QueryGrids( Grid* Grid)
 {
 	if ( ExtraNodeFlags == 0xFFFFFFFF )
 		return nullptr;
 	GSBaseMarker Marker;
 	FCheckResult* Results = nullptr;
-	for ( Grid* Grid=Grids ; Grid ; Grid=Grid->NextGrid )
-		if ( Bounds.Intersects( Grid->Box) )
-		{
-			(*Query)( Grid->GlobalActors, *this, Results); //Globals
-			cg::Box TmpBox = Bounds - Grid->Box.Min;
-			cg::Integers Min = cg::Max((TmpBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
-			cg::Integers Max = cg::Min((TmpBox.Max * Grid_Mult), cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
-			for ( int i=Min.i ; i<=Max.i ; i++ )
-			for ( int j=Min.j ; j<=Max.j ; j++ )
-			for ( int k=Min.k ; k<=Max.k ; k++ )			
-			{
-				GridElement* Node = Grid->Node(i,j,k);
-				(*Query)( Node->BigActors, *this, Results); //Big actors
-				if ( Node->Tree && Node->Tree->ActorCount && IntersectsBox(Node->Tree->OptimalBounds) )
-					Node->Tree->GenericQuery( *this, Results); //Tree actors
-			}
-		}
+
+	(*Query)( Grid->GlobalActors, *this, Results); //Globals
+	cg::Box TmpBox = Bounds - Grid->Box.Min;
+	cg::Integers Min = cg::Max((TmpBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
+	cg::Integers Max = cg::Min((TmpBox.Max * Grid_Mult), cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
+	for ( int i=Min.i ; i<=Max.i ; i++ )
+	for ( int j=Min.j ; j<=Max.j ; j++ )
+	for ( int k=Min.k ; k<=Max.k ; k++ )			
+	{
+		GridElement* Node = Grid->Node(i,j,k);
+		(*Query)( Node->BigActors, *this, Results); //Big actors
+		if ( Node->Tree && Node->Tree->ActorCount && IntersectsBox(Node->Tree->OptimalBounds) )
+			Node->Tree->GenericQuery( *this, Results); //Tree actors
+	}
 	return Results;
 }
 

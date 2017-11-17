@@ -62,7 +62,6 @@ MS_ALIGN(16) struct DE ActorInfo
 		uint8 bUseCylinder:1; //Instead of box+primitive, do cylinder checking directly
 		uint8 bCommited:1; //Not free (element holder, needed because the reference can be shared)
 		uint8 bIsMovingBrush:1;
-		uint8 bSingleGrid:1;
 	} Flags;
 	uint8 LocationType;
 	uint8 CurDepth; //These are per-grid, they gotta go
@@ -131,7 +130,7 @@ MS_ALIGN(16) struct DE Grid
 {
 	cg::Integers Size;
 	cg::Box Box;
-	Grid* NextGrid;
+	cg::Vector ReducedBoxSize; //Optimization
 	ActorLink* GlobalActors;
 	MiniTree* TreeList;
 	uint32 CurNodeCleanup;
