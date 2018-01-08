@@ -6,6 +6,9 @@
 #include "XC_Core.h"
 #include "XC_CoreGlobals.h"
 #include "Atomics.h"
+#include "UnXC_Arc.h"
+#include "FPackageFileSummary.h"
+#include "FMallocThreadedProxy.h"
 
 XC_CORE_API FMemStack GXCMem;
 
@@ -80,9 +83,12 @@ XC_CORE_API void DeInitXCGlobals()
 //*************************************************
 XC_CORE_API DOUBLE GXStartTime = 0;
 XC_CORE_API DOUBLE GXSecondsPerCycle = 0;
+static UBOOL GXTimeInitialized = 0;
 
 XC_CORE_API void XC_InitTiming(void)
 {
+	if ( GXTimeInitialized++ != 0)
+		return;
 #ifdef __LINUX_X86__
 	GXSecondsPerCycle = 1.0 / 1000000.0;
 #elif _MSC_VER
@@ -278,4 +284,329 @@ FThreadSafeLogEntry::FThreadSafeLogEntry( EName InName, const TCHAR* InStrLog)
 		}
 	}
 
+}
+
+//*************************************************
+// Thread-safe Malloc proxy
+//*************************************************
+
+FMallocThreadedProxy::FMallocThreadedProxy( FMalloc* InMalloc )
+	:	Signature( 1337 )
+	,	MainMalloc( InMalloc )
+	,	bTemporary(0)
+	,	Lock(0)
+{}
+
+FMallocThreadedProxy::FMallocThreadedProxy( ETemporary)
+	:	Signature( 1337)
+	,	bTemporary(1)
+	,	Lock(0)
+{}
+
+void* FMallocThreadedProxy::Malloc( DWORD Count, const TCHAR* Tag)
+{
+	__SPIN_LOCK( &Lock);
+	void* Result = MainMalloc->Malloc( Count, Tag);
+	__SPIN_UNLOCK( &Lock);
+	return Result;
+}
+
+void* FMallocThreadedProxy::Realloc( void* Original, DWORD Count, const TCHAR* Tag )
+{
+	__SPIN_LOCK( &Lock);
+	void* Result = NULL;
+	if ( !Count )
+		MainMalloc->Free( Original);
+	else
+		Result = MainMalloc->Realloc( Original, Count, Tag);
+	__SPIN_UNLOCK( &Lock);
+	return Result;
+}
+
+void FMallocThreadedProxy::Free( void* Original )
+{
+	__SPIN_LOCK( &Lock);
+	if ( Original )
+		MainMalloc->Free( Original);
+	__SPIN_UNLOCK( &Lock);
+}
+
+void FMallocThreadedProxy::DumpAllocs()
+{
+	__SPIN_LOCK( &Lock);
+	MainMalloc->DumpAllocs();
+	__SPIN_UNLOCK( &Lock);
+}
+
+void FMallocThreadedProxy::HeapCheck()
+{
+	__SPIN_LOCK( &Lock);
+	MainMalloc->HeapCheck();
+	__SPIN_UNLOCK( &Lock);
+}
+
+void FMallocThreadedProxy::Init()
+{
+	if ( bTemporary )
+	{
+		if ( GMalloc != this )
+		{
+			MainMalloc = GMalloc;
+			GMalloc = this;
+		}
+	}
+	else
+		MainMalloc->Init();
+}
+void FMallocThreadedProxy::Exit()
+{
+	if ( bTemporary )
+	{
+		if ( GMalloc == this )
+			GMalloc = MainMalloc;
+	}
+	else
+		MainMalloc->Exit();
+}
+
+
+//*************************************************
+// Enhanced package file finder
+// Strict loading by Name/GUID combo for net games
+//*************************************************
+
+FPackageFileSummary::FPackageFileSummary()
+{
+	appMemzero( this, sizeof(FPackageFileSummary));
+}
+
+	// Serializer.
+XC_CORE_API FArchive_Proxy& operator<<( FArchive_Proxy& Ar, FPackageFileSummary& Sum )
+{
+	guard(FPackageFileSummary<<);
+
+	Ar << Sum.Tag;
+	Ar << Sum.FileVersion;
+	Ar << Sum.PackageFlags;
+	Ar << Sum.NameCount     << Sum.NameOffset;
+	Ar << Sum.ExportCount   << Sum.ExportOffset;
+	Ar << Sum.ImportCount   << Sum.ImportOffset;
+	if( Sum.GetFileVersion()>=68 )
+	{
+		INT GenerationCount = Sum.Generations.Num();
+		Ar << Sum.Guid << GenerationCount;
+		if( Ar.IsLoading() )
+			Sum.Generations = TArray<FGenerationInfo>( GenerationCount );
+		for( INT i=0; i<GenerationCount; i++ )
+			Ar << Sum.Generations(i);
+	}
+	else
+	{
+		INT HeritageCount, HeritageOffset;
+		Ar << HeritageCount << HeritageOffset;
+		INT Saved = Ar.Tell();
+		if( HeritageCount )
+		{
+			Ar.Seek( HeritageOffset );
+			for( INT i=0; i<HeritageCount; i++ )
+				Ar << Sum.Guid;
+		}
+		Ar.Seek( Saved );
+		if( Ar.IsLoading() )
+		{
+			Sum.Generations.Empty( 1 );
+			new(Sum.Generations)FGenerationInfo(Sum.ExportCount,Sum.NameCount);
+		}
+	}
+	return Ar;
+	unguard;
+}
+
+XC_CORE_API FPackageFileSummary LoadPackageSummary( const TCHAR* File)
+{
+	guard(LoadPackageSummary);
+	FPackageFileSummary Summary;
+	FArchive_Proxy* Ar = (FArchive_Proxy*)GFileManager->CreateFileReader( File);
+	if ( Ar )
+	{
+		*Ar << Summary;
+		ARCHIVE_DELETE(Ar);
+	}
+	return Summary;
+	unguard;
+}
+
+
+XC_CORE_API UBOOL FindPackageFile( const TCHAR* In, const FGuid* Guid, TCHAR* Out )
+{
+	guard(FindPackageFile);
+	TCHAR Temp[256];
+
+	// Don't return it if it's a library.
+	if( appStrlen(In)>appStrlen(DLLEXT) && appStricmp( In + appStrlen(In)-appStrlen(DLLEXT), DLLEXT )==0 )
+		return 0;
+
+	// If using non-default language, search for internationalized version.
+	UBOOL International = (appStricmp(UObject::GetLanguage(),TEXT("int"))!=0);
+
+	// Try file as specified.
+	appStrcpy( Out, In );
+	if( !Guid && GFileManager->FileSize( Out ) >= 0 )
+		return 1;
+
+	// Try all of the predefined paths.
+	INT DoCd;
+	for( DoCd=0; DoCd<(1+(GCdPath[0]!=0)); DoCd++ )
+	{
+		for( INT i=DoCd; i<GSys->Paths.Num()+(Guid!=NULL); i++ )
+		{
+			for( INT j=0; j<International+1; j++ )
+			{
+				// Get directory only.
+				const TCHAR* Ext;
+				*Temp = 0;
+				if( DoCd )
+				{
+					appStrcat( Temp, GCdPath );
+					appStrcat( Temp, TEXT("System"));
+					appStrcat( Temp, PATH_SEPARATOR);
+				}
+				if( i<GSys->Paths.Num() )
+				{
+					appStrcat( Temp, *GSys->Paths(i) );
+					TCHAR* Ext2 = appStrstr(Temp,TEXT("*"));
+					if( Ext2 )
+						*Ext2++ = 0;
+					Ext = Ext2;
+					appStrcpy( Out, Temp );
+					appStrcat( Out, In );
+				}
+				else
+				{
+					appStrcat( Temp, *GSys->CachePath );
+					appStrcat( Temp, PATH_SEPARATOR );
+					Ext = *GSys->CacheExt;
+					appStrcpy( Out, Temp );
+					appStrcat( Out, Guid->String() );
+				}
+
+				// Check for file.
+				UBOOL Found = 0;
+				Found = (GFileManager->FileSize(Out)>=0);
+				if( !Found && Ext )
+				{
+					appStrcat( Out, TEXT(".") );
+					if( International-j )
+					{
+						appStrcat( Out, UObject::GetLanguage() );
+						appStrcat( Out, TEXT("_") );
+					}
+					appStrcat( Out, Ext+1 );
+					Found = (GFileManager->FileSize( Out )>=0);
+				}
+				if ( Found && Guid ) //Deny
+				{
+					FPackageFileSummary Summary = LoadPackageSummary( Out);
+					if ( Summary.Guid != *Guid )
+					{
+						Found = 0;
+						Out[0] = 0;
+					}
+				}
+				if( Found )
+				{
+					if( i==GSys->Paths.Num() )
+						appUpdateFileModTime( Out );
+					return 1;
+				}
+			}
+		}
+	}
+
+	// Try case-insensitive search.
+	for( DoCd=0; DoCd<(1+(GCdPath[0]!=0)); DoCd++ )
+	{
+		for( INT i=0; i<GSys->Paths.Num()+(Guid!=NULL); i++ )
+		{
+			// Get directory only.
+			const TCHAR* Ext;
+			*Temp = 0;
+			if( DoCd )
+			{
+				appStrcat( Temp, GCdPath );
+				appStrcat( Temp, TEXT("System"));
+				appStrcat( Temp, PATH_SEPARATOR);
+			}
+			if( i<GSys->Paths.Num() )
+			{
+				appStrcat( Temp, *GSys->Paths(i) );
+				TCHAR* Ext2 = appStrstr(Temp,TEXT("*"));
+				if( Ext2 )
+					*Ext2++ = 0;
+				Ext = Ext2;
+				appStrcpy( Out, Temp );
+				appStrcat( Out, In );
+			}
+			else
+			{
+				appStrcat( Temp, *GSys->CachePath );
+				appStrcat( Temp, PATH_SEPARATOR );
+				Ext = *GSys->CacheExt;
+				appStrcpy( Out, Temp );
+				appStrcat( Out, Guid->String() );
+			}
+
+			// Find files.
+			TCHAR Spec[256];
+			*Spec = 0;
+			TArray<FString> Files;
+			appStrcpy( Spec, Temp );
+			appStrcat( Spec, TEXT("*") );
+			if( Ext )
+				appStrcat( Spec, Ext );
+			Files = GFileManager->FindFiles( Spec, 1, 0 );
+
+			// Check for match.
+			UBOOL Found = 0;
+			TCHAR InExt[256];
+			*InExt = 0;
+			if( Ext )
+			{
+				appStrcpy( InExt, In );
+				appStrcat( InExt, Ext );
+			}
+			for( INT j=0; Files.IsValidIndex(j); j++ )
+			{
+				if( (appStricmp( *(Files(j)), In )==0) ||
+					(appStricmp( *(Files(j)), InExt)==0) )
+				{
+					appStrcpy( Out, Temp );
+					appStrcat( Out, *(Files(j)));
+					Found = (GFileManager->FileSize( Out )>=0);
+					if ( Found && Guid ) //Deny
+					{
+						FPackageFileSummary Summary = LoadPackageSummary( Out);
+						if ( Summary.Guid != *Guid )
+						{
+							Found = 0;
+							Out[0] = 0;
+						}
+						else
+							break;
+					}
+				}
+			}
+			if( Found )
+			{
+				debugf( TEXT("Case-insensitive search: %s -> %s"), In, Out );
+				if( i==GSys->Paths.Num() )
+					appUpdateFileModTime( Out );
+				return 1;
+			}
+		}
+	}
+
+	// Not found.
+	return 0;
+	unguard;
 }

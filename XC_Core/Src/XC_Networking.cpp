@@ -4,12 +4,14 @@
 =============================================================================*/
 
 #include "XC_Core.h"
+#include "Engine.h"
 #include "FConfigCacheIni.h"
 #include "XC_Networking.h"
 #include "XC_Download.h"
 #include "XC_LZMA.h"
 #include "UnXC_Arc.h"
-#include "FCodec.h"
+#include "FMallocThreadedProxy.h"
+#include "FCodec_XC.h"
 
 
 XC_CORE_API UBOOL b440Net = 0;
@@ -38,6 +40,7 @@ void FOutBunch_Hack::Exit()
 		Header->Buffer.Empty();
 	appMemzero( ((BYTE*)this)+48, 12); 
 }
+
 
 /*=============================================================================
 XC_Core server commandlet
@@ -123,6 +126,24 @@ IMPLEMENT_CLASS(UXC_ServerCommandlet)
 XC_Core extended download protocols
 =============================================================================*/
 
+static FMallocThreadedProxy MallocProxy( E_Temporary);
+
+struct FThreadDecompressor : public FThread
+{
+	volatile UBOOL bClosedByMain;
+	UXC_Download* Download;
+	TCHAR* TempFilename;
+	TCHAR* Error;
+	
+	FThreadDecompressor( UXC_Download* DL)
+	: FThread()
+	, bClosedByMain(0)
+	, Download(DL)
+	, TempFilename(DL->TempFilename)
+	, Error(DL->Error)	{}
+};
+
+
 void UXC_Download::StaticConstructor()
 {
 	EnableLZMA = 1;
@@ -130,6 +151,37 @@ void UXC_Download::StaticConstructor()
 	
 	if ( UNetConnection::StaticClass()->GetPropertiesSize() == 16088 )
 		b440Net = 1;
+}
+
+void UXC_Download::Tick()
+{
+	guard(UXC_Download::Tick);
+	if ( !IsDecompressing && Decompressor ) //Compression finished?
+	{
+		delete Decompressor;
+		Decompressor = NULL;
+
+		if( Error[0] )
+		{
+			GFileManager->Delete( TempFilename );
+//HIGOR: Control channel is being closed, do not notify level of file failure (it will restart download using a different method!)
+			Connection->Driver->Notify->NotifyReceivedFile( Connection, PackageIndex, Error, 0 );
+		}
+		else
+		{
+			// Success.
+			TCHAR Msg[256];
+			FString IniName = GSys->CachePath + PATH_SEPARATOR + TEXT("cache.ini");
+			FConfigCacheIni CacheIni;
+			CacheIni.SetString( TEXT("Cache"), Info->Guid.String(), *(*Info->URL) ? *Info->URL : Info->Parent->GetName(), *IniName );
+
+			appSprintf( Msg, TEXT("Received '%s'"), Info->Parent->GetName() );
+			Connection->Driver->Notify->NotifyProgress( TEXT("Success"), Msg, 4.f );
+			Connection->Driver->Notify->NotifyReceivedFile( Connection, PackageIndex, Error, 0 );
+		}
+	
+	}
+	unguard;
 }
 
 void UXC_Download::ReceiveData( BYTE* Data, INT Count )
@@ -193,13 +245,13 @@ void UXC_Download::ReceiveData( BYTE* Data, INT Count )
 void UXC_Download::DownloadDone()
 {
 	guard( UXC_Download::DownloadDone);
+	
+	if ( Decompressor ) //Prevent XC_IpDrv reentrancy
+		return;	
 	FixFilename( TempFilename);
 	if( RecvFileAr )
 	{
 		guard( DeleteFile );
-#if VERBOSE_BUILD
-		debugf( NAME_DevNet, TEXT("DownloadDone: deleting file archive") );
-#endif
 		ARCHIVE_DELETE( RecvFileAr); //Sets NULL
 		unguard;
 	}
@@ -219,15 +271,16 @@ void UXC_Download::DownloadDone()
 		UChannel** Channels = ((UXC_NetConnectionHack*)Connection)->GetChannels();
 		if ( !Channels[0] || Channels[0]->Closing )
 			return;
-		FString Dest = GSys->CachePath + PATH_SEPARATOR;
-		Dest += Info->Guid.String();
-		Dest += GSys->CacheExt;
-		//		FString Dest = GSys->CachePath + PATH_SEPARATOR + Info->Guid.String() + GSys->CacheExt;
 		if( !Error[0] && Transfered==0 )
 			DownloadError( *FString::Printf( LocalizeError(TEXT("NetRefused"),TEXT("Engine")), Info->Parent->GetName() ) );
 		if( !Error[0] && IsCompressed )
 		{
-			TCHAR CFilename[256];
+			
+			if ( IsA(UXC_ChannelDownload::StaticClass()) )
+				((UXC_ChannelDownload*)this)->Ch->Download = NULL; //Detach download from channel
+			StartDecompressor();
+			return;
+/*			TCHAR CFilename[256];
 			appStrcpy( CFilename, TempFilename );
 			appCreateTempFilename( *GSys->CachePath, TempFilename );
 			FArchive* CFileAr = GFileManager->CreateFileReader( CFilename );
@@ -270,31 +323,27 @@ void UXC_Download::DownloadDone()
 				GFileManager->Delete( CFilename );
 			}
 			if( UFileAr )
-				ARCHIVE_DELETE( UFileAr);
+				ARCHIVE_DELETE( UFileAr);*/
 		}
 		FixFilename( TempFilename);
-		FixFilename( *Dest);
 		if( !Error[0] && !IsCompressed && GFileManager->FileSize(TempFilename)!=Info->FileSize ) //Compression screws up filesize, ignore
 			DownloadError( LocalizeError(TEXT("NetSize"),TEXT("Engine")) );
-		if( !Error[0] && !IsLZMA && !GFileManager->Move( *Dest, TempFilename, 1 ) ) //LZMA already performs this step
+		TCHAR Dest[256];
+		DestFilename( Dest);
+		if( !Error[0] && !IsLZMA && !GFileManager->Move( Dest, TempFilename, 1 ) ) //LZMA already performs this step
 			DownloadError( LocalizeError(TEXT("NetMove"),TEXT("Engine")) );
 		if( Error[0] )
 		{
 			GFileManager->Delete( TempFilename );
 //HIGOR: Control channel is being closed, do not notify level of file failure (it will restart download using a different method!)
-#if VERBOSE_BUILD
-			debugf(NAME_DevNet, TEXT("DownloadDone: failed, using different method if possible"));
-#endif
 			Connection->Driver->Notify->NotifyReceivedFile( Connection, PackageIndex, Error, 0 );
 		}
 		else
 		{
 			// Success.
 			TCHAR Msg[256];
-//			TCHAR IniName[256];
 			FString IniName = GSys->CachePath + PATH_SEPARATOR + TEXT("cache.ini");
 			FConfigCacheIni CacheIni;
-//			appSprintf( IniName, TEXT("%s") PATH_SEPARATOR TEXT("cache.ini"), *GSys->CachePath );
 			CacheIni.SetString( TEXT("Cache"), Info->Guid.String(), *(*Info->URL) ? *Info->URL : Info->Parent->GetName(), *IniName );
 
 			appSprintf( Msg, TEXT("Received '%s'"), Info->Parent->GetName() );
@@ -304,7 +353,135 @@ void UXC_Download::DownloadDone()
 	}
 	unguard;
 }
+
+
+
+THREAD_ENTRY(LZMADecompress,arg)
+{
+	//Setup environment
+	FThreadDecompressor* TInfo = (FThreadDecompressor*)arg;
+	
+	//Setup decompression
+	TCHAR Dest[256];
+	TCHAR Error[256];
+	TInfo->Download->DestFilename( Dest);
+	LzmaDecompress( TInfo->TempFilename, Dest, Error);
+
+	//Check that environment is still active (download could have been cancelled)
+	if ( !TInfo->bClosedByMain )
+	{
+		if ( Error[0] )
+		{
+			appStrcpy( TInfo->Error, Error);
+			if ( GFileManager->FileSize( Dest) )
+				GFileManager->Delete( Dest);
+		}
+		TInfo->Download->IsDecompressing = 0;
+		TInfo->ThreadEnded();
+	}
+	else
+	{
+		TInfo->ThreadEnded();
+		delete TInfo;
+	}
+	MallocProxy.Exit();
+	return 0;
+}
+
+THREAD_ENTRY(UZDecompress,arg)
+{
+	//Setup environment
+	FThreadDecompressor* TInfo = (FThreadDecompressor*)arg;
+	
+	//Setup decompression
+	TCHAR DecompressProgress[256];
+	
+	appCreateTempFilename( *GSys->CachePath, DecompressProgress );
+	FArchive_Proxy* CFileAr = (FArchive_Proxy*)GFileManager->CreateFileReader( TInfo->Download->TempFilename );
+	if ( CFileAr )
+	{
+		FArchive_Proxy* UFileAr = (FArchive_Proxy*)GFileManager->CreateFileWriter( DecompressProgress );
+		if ( UFileAr )
+		{
+			INT Signature;
+			FString OrigFilename;
+			CFileAr->Serialize( &Signature, sizeof(INT) );
+			if( (Signature != 5678) && (Signature != 1234) )
+				TInfo->Download->DownloadError( LocalizeError(TEXT("NetSize"),TEXT("Engine")) );
+			else
+			{
+				*CFileAr << OrigFilename;
+				FCodecFull Codec;
+				Codec.AddCodec(new FCodecRLE);
+				Codec.AddCodec(new FCodecBWT);
+				Codec.AddCodec(new FCodecMTF);
+				if ( Signature == 5678 ) //UZ2 Support
+					Codec.AddCodec(new FCodecRLE);
+				Codec.AddCodec(new FCodecHuffman);
+				Codec.Decode( *CFileAr, *UFileAr );
+			}
+			ARCHIVE_DELETE( UFileAr);
+			if ( !TInfo->Download->Error[0] )
+			{
+				TCHAR Dest[256];
+				TInfo->Download->DestFilename( Dest);
+				if( !GFileManager->Move( Dest, DecompressProgress, 1 ) )
+					TInfo->Download->DownloadError( LocalizeError(TEXT("NetMove"),TEXT("Engine")) );
+				if ( GFileManager->FileSize( DecompressProgress) )
+					GFileManager->Delete( DecompressProgress );
+			}
+		}
+		ARCHIVE_DELETE( CFileAr);
+		GFileManager->Delete( TInfo->Download->TempFilename );
+	}
+	else
+		TInfo->Download->DownloadError( LocalizeError(TEXT("NetOpen"),TEXT("Engine")) );
+	
+	//Check that environment is still active (download could have been cancelled)
+	if ( !TInfo->bClosedByMain )
+	{
+		TInfo->Download->IsDecompressing = 0;
+		TInfo->ThreadEnded();
+	}
+	else
+	{
+		TInfo->ThreadEnded();
+		delete TInfo;
+	}
+	MallocProxy.Exit();
+	return 0;
+}
+
+void UXC_Download::StartDecompressor()
+{
+	if ( IsDecompressing ) //XC_IpDrv makes reentrant calls
+		return;
+	IsDecompressing = 1;
+	MallocProxy.Init();
+	Decompressor = new( TEXT("Decompressor Thread")) FThreadDecompressor(this);
+	if ( IsLZMA )
+		Decompressor->RunThread( &LZMADecompress, Decompressor);
+	else
+		Decompressor->RunThread( &UZDecompress, Decompressor);
+
+	TCHAR Prg[128];
+	appStrcpy( Prg, TEXT("%s: %iK > %iK"));
+	FString Msg1 = FString::Printf( LocalizeProgress(TEXT("DecompressFile"),TEXT("XC_Core")), Info->Parent->GetName() );
+	FString Msg2 = FString::Printf( Prg, (IsLZMA ? TEXT("LZMA") : TEXT("UZ")), Transfered/1024, Info->FileSize/1024 );
+	Connection->Driver->Notify->NotifyProgress( *Msg1, *Msg2, 4.f );
+}
+
+void UXC_Download::DestFilename( TCHAR* T)
+{
+	T[0] = 0;
+	appStrcat( T, *(GSys->CachePath));
+	appStrcat( T, PATH_SEPARATOR);
+	appStrcat( T, Info->Guid.String());
+	appStrcat( T, *(GSys->CacheExt));
+	FixFilename( T);
+}
 IMPLEMENT_CLASS(UXC_Download)
+
 
 
 void UXC_ChannelDownload::StaticConstructor()
@@ -313,6 +490,15 @@ void UXC_ChannelDownload::StaticConstructor()
 	UChannel::ChannelClasses[7] = UXC_FileChannel::StaticClass();
 	new( GetClass(),TEXT("Ch"), RF_Public) UObjectProperty( CPP_PROPERTY(Ch), TEXT("Download"), CPF_Edit|CPF_EditConst|CPF_Const, UFileChannel::StaticClass() );
 }
+
+void UXC_Download::Destroy()
+{
+	if ( Decompressor )
+		Decompressor->bClosedByMain = true;
+	MallocProxy.Exit();
+	Super::Destroy();
+}
+
 void UXC_ChannelDownload::Serialize( FArchive& Ar )
 {
 	Super::Serialize( Ar );
@@ -370,6 +556,11 @@ void UXC_ChannelDownload::Destroy()
 IMPLEMENT_CLASS(UXC_ChannelDownload)
 
 
+
+UXC_FileChannel::UXC_FileChannel()
+{
+	Download = NULL;
+}
 
 void UXC_FileChannel::Init( UNetConnection* InConnection, INT InChannelIndex, INT InOpenedLocally )
 {
@@ -525,7 +716,8 @@ void UXC_FileChannel::Destroy()
 	if( OpenedLocally && Download )
 	{
 		Download->DownloadDone();
-		delete Download;
+		if ( Download ) //Detachable download may not want to be deleted yet
+			delete Download;
 	}
 	UChannel::Destroy();
 }
@@ -584,6 +776,7 @@ UChannel* UXC_NetConnectionHack::CreateChannel( EChannelType ChType, UBOOL bOpen
 	return Channel;
 	unguard;
 }
+
 
 //
 // There are memory leaks with the data bunches, deal with this one day

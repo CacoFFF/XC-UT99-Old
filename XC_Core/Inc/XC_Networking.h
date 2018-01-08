@@ -126,9 +126,11 @@ public:
 	{
 		return (TMap<AActor*,UActorChannel*>*) (((BYTE*)&ActorChannels) + b440Net * 20);
 	}
-	
+
+	//Improved non-virtual functions
 	UChannel* CreateChannel( enum EChannelType Type, UBOOL bOpenedLocally, INT ChannelIndex=INDEX_NONE );
 
+	
 	//UObject interface
 	void Destroy();
 };

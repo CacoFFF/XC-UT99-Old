@@ -5,6 +5,9 @@
 // Includes.
 #include "XC_Core.h"
 
+#include "Engine.h"
+
+
 XC_CORE_API extern UBOOL b440Net;
 #include "UnXC_Arc.h"
 
@@ -470,6 +473,30 @@ void UXC_CoreStatics::execDynamicLoadObject_Fix( FFrame& Stack, RESULT_DECL )
 	*(UObject**)Result = StaticLoadObject( Class, NULL, *Name, NULL, LOAD_NoWarn | (bMayFail?LOAD_Quiet:0), NULL );
 }
 
+
+void UXC_CoreStatics::execBrushToMesh( FFrame& Stack, RESULT_DECL )
+{
+	P_GET_ACTOR( Brush);
+	P_GET_NAME( InPkg);
+	P_GET_NAME( InName);
+	P_GET_INT_OPTX( InFlags, 0);
+	P_FINISH;
+
+	UPackage* Pkg = CreatePackage( NULL, *InPkg);
+	UMesh* Mesh = NULL;
+	if ( InName != NAME_None && !FindObject<UObject>( Pkg, *InName) )
+		Mesh = new( Pkg, InName, RF_Public|RF_Standalone )UMesh( 0, 0, 1);
+	if ( Mesh )
+	{
+		BrushToMesh( (ABrush*)Brush, Mesh, InFlags);
+		if ( !Mesh->Tris.Num() )
+		{
+			delete Mesh;
+			Mesh = NULL;
+		}
+	}
+	*(UMesh**)Result = Mesh;
+}
 IMPLEMENT_CLASS(UXC_CoreStatics);
 
 

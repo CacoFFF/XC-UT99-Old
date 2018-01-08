@@ -26,6 +26,16 @@ XC_CORE_API void ThreadedLog( EName InName, const TCHAR* InStrLog); //Use this f
 XC_CORE_API void ThreadedLogFlush(); //Use this from main thread to print other threads' logs
 
 
+
+enum EBrushToMeshFlags
+{
+	BM_MergeAll			= 0x00000001,	// Merge all vertices
+	BM_MergeNone		= 0x00000002,	// Do not merge vertices
+	BM_Flip			 	= 0x00000004,	// Reverse vertex order (turns front to back)
+	BM_TileTextures		= 0x00000008,	// Brush faces are subdivided into texture-sized squares
+};
+
+XC_CORE_API void BrushToMesh( class ABrush* Brush, class UMesh* ApplyTo, DWORD Flags); //Mesh must be empty
 /*-----------------------------------------------------------------------------
 	Hi-res timers
 -----------------------------------------------------------------------------*/

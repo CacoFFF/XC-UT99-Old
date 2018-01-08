@@ -3,6 +3,8 @@
 
 #include "XC_Core.h"
 #include "XC_CoreObj.h"
+#include "XC_CoreGlobals.h"
+#include "FThread.h"
 
 
 UBOOL FGenericSystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
@@ -106,4 +108,53 @@ void FClassPropertyCache::GrabProperties( FMemStack& Mem)
 		Parent = Next;
 		Parent->GrabProperties( Mem);
 	}
+}
+
+
+//*************************************************
+// Thread abstractor
+//*************************************************
+
+#ifdef __UNIX__
+	#include <pthread.h>
+#endif
+
+UBOOL FThread::RunThread( ENTRY_DECL(ThreadEntry), void* Arg)
+{
+	tId = 1;
+	if ( !Arg )
+		Arg = this;
+#if _WINDOWS
+	Handle = CreateThread( NULL, 0, ThreadEntry, this, 0, (DWORD*)&tId );
+	if ( !Handle )
+		return tId = 0;
+#else
+	pthread_attr_t ThreadAttributes;
+	pthread_attr_init( &ThreadAttributes );
+	pthread_attr_setdetachstate( &ThreadAttributes, PTHREAD_CREATE_DETACHED );
+	if ( pthread_create( &Handle, &ThreadAttributes, &ThreadEntry, Arg ) )
+		return tId = 0;
+#endif
+	return 1;
+}
+
+void FThread::ThreadEnded()
+{
+#if __UNIX__
+	pthread_exit( NULL );
+#elif _WINDOWS
+	CloseHandle( Handle );
+#endif
+	tId = 0;
+}
+
+UBOOL FThread::ThreadWaitFinish( FLOAT MaxWait)
+{
+	//Don't want joinable mumbo-jumbo
+	//Sleep 1 ms at a time instead
+	XC_InitTiming();
+	DOUBLE StartTime = appSecondsXC();
+	for ( DOUBLE EndTime=appSecondsXC() ; tId && ( MaxWait <= 0.f || EndTime-StartTime < MaxWait) ; EndTime=appSecondsXC() )
+		appSleep(0.001f);
+	return tId == 0;
 }

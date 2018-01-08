@@ -5,6 +5,8 @@
 #ifndef _INC_XC_DL
 #define _INC_XC_DL
 
+#include "FThread.h"
+
 class XC_CORE_API UXC_Download : public UDownload
 {
 	DECLARE_ABSTRACT_CLASS(UXC_Download,UDownload,CLASS_Transient|CLASS_Config,XC_Core);
@@ -15,17 +17,25 @@ class XC_CORE_API UXC_Download : public UDownload
 	BYTE IsLZMA;
 	BYTE IsBinary; //Take special considerations with this file, NOT IMPLEMENTED
 	BYTE IsUNative; //UPackage has native code, NOT IMPLEMENTED
-	BYTE Padding;
+	BYTE IsDecompressing;
 	UBOOL WaitingForApproval; //Needs approval before loading, NOT IMPLEMENTED
 	TCHAR FileHash[64]; //Last char always 0x00, NOT IMPLEMENTED
-	INT Decompressor; //Threaded decompressor, NOT IMPLEMENTED
+	struct FThreadDecompressor* Decompressor;
 
 	// Constructors.
 	void StaticConstructor();
 
+	// UObject interface.
+	void Destroy();
+
 	// UDownload interface
+	void Tick();
 	void DownloadDone();
 	void ReceiveData( BYTE* Data, INT Count );
+	
+	// UXC_Download
+	void StartDecompressor();
+	void DestFilename( TCHAR* T);
 
 };
 
@@ -54,7 +64,7 @@ class XC_CORE_API UXC_ChannelDownload : public UXC_Download
 //
 class XC_CORE_API UXC_FileChannel : public UFileChannel
 {
-	DECLARE_CLASS(UXC_FileChannel,UFileChannel,CLASS_Transient,Engine);
+	DECLARE_CLASS(UXC_FileChannel,UFileChannel,CLASS_Transient,XC_Core);
 
 	// Receive Variables.
 /*	UChannelDownload*	Download;		 // UDownload when receiving.
@@ -65,13 +75,14 @@ class XC_CORE_API UXC_FileChannel : public UFileChannel
 	INT					PackageIndex;	 // Index of package in map.
 	INT					SentData;		 // Number of bytes sent.
 */
+
 	// Constructor.
 	void StaticConstructor()
 	{
 		UChannel::ChannelClasses[7] = GetClass();
 		GetDefault<UXC_FileChannel>()->ChType = (EChannelType)7;
 	}
-//	UFileChannel();
+	UXC_FileChannel();
 	void Init( UNetConnection* InConnection, INT InChIndex, UBOOL InOpenedLocally );
 	void Destroy();
 
@@ -82,6 +93,8 @@ class XC_CORE_API UXC_FileChannel : public UFileChannel
 //	FString Describe();
 	void Tick();
 };
+
+
 
 #endif
 /*-----------------------------------------------------------------------------

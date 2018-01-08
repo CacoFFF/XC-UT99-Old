@@ -95,6 +95,10 @@ SOURCE=.\Inc\XC_Core.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\Inc\XC_CoreGlobals.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\Src\XC_CoreScript.cpp
 # End Source File
 # Begin Source File
@@ -112,6 +116,10 @@ SOURCE=.\Src\XC_LZMA.cpp
 # Begin Source File
 
 SOURCE=.\Src\XC_Networking.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\Src\XC_Visuals.cpp
 # End Source File
 # End Target
 # End Project

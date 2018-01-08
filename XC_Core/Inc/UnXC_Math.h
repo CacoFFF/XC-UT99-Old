@@ -11,6 +11,11 @@ shufps xmm0, xmm0, 0
 (generates a,a,a,a )
 */
 
+
+//Use unaligned loading
+enum EUnsafe   {E_Unsafe  = 1};
+
+
 #define appInvSqrt(a) _appInvSqrt(a)
 
 MS_ALIGN(16) struct SSEMask
@@ -317,6 +322,11 @@ public:
 	FORCEINLINE FVector4( FLOAT inX, FLOAT inY, FLOAT inZ, FLOAT inW)
 	: FPlane( inX, inY, inZ, inW)
 	{};
+	
+	FORCEINLINE FVector4( FLOAT* x, EUnsafe)
+	{
+		
+	}
 	
 	
 		// Accessors.

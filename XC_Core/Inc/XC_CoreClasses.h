@@ -73,6 +73,8 @@ public:
 	DECLARE_FUNCTION(execHasFunction);
 	DECLARE_FUNCTION(execFixName);
 	DECLARE_FUNCTION(execDynamicLoadObject_Fix);
+	DECLARE_FUNCTION(execBrushToMesh);
+
 
 	void StaticConstructor();
 
@@ -114,6 +116,7 @@ AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execAllObjects);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execHasFunction);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execFixName);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execDynamicLoadObject_Fix);
+AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execBrushToMesh);
 
 #ifndef NAMES_ONLY
 #undef AUTOGENERATE_NAME

@@ -4,19 +4,18 @@
 
 #include "XC_Core.h"
 #include "XC_LZMA.h"
-#include <stddef.h>
+
+
 
 //Archive hack for Linux
 XC_CORE_API extern UBOOL b440Net;
 #include "UnXC_Arc.h"
 
-//#ifdef _LZMA_NO_SYSTEM_SIZE_T
-//typedef UInt32 SizeT;
-//#else
+#ifdef __LINUX_X86__
+	#include <stddef.h>
+#endif
+
 typedef size_t SizeT;
-//#endif
-
-
 typedef int (STDCALL *XCFN_LZMA_Compress)(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t srcLen,
   unsigned char *outProps, size_t *outPropsSize, /* *outPropsSize must be = 5 */
   int level,      /* 0 <= level <= 9, default = 5 */
@@ -38,38 +37,29 @@ typedef int (STDCALL *XCFN_LZMA_Uncompress) (unsigned char *dest, size_t *destLe
 #ifdef _MSC_VER
 	static HMODULE hLZMA = 0;
 #elif __LINUX_X86__
-	#include <dlfcn.h>
-	#include <stdlib.h>
 	static void* hLZMA = 0;
 #endif
 
 static XCFN_LZMA_Compress LzmaCompressFunc = 0;
 static XCFN_LZMA_Uncompress LzmaDecompressFunc = 0;
 
+#include "API_FunctionLoader.h"
+
 //Load LZMA
 static UBOOL GetHandles()
 {
 #ifdef _MSC_VER
-//Windows
-	if ( !hLZMA ) //Load the library
+	if ( !hLZMA )
 		hLZMA = LoadLibrary(TEXT("LZMA.dll"));
-	if ( hLZMA && (!LzmaCompressFunc || !LzmaDecompressFunc) ) //Load the functions
-	{
-		FARPROC LzmaFuncs[2] = { GetProcAddress(hLZMA, "LzmaCompress"), GetProcAddress(hLZMA, "LzmaUncompress")};
-		memcpy( &LzmaCompressFunc, LzmaFuncs, sizeof(INT) ); //Some functions can't be typecasted... this is just a global method
-		memcpy( &LzmaDecompressFunc, LzmaFuncs+1, sizeof(INT) );
-	}
 #elif __LINUX_X86__
-//Linux
-	if ( !hLZMA ) //Load the library
+	if ( !hLZMA )
 		hLZMA = dlopen( TEXT("LZMA.so"), RTLD_NOW|RTLD_LOCAL);
+#endif
 	if ( hLZMA && (!LzmaCompressFunc || !LzmaDecompressFunc) ) //Load the functions
 	{
-		void* LzmaFuncs[2] = { dlsym(hLZMA, "LzmaCompress"), dlsym(hLZMA, "LzmaUncompress")};
-		memcpy( &LzmaCompressFunc, LzmaFuncs, sizeof(INT) ); //Some functions can't be typecasted... this is just a global method
-		memcpy( &LzmaDecompressFunc, LzmaFuncs+1, sizeof(INT) );
+		Get(LzmaCompressFunc,hLZMA,"LzmaCompress");
+		Get(LzmaDecompressFunc,hLZMA,"LzmaUncompress");
 	}
-#endif
 	return hLZMA && LzmaCompressFunc && LzmaDecompressFunc;
 }
 /*
@@ -184,7 +174,6 @@ static TCHAR* TranslateLzmaError( INT ErrorCode)
 
 XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Error)
 {
-	guard(XC_Core::LzmaDecompress);
 	//Check LZMA library
 	Error[0] = 0;
 	if ( !GetHandles() )
@@ -241,28 +230,26 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 	ARCHIVE_DELETE(DestFile);
 	free( DestData);
 	return 1;
-	unguard;
 }
 
 
 XC_CORE_API UBOOL LzmaDecompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Error)
 {
-	guard( XC_Core::LzmaDecompress);
 	//Check that file exists, load and move to other method
 	FArchive_Proxy* SrcFile = (FArchive_Proxy*) GFileManager->CreateFileReader( Src, 0);
+	Error[0] = 0;
 	if ( !SrcFile )
 		lzPrintErrorD( TEXT("LzmaDecompress: Unable to load file %s."), Src );
 	UBOOL Result = LzmaDecompress( (FArchive*)SrcFile, Dest, Error);
-	SrcFile->Close();
 	ARCHIVE_DELETE(SrcFile);
 	return Result;
-	unguard;
 }
 
 //From old version, kept as an internal/compatibility part of the main LzmaDecompress
 XC_CORE_API UBOOL LzmaDecompress( FArchive* _SrcFile, const TCHAR* Dest, TCHAR* Error)
 {
-	guard( XC_Core::LzmaDecompressOld);
+	try
+	{
 	//Validate
 	Error[0] = 0;
 	if ( !_SrcFile )
@@ -302,7 +289,7 @@ XC_CORE_API UBOOL LzmaDecompress( FArchive* _SrcFile, const TCHAR* Dest, TCHAR* 
 	}
 	
 	//No decompression error, write data stream into file
-	FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, 0);
+	FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, FILEWRITE_EvenIfReadOnly);
 	if ( !DestFile )
 	{
 		free( DestData);
@@ -313,5 +300,5 @@ XC_CORE_API UBOOL LzmaDecompress( FArchive* _SrcFile, const TCHAR* Dest, TCHAR* 
 	ARCHIVE_DELETE(DestFile);
 	free( DestData);
 	return 1;
-	unguard;
+	}catch(...) {}
 }

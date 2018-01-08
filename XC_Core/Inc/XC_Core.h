@@ -41,6 +41,8 @@ you need and add the proper macros and definitions in your own private header
 #define warnf				GWarn->Logf
 #define debugf				GLog->Logf
 
+#define ENGINE_API DLL_IMPORT
+
 #ifndef __LINUX_X86__
 	#define CORE_API DLL_IMPORT
 	#define XC_CORE_API DLL_EXPORT
@@ -55,7 +57,8 @@ you need and add the proper macros and definitions in your own private header
 #endif
 
 // Unreal engine includes.
-#include "Engine.h"
+//#include "Engine.h"
+#include "Core.h"
 #include "XC_CoreClasses.h"
 
 #ifdef __LINUX_X86__

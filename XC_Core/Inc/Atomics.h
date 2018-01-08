@@ -4,6 +4,9 @@
 	Based on Unreal Engine 4 atomics.
 =============================================================================*/
 
+#ifndef ATOMICS_INCLUDE
+#define ATOMICS_INCLUDE
+
 struct FGenericPlatformAtomics
 {
 	static FORCEINLINE bool CanUseCompareExchange128()
@@ -137,4 +140,9 @@ struct XC_CORE_API FWindowsPlatformAtomics : public FGenericPlatformAtomics
 protected:
 };
 typedef FWindowsPlatformAtomics FPlatformAtomics;
+#endif
+
+#define __SPIN_LOCK(alock)  while(true) if ( FPlatformAtomics::InterlockedCompareExchange( alock, 1, 0) == 0) break
+#define __SPIN_UNLOCK(alock) FPlatformAtomics::InterlockedExchange( alock, 0)
+
 #endif
