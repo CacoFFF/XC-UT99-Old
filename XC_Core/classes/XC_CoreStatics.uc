@@ -59,6 +59,9 @@ native /*(3572)*/ static final function float InvSqrt( float C);
 //Fixes
 native static final function object DynamicLoadObject_Fix( string ObjectName, class ObjectClass, optional bool MayFail );
 
+//Editor-only
+native static final function Mesh BrushToMesh( Actor Brush, name InPkg, name InName, optional int InFlags);
+
 static function TestClock()
 {
 	local float Timer;
@@ -84,5 +87,5 @@ static function TestCycles()
 
 defaultproperties
 {
-	XC_Core_Version=7
+	XC_Core_Version=8
 }

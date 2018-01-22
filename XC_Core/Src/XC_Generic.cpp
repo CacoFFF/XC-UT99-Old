@@ -1,6 +1,11 @@
 
 // XC_Core generics
 
+#ifdef __LINUX_X86__
+	#include <pthread.h>
+#endif
+
+
 #include "XC_Core.h"
 #include "XC_CoreObj.h"
 #include "XC_CoreGlobals.h"
@@ -115,10 +120,6 @@ void FClassPropertyCache::GrabProperties( FMemStack& Mem)
 // Thread abstractor
 //*************************************************
 
-#ifdef __UNIX__
-	#include <pthread.h>
-#endif
-
 UBOOL FThread::RunThread( ENTRY_DECL(ThreadEntry), void* Arg)
 {
 	tId = 1;
@@ -128,11 +129,12 @@ UBOOL FThread::RunThread( ENTRY_DECL(ThreadEntry), void* Arg)
 	Handle = CreateThread( NULL, 0, ThreadEntry, this, 0, (DWORD*)&tId );
 	if ( !Handle )
 		return tId = 0;
+	CloseHandle( Handle);
 #else
 	pthread_attr_t ThreadAttributes;
 	pthread_attr_init( &ThreadAttributes );
 	pthread_attr_setdetachstate( &ThreadAttributes, PTHREAD_CREATE_DETACHED );
-	if ( pthread_create( &Handle, &ThreadAttributes, &ThreadEntry, Arg ) )
+	if ( pthread_create( &Handle, &ThreadAttributes, ThreadEntry, Arg ) )
 		return tId = 0;
 #endif
 	return 1;
@@ -143,7 +145,9 @@ void FThread::ThreadEnded()
 #if __UNIX__
 	pthread_exit( NULL );
 #elif _WINDOWS
-	CloseHandle( Handle );
+	if ( Handle )
+		::CloseHandle( Handle );
+	Handle = NULL;
 #endif
 	tId = 0;
 }
@@ -154,7 +158,11 @@ UBOOL FThread::ThreadWaitFinish( FLOAT MaxWait)
 	//Sleep 1 ms at a time instead
 	XC_InitTiming();
 	DOUBLE StartTime = appSecondsXC();
-	for ( DOUBLE EndTime=appSecondsXC() ; tId && ( MaxWait <= 0.f || EndTime-StartTime < MaxWait) ; EndTime=appSecondsXC() )
+	while ( FPlatformAtomics::InterlockedCompareExchange((volatile INT*)&tId,0,0) )
+	{
 		appSleep(0.001f);
+		if ( appSecondsXC()-StartTime >= MaxWait )
+			break;
+	}
 	return tId == 0;
 }

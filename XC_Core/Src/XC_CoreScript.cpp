@@ -212,7 +212,7 @@ void UXC_CoreStatics::StaticConstructor()
 		XC_InitTiming();
 	
 	//Hardcode, just in case
-	DefaultObject->XC_Core_Version = 7;
+	DefaultObject->XC_Core_Version = 8;
 	RegisterNames();
 }
 

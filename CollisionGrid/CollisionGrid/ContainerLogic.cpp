@@ -58,8 +58,7 @@ bool ActorInfo::IsValid()
 		ABORT("[CG] ActorInfo::IsValid -> Using invalid object");
 	if ( Actor->bDeleteMe || !Actor->bCollideActors )
 	{
-		PlainText Warning = PlainText( TEXT("[CG] ActorInfo::IsValid -> Actor ")) + Actor + TEXT(" shouldn't be in the grid");
-		debugf( *Warning);
+		debugf( *(PlainText( TEXT("[CG] ActorInfo::IsValid -> Actor ")) + Actor + TEXT(" shouldn't be in the grid")));
 		return false;
 	}
 	if ( reinterpret_cast<ActorInfo*>(Actor->CollisionTag) != this )
@@ -98,8 +97,9 @@ cg::Vector ActorInfo::cLocation()
 void ActorLink::Decommit( ActorLink*& AL)
 {
 	G_AIH->ReleaseElement( AL->Info );
+	ActorLink* Next = AL->Next; //TEST FIX
 	G_ALH->ReleaseElement( AL);
-	AL = AL->Next;
+	AL = Next;
 }
 
 bool ActorLink::Unlink( ActorLink** Container, ActorInfo* AInfo)
@@ -107,10 +107,13 @@ bool ActorLink::Unlink( ActorLink** Container, ActorInfo* AInfo)
 	ActorLink** ALR = Container;
 	while ( *ALR )
 	{
+		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "ActorLink::Unlink reached invalid container");
 		if ( (*ALR)->Info == AInfo )
 		{
+			ActorLink* Next = (*ALR)->Next; //TEST FIX
+			UE_DEV_THROW( Next && !G_ALH->IsValid(Next), "ActorLink::Unlink next is invalid");
 			G_ALH->ReleaseElement( *ALR );
-			*ALR = (*ALR)->Next;
+			*ALR = Next;
 			return true;
 		}
 		ALR = &((*ALR)->Next);
@@ -131,7 +134,10 @@ uint32 ActorLink::UnlinkInvalid( ActorLink** Container)
 			ALR = &((*ALR)->Next);
 		}
 		else
+		{
+			UE_DEV_LOG_ANSI( "[CG] ActorLink::UnlinkInvalid decommited an invalid actor");
 			Decommit( *ALR);
+		}
 	}
 	return ActorCount;
 }
@@ -220,6 +226,7 @@ GridElement* Grid::Node( const cg::Integers& I)
 
 bool Grid::InsertActor( AActor* Actor)
 {
+	UE_DEV_THROW( !Actor, "Grid::InsertActor with NULL parameter");
 	if ( !Actor->bCollideActors || Actor->bDeleteMe ) //Validate actor flags
 		return false;
 
@@ -418,19 +425,22 @@ MiniTree::MiniTree( MiniTree* T, uint32 SubOctant)
 	*(cg::Vector*)&Children[4] = cg::Vector(E_Zero);
 
 	ActorLink** ALR = &T->Actors;
-	while ( ALR[0] )
+	while ( *ALR )
 	{
-		ActorInfo* AInfo = ALR[0]->Info;
+		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "Invalid actor link in MiniTree constructor");
+		ActorInfo* AInfo = (*ALR)->Info;
+		UE_DEV_THROW( !G_AIH->IsValid(AInfo), "Invalid actor info in MiniTree constructor");
 		if ( (AInfo->TopDepth >= Depth) && (GetSubOctant( AInfo->C.Location) == SubOctant) ) //Belongs here
 		{
 			cg::Box ActorBox = AInfo->cBox();
 			AInfo->CurDepth = Depth;
 			if ( Depth < MAX_TREE_DEPTH ) //Important to continue subdivision spree
 				AInfo->TopDepth = Depth + (GetSubOctant( ActorBox.Min) == GetSubOctant( ActorBox.Max));
-			ActorLink* AL = ALR[0]; //Remove from this chain, keep pointer
-			ALR[0] = AL->Next;
+			ActorLink* AL = *ALR; //Remove from this chain, keep pointer
+			*ALR = AL->Next;
 			AL->Next = Actors;
 			Actors = AL;
+			ActorCount++;
 		}
 		else
 			ALR = &(ALR[0]->Next); //No removal, advance pointer
@@ -467,14 +477,16 @@ uint32 MiniTree::GetSubOctant( const cg::Vector& Point) const
 
 void MiniTree::InsertActorInfo( ActorInfo* AInfo, const cg::Box& Box)
 {
-	uint32 Oc1 = GetSubOctant( Box.Min);
-	uint32 Oc2 = GetSubOctant( Box.Max);
-	AInfo->TopDepth = Min( Depth + (Oc1 == Oc2), MAX_TREE_DEPTH);
-
-	if ( ActorCount++ == 0 ) //Doesn't matter if it goes in this Node, but expand anyways
+	if ( ActorCount == 0 ) //Doesn't matter if it goes in this Node, but expand anyways
 		OptimalBounds = Box;
 	else
 		OptimalBounds.Expand(Box);
+	ActorCount++;
+
+	uint32 Oc1 = GetSubOctant( Box.Min);
+	uint32 Oc2 = GetSubOctant( Box.Max);
+	AInfo->TopDepth = Min( Depth + (Oc1 == Oc2), MAX_TREE_DEPTH);
+	UE_DEV_THROW( AInfo->TopDepth > MAX_TREE_DEPTH, "IAF: Bad TopDepth");
 
 	//Add here, timer not needed
 	if ( (AInfo->TopDepth == Depth) || (ActorCount < REQUIRED_FOR_SUBDIVISION) )
@@ -485,10 +497,12 @@ void MiniTree::InsertActorInfo( ActorInfo* AInfo, const cg::Box& Box)
 	//Add in sub box
 	else
 	{
+		UE_DEV_THROW( Oc1 != Oc2, "MiniTree::InsertActorInfo attempting to subdivide using mismatching suboctants");
 		if ( Children[Oc1] == nullptr )
 			new(G_MTH) MiniTree( this, Oc1);
 		Children[Oc1]->InsertActorInfo( AInfo, Box);
 	}
+	UE_DEV_THROW( CountActors() != ActorCount, "MiniTree::InsertActorInfo actor count mismatch");
 }
 
 //NOT RECURSIVE, location is absolute, AInfo has already been unlinked
@@ -496,19 +510,22 @@ void MiniTree::InsertActorInfo( ActorInfo* AInfo, const cg::Box& Box)
 void MiniTree::RemoveActorInfo( ActorInfo* AInfo, const cg::Vector& Location)
 {
 	UE_DEV_THROW( Depth != 0, "[CG] RemoveActorInfo should only be called on top tree (Depth=0)");
+	UE_DEV_THROW( AInfo->TopDepth > MAX_TREE_DEPTH, "RAF: Bad TopDepth");
 	MiniTree* DepthLink[MAX_TREE_DEPTH+2];
 	DepthLink[0] = this;
 	int32 CurDepth = 0;
 	while ( CurDepth < AInfo->CurDepth )
 	{
 		UE_DEV_THROW( CurDepth != DepthLink[CurDepth]->Depth, "[CG] RemoveActorInfo: MiniTree depth mismatch");
+		UE_DEV_THROW( ActorLink::Unlink( &DepthLink[CurDepth]->Actors, AInfo), "[CG] RemoveActorInfo: unlinked before hitting CurDepth!!");
 		uint32 OcIdx = DepthLink[CurDepth]->GetSubOctant( Location);
 		DepthLink[CurDepth+1] = DepthLink[CurDepth]->Children[OcIdx];
-		if ( !DepthLink[++CurDepth] ) //In case of error, cleanup immediately
+		CurDepth++;
+		if ( !DepthLink[CurDepth] ) //In case of error, cleanup immediately
 		{
 			Timer = 1;
 			PlainText Error( TEXT("[CG] Error in RemoveActorInfo: Link at CurDepth="));
-			debugf( *(Error + CurDepth + TEXT(" is non-existant, Actor is ") + AInfo->Actor) );
+			debugf( *(Error + CurDepth + TEXT("[OCT=")+ OcIdx +TEXT("] is non-existant, Actor is ") + AInfo->Actor) );
 			return;
 		}
 	}
@@ -517,6 +534,7 @@ void MiniTree::RemoveActorInfo( ActorInfo* AInfo, const cg::Vector& Location)
 		while ( CurDepth >= 0 )
 			DepthLink[CurDepth--]->ActorCount--;
 	}
+	UE_DEV_THROW( CountActors() != ActorCount, "MiniTree::RemoveActorInfo actor count mismatch");
 	if ( Timer == 0 )
 		Timer = 20;
 }
@@ -548,16 +566,15 @@ void MiniTree::CalcOptimalBounds()
 
 void MiniTree::CleanupActors()
 {
-	ActorCount = ActorLink::UnlinkInvalid( &Actors);
+	uint32 NewActorCount = ActorLink::UnlinkInvalid( &Actors);
 	if ( ChildCount )
 	{
 		for ( uint32 i=0 ; i<8 ; i++ )
 			if ( Children[i] )
 			{
 				Children[i]->CleanupActors();
-				if ( Children[i]->ActorCount ) 
-					ActorCount += Children[i]->ActorCount;
-				else //Eliminate
+				NewActorCount += Children[i]->ActorCount;
+				if ( !Children[i]->ActorCount )
 				{
 					G_MTH->ReleaseElement( Children[i]);
 					Children[i] = nullptr;
@@ -565,4 +582,18 @@ void MiniTree::CleanupActors()
 				}
 			}
 	}
+	ActorCount = NewActorCount;
 }
+
+uint32 MiniTree::CountActors()
+{
+	uint32 Count = 0;
+	if ( ChildCount )
+		for ( uint32 i=0 ; i<8 ; i++ )
+			if ( Children[i] )
+				Count += Children[i]->CountActors();
+	for ( ActorLink* Link=Actors ; Link ; Link=Link->Next )
+		Count++;
+	return Count;
+}
+

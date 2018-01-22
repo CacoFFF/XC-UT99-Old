@@ -186,7 +186,7 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 	
 	//Allocate memory and fill it with the source file's contents
 	INT SrcSize = SrcFile->TotalSize();
-	BYTE* SrcData = SrcSize ? (BYTE*)malloc( SrcSize ) : NULL;
+	BYTE* SrcData = SrcSize ? (BYTE*)appMalloc( SrcSize, TEXT("") ) : NULL;
 
 	//Copy to memory and close source file
 	if ( SrcData )
@@ -198,7 +198,7 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 	
 	//Allocate destination memory, reserve extra space to avoid nasty surprises
 	INT RequestedData = SrcSize + SrcSize / 64 + 1024;
-	BYTE* DestData = (BYTE*)malloc( RequestedData );
+	BYTE* DestData = (BYTE*)appMalloc( RequestedData, TEXT("") );
 	if ( !DestData )
 		lzPrintErrorD( TEXT("LzmaCompress: Out of memory (%i kbytes requested for compression template)."), RequestedData / 1024 );
 	
@@ -206,12 +206,12 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 	BYTE Header[LZMA_PROPS_SIZE + 8];
 	INT OutPropSize = LZMA_PROPS_SIZE;
 	INT CmpRet = (*LzmaCompressFunc)( DestData, (unsigned int*)&RequestedData, SrcData, SrcSize, Header, (unsigned int*)&OutPropSize, DEFAULT_LZMA_PARMS);
-	free( SrcData);
+	appFree( SrcData);
 	
 	TCHAR* ErrorT = TranslateLzmaError( CmpRet);
 	if ( ErrorT ) //Got error
 	{
-		free(DestData);
+		appFree(DestData);
 		lzPrintErrorD( TEXT("LzmaCompress: %s."), ErrorT);
 	}
 
@@ -219,7 +219,7 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 	FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, 0);
 	if ( !DestFile )
 	{
-		free( DestData);
+		appFree( DestData);
 		lzPrintErrorD( TEXT("LzmaCompress: Unable to create destination file %s."), Dest);
 	}
 	for ( INT i=0; i<8; i++)
@@ -228,7 +228,7 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 	DestFile->Serialize( DestData, RequestedData);
 	DestFile->Close();
 	ARCHIVE_DELETE(DestFile);
-	free( DestData);
+	appFree( DestData);
 	return 1;
 }
 
@@ -264,27 +264,27 @@ XC_CORE_API UBOOL LzmaDecompress( FArchive* _SrcFile, const TCHAR* Dest, TCHAR* 
 
 	//Allocate memory and fill it with the source file's contents
 	INT SrcSize = SrcFile->TotalSize() - SrcFile->Tell();
-	BYTE* SrcData = (SrcSize>0) ? (BYTE*)malloc( SrcSize ) : NULL;
+	BYTE* SrcData = (SrcSize>0) ? (BYTE*)appMalloc( SrcSize, TEXT("") ) : NULL;
 	if ( !SrcData )
 		lzPrintErrorD( TEXT("LzmaDecompress: Out of memory (%i kbytes requested for source file)."), SrcSize / 1024 );
 	SrcFile->Serialize( SrcData, SrcSize);
 	
 	//Allocate destination memory, reserve extra space to avoid nasty surprises
 	INT DestSize = (INT)unpackSize;
-	BYTE* DestData = (BYTE*)malloc( DestSize);
+	BYTE* DestData = (BYTE*)appMalloc( DestSize, TEXT(""));
 	if ( !DestData )
 	{
-		free( SrcData);
+		appFree( SrcData);
 		lzPrintErrorD( TEXT("LzmaDecompress: Out of memory (%i kbytes requested for decompressed stream)."), DestSize / 1024 );
 	}
 
 	INT DcmpRet = LzmaDecompressFunc( DestData, (unsigned int*)&DestSize, SrcData, (unsigned int*)&SrcSize, header, LZMA_PROPS_SIZE);
-	free( SrcData);
+	appFree( SrcData);
 	
 	TCHAR* ErrorT = TranslateLzmaError( DcmpRet);
 	if ( ErrorT ) //Got error
 	{
-		free(DestData);
+		appFree(DestData);
 		lzPrintErrorD( TEXT("LzmaDecompress: %s."), ErrorT);
 	}
 	
@@ -292,13 +292,13 @@ XC_CORE_API UBOOL LzmaDecompress( FArchive* _SrcFile, const TCHAR* Dest, TCHAR* 
 	FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, FILEWRITE_EvenIfReadOnly);
 	if ( !DestFile )
 	{
-		free( DestData);
+		appFree( DestData);
 		lzPrintErrorD( TEXT("LzmaDecompress: Unable to create destination file %s."), Dest);
 	}
 	DestFile->Serialize( DestData, DestSize);
 	DestFile->Close();
 	ARCHIVE_DELETE(DestFile);
-	free( DestData);
+	appFree( DestData);
 	return 1;
 	}catch(...) {}
 }

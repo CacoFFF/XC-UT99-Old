@@ -6,6 +6,7 @@
 
 #include "Objects_UE1.h"
 
+#define return_invalid_helper { ExtraNodeFlags = 0xFFFFFFFF; return; }
 
 //Constants:
 cg::Vector Grid_Unit = cg::Vector( GRID_NODE_DIM, GRID_NODE_DIM, GRID_NODE_DIM, 0);
@@ -53,6 +54,7 @@ void ActorInfo::LineQuery( ActorLink* ALink, const PrecomputedRay& Ray, FCheckRe
 {
 	for ( ; ALink ; ALink=ALink->Next )
 	{
+		// Try to trace this back one of these days
 		UE_DEV_THROW( !G_ALH->IsValid( ALink), "Invalid actor link in LineQuery");
 		ActorInfo* AInfo = ALink->Info;
 		UE_DEV_THROW( !G_AIH->IsValid( AInfo), "Invalid actor info in LineQuery");
@@ -64,17 +66,13 @@ void ActorInfo::LineQuery( ActorLink* ALink, const PrecomputedRay& Ray, FCheckRe
 			{
 				FCheckResult* OldResult = Link;
 				(Ray.*Ray.Hits_CylActor)( AInfo, Link);
-				//Fix bad results
+				//Time is distance, convert to Unreal time
 				if ( OldResult != Link )
 				{
-					if ( Link->Time < 0 )
-					{
-						Link->Time = 0;
-						Link->Location = Ray.Org;
-						//Fix normal?
-					}
-					if ( Link->Time > 1 ) //Discard
-						Link = OldResult;
+					float nX = Link->Normal.X; //SSE instructions will override this, keep it
+					Link->Time = Clamp((Link->Time - Ray.Length * 0.001f) / Ray.Length, 0.f, 1.f);
+					Link->Location = Ray.Org + (Ray.End-Ray.Org) * Link->Time;
+					Link->Normal.X = nX; //Restore
 				}
 			}
 			else if ( Ray.IntersectsBox( AInfo->P.pBox) && AInfo->IsValid() )
@@ -90,10 +88,11 @@ void ActorInfo::LineQuery( ActorLink* ALink, const PrecomputedRay& Ray, FCheckRe
 					Link = LinkNew;
 					//Prevent CheckForActors crash!!!
 					//Need Mover check here sooner or later
-					cg::Vector Add = Ray.Dir * cg::Vector( 2.05f, 2.05f, 2.05f, 0);
+					uint32 NormalX = *(uint32*)&Link->Normal.X; //Store in x86 register
+					cg::Vector Add = Ray.Dir * cg::Vector( 2.1f, 2.1f, 2.1f, 0);
 					//Normal.X shouldn't be modified due to Add.W being zero... but we never know
-					cg::Vector Loc( &Link->Location.X);
-					Link->Location = Loc - Add;
+					Link->Location = cg::Vector( &Link->Location.X) - Add;
+					*(uint32*)&Link->Normal.X = NormalX; //Put back in place
 					Link->Time -= 2 / Ray.Length;
 				}
 
@@ -106,7 +105,9 @@ void ActorInfo::PointQuery( ActorLink* ALink, const PointHelper& Helper, FCheckR
 {
 	for ( ; ALink ; ALink=ALink->Next )
 	{
+		UE_DEV_THROW( !G_ALH->IsValid( ALink), "Invalid actor link in PointQuery");
 		ActorInfo* AInfo = ALink->Info;
+		UE_DEV_THROW( !G_AIH->IsValid( AInfo), "Invalid actor info in PointQuery");
 		if ( AInfo->CollisionTag != ::CollisionTag )
 		{
 			AInfo->CollisionTag = ::CollisionTag;
@@ -129,7 +130,7 @@ void ActorInfo::PointQuery( ActorLink* ALink, const PointHelper& Helper, FCheckR
 			{
 				FCheckResult* ResultNew = new(G_Stack) FCheckResult(ResultList);
 				AActor* Actor = AInfo->Actor;
-				if ( Actor->Brush->PointCheck( *ResultNew, Actor, Actor->Location, FVector( Helper.Extent, E_NoSSEFPU), Helper.ExtraNodeFlags) ) //FIT, no hit
+				if ( Actor->Brush->PointCheck( *ResultNew, Actor, /*Actor->Location*/FVector( Helper.Location, E_NoSSEFPU), FVector( Helper.Extent, E_NoSSEFPU), Helper.ExtraNodeFlags) ) //FIT, no hit
 					G_Stack->Pop<FCheckResult>();
 				else
 					ResultList = ResultNew;
@@ -143,7 +144,9 @@ void ActorInfo::RadiusQuery( ActorLink* ALink, const RadiusHelper& Helper, FChec
 {
 	for ( ; ALink ; ALink=ALink->Next )
 	{
+		UE_DEV_THROW( !G_ALH->IsValid( ALink), "Invalid actor link in RadiusQuery");
 		ActorInfo* AInfo = ALink->Info;
+		UE_DEV_THROW( !G_AIH->IsValid( AInfo), "Invalid actor info in RadiusQuery");
 		if ( AInfo->CollisionTag != ::CollisionTag )
 		{
 			AInfo->CollisionTag = ::CollisionTag;
@@ -161,15 +164,17 @@ void ActorInfo::EncroachmentQuery( ActorLink* ALink, const EncroachHelper& Helpe
 {
 	for ( ; ALink ; ALink=ALink->Next )
 	{
+		UE_DEV_THROW( !G_ALH->IsValid( ALink), "Invalid actor link in EncroachmentQuery");
 		ActorInfo* AInfo = ALink->Info;
+		UE_DEV_THROW( !G_AIH->IsValid( AInfo), "Invalid actor info in EncroachmentQuery");
 		if ( AInfo->CollisionTag != ::CollisionTag )
 		{
 			AInfo->CollisionTag = ::CollisionTag;
-			if ( !AInfo->Flags.bIsMovingBrush && Helper.Bounds.Intersects( AInfo->cBox()) && AInfo->IsValid() )
+			if ( !AInfo->Flags.bIsMovingBrush && Helper.Bounds.Intersects( AInfo->cBox()) && AInfo->IsValid() && AInfo->Actor->bCollideWorld )
 			{
 				FCheckResult* ResultNew = new(G_Stack) FCheckResult(ResultList);
 				AActor* Actor = Helper.Actor;
-				if ( Actor->Brush->PointCheck( *ResultNew, Actor, Actor->Location, FVector(AInfo->C.Extent,E_NoSSEFPU), Helper.ExtraNodeFlags) ) //FIT, no hit
+				if ( Actor->Brush->PointCheck( *ResultNew, Actor, FVector(AInfo->C.Location,E_NoSSEFPU), FVector(AInfo->C.Extent,E_NoSSEFPU), Helper.ExtraNodeFlags) ) //FIT, no hit
 					G_Stack->Pop<FCheckResult>();
 				else
 				{
@@ -179,7 +184,7 @@ void ActorInfo::EncroachmentQuery( ActorLink* ALink, const EncroachHelper& Helpe
 				}
 			}
 		}
-	}			
+	}
 }
 
 //Actor is a Cylinder
@@ -187,7 +192,9 @@ void ActorInfo::EncroachmentQueryCyl( ActorLink* ALink, const EncroachHelper& He
 {
 	for ( ; ALink ; ALink=ALink->Next )
 	{
+		UE_DEV_THROW( !G_ALH->IsValid( ALink), "Invalid actor link in EncroachmentQueryCyl");
 		ActorInfo* AInfo = ALink->Info;
+		UE_DEV_THROW( !G_AIH->IsValid( AInfo), "Invalid actor info in EncroachmentQueryCyl");
 		if ( AInfo->CollisionTag != ::CollisionTag )
 		{
 			AInfo->CollisionTag = ::CollisionTag;
@@ -201,7 +208,7 @@ void ActorInfo::EncroachmentQueryCyl( ActorLink* ALink, const EncroachHelper& He
 					FCheckResult* ResultNew = new(G_Stack) FCheckResult(ResultList);
 					Exchange( Actor->Location, *(FVector*)&Helper.Location);
 					if ( Actor->Brush->PointCheck( *ResultNew, Actor, Actor->Location, FVector( AInfo->C.Extent, E_NoSSEFPU), Helper.ExtraNodeFlags) ) //FIT, no hit
-						G_Stack->Pop<FCheckResult>();
+						G_Stack->Pop<FCheckResult>(); //ABOVE MAY BE BUGGY, REVIEW LOCATION
 					else
 					{
 						ResultNew->Actor = AInfo->Actor;
@@ -214,16 +221,15 @@ void ActorInfo::EncroachmentQueryCyl( ActorLink* ALink, const EncroachHelper& He
 					ResultList = new(G_Stack) FCheckResult(ResultList);
 					ResultList->Actor = AInfo->Actor;
 					ResultList->Location = AInfo->C.Location;
-					if ( RelActor.Z >= AInfo->C.Extent.Z )
+					float Bound = (RelActor.SizeXYSq() < 0.001f) ? 0.f : AInfo->C.Extent.Z; //If actors are too close (H), don't calc normal and instead push upwards or downwards
+					if ( RelActor.Z >= Bound )
 						ResultList->Normal = ZNormals[0];
-					else if ( RelActor.Z <= -(AInfo->C.Extent.Z) )
+					else if ( RelActor.Z <= -Bound )
 						ResultList->Normal = ZNormals[1];
 					else
 						ResultList->Normal = RelActor.NormalXY();
 					ResultList->Primitive = nullptr;
 				}
-
-
 			}
 		}
 	}			
@@ -244,20 +250,18 @@ FCheckResult* Grid::LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags)
 	GSBaseMarker Marker;
 	FCheckResult* Result = nullptr;
 	
-
 	//Get start/end grid coordinates
 	cg::Vector Start = (Ray.Org - Ray.Extent) - Box.Min;
 	cg::Vector End   = (Ray.End + Ray.Extent) - Box.Min;
 	//FAILS IF TRACE ORIGINATES OR ENDS OUTSIDE OF GRID!!!
-	cg::Integers Min = cg::Max((Start * Grid_Mult), cg::Vector(E_Zero)           ).Truncate32();
-	cg::Integers Max = cg::Min((End   * Grid_Mult), cg::Vectorize(Size-XYZi_One) ).Truncate32();
+	cg::Integers Min = cg::Max((Start * Grid_Mult)-Grid_Mult*4, cg::Vector(E_Zero)           ).Truncate32();
+	cg::Integers Max = cg::Min((End   * Grid_Mult)+Grid_Mult*4, cg::Vectorize(Size-XYZi_One) ).Truncate32();
 	int32 iS[3];
 	for ( uint32 i=0 ; i<3 ; i++ )
 	{
 		int32 j = Max.coord(i)-Min.coord(i);
 		iS[i] = (j>0) - (j<0); //Does this kill the branches?
 	}	
-//		(Min.coord(i) == Max.coord(i)) ? 0 : (Min.coord(i) < Max.coord(i)) ? 1 : -1;
 
 	//Check globals
 	ActorInfo::LineQuery( GlobalActors, Ray, Result);
@@ -341,17 +345,25 @@ void MiniTree::LineQuery( const PrecomputedRay& Ray, FCheckResult*& ResultList)
 //
 //*************************************************
 
-PrecomputedRay::PrecomputedRay( const FVector& TraceStart, const FVector& TraceEnd, const FVector& TraceExtent)
+PrecomputedRay::PrecomputedRay( const FVector& TraceStart, const FVector& TraceEnd, const FVector& TraceExtent, uint32 ENF)
 	:	iBoxV(E_Zero)
-	,	UsePoint(0)
 {
 	//HACK: Since parameters are on the stack (ActorLineCheck call)
 	//It 'should' be safe to grab XYZ vectors from it using packed SSE instructions
-	__m128 mask = _mm_castsi128_ps( _mm_load_si128( Vector3Mask.mm() ));
+	{
+		cg::Vector& V3Mask = (cg::Vector&)Vector3Mask;
+		Extent = cg::Vector( & TraceExtent.X) & V3Mask;
+		End    = cg::Vector( & TraceEnd.X   ) & V3Mask;
+		Org    = cg::Vector( & TraceStart.X ) & V3Mask;
+		if ( !Extent.IsValid() || !End.IsValid() || !Org.IsValid() )
+			return_invalid_helper;
+	}
+
+/*	__m128 mask = _mm_castsi128_ps( _mm_load_si128( Vector3Mask.mm() ));
 	_mm_store_ps( Extent.fa(), _mm_and_ps( _mm_loadu_ps((float*)&TraceExtent), mask)  );
 	_mm_store_ps( End.fa()   , _mm_and_ps( _mm_loadu_ps((float*)&TraceEnd   ), mask)  );
 	_mm_store_ps( Org.fa()   , _mm_and_ps( _mm_loadu_ps((float*)&TraceStart ), mask)  );
-
+	*/
 	cg::Vector Segment = End - Org;
 	Dir = Segment.Normal();
 	Length = Segment | Dir;
@@ -378,12 +390,12 @@ PrecomputedRay::PrecomputedRay( const FVector& TraceStart, const FVector& TraceE
 		Hits_CylActor = &PrecomputedRay::Hits_VCylActor; //Optimizes vertical traces
 	}
 	else
-		UsePoint = 1; //Point check
+		return_invalid_helper;
+
 	//Intersection helpers
 	iBoxV.i = (*(int32*)&Dir.X < 0) * 16;
 	iBoxV.j = (*(int32*)&Dir.Y < 0) * 16;
 	iBoxV.k = (*(int32*)&Dir.Z < 0) * 16;
-
 }
 
 bool PrecomputedRay::IntersectsBox( const cg::Box& Box) const
@@ -465,12 +477,9 @@ bool PrecomputedRay::Hits_VCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 	{
 		Link = new(G_Stack) FCheckResult(Link);
 		Link->Actor = AInfo->Actor;
-		Link->Location = Org;
+		Link->Time = TouchDist;
 		Link->Normal = ZNormals[ DiffZ > 0 ];
-		if ( RelActor.Z > 0 )	Link->Location.Z = (AInfo->C.Location.Z - NetExtent.Z);
-		else					Link->Location.Z = (AInfo->C.Location.Z + NetExtent.Z);
 		Link->Primitive = nullptr;
-		Link->Time = TouchDist / fabsf(DiffZ); //MAKE RECIPROCAL
 		return false;
 	}
 	return true;
@@ -506,7 +515,6 @@ bool PrecomputedRay::Hits_HCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 	{
 		Link = new(G_Stack) FCheckResult(Link);
 		Link->Actor = AInfo->Actor;
-		Link->Location = Org;
 		Link->Normal = -RelActor.NormalXY();
 		Link->Primitive = nullptr;
 		Link->Time = 0;
@@ -519,11 +527,9 @@ bool PrecomputedRay::Hits_HCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 		return false;
 	Link = new(G_Stack) FCheckResult(Link);
 	Link->Actor = AInfo->Actor;
-	Link->Time = Clamp( TargetX / Length - 0.001f, 0.f, 1.f); //Use RECIPROCAL INSTEAD!!!
-	cg::Vector HitLocation = Org + (End-Org) * Link->Time;
-	Link->Location = HitLocation;
+	Link->Time = TargetX;
+	cg::Vector HitLocation = Org + Dir * Link->Time;
 	Link->Normal = (HitLocation - AInfo->C.Location).NormalXY();
-	Link->Normal.Z = 0;
 	Link->Primitive = nullptr;
 	return false;
 }
@@ -603,7 +609,7 @@ bool PrecomputedRay::Hits_UCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 			Link = new(G_Stack) FCheckResult(Link);
 			Link->Actor     = AInfo->Actor;
 			Link->Time      = 0.0;
-			Link->Location  = Org;
+//			Link->Location  = Org;
 			Link->Normal    = ((Org-AInfo->C.Location)*cg::Vector(1,1,0,0)).Normal(); //Should be safe normal
 			Link->Primitive = nullptr;
 		}
@@ -639,8 +645,9 @@ bool PrecomputedRay::Hits_UCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 	}
 	Link = new(G_Stack) FCheckResult(Link);
 	Link->Actor     = AInfo->Actor;
-	Link->Time      = Clamp(T0-0.001,0.0,1.0);
-	Link->Location  = Org + (End-Org) * Link->Time;
+	Link->Time = T0 * Length;
+//	Link->Time      = Clamp(T0-0.001,0.0,1.0);
+//	Link->Location  = Org + (End-Org) * Link->Time;
 	Link->Normal    = Normal;
 	Link->Primitive = nullptr;
 	return 0;
@@ -655,30 +662,33 @@ bool PrecomputedRay::Hits_UCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 //*************************************************
 
 GenericQueryHelper::GenericQueryHelper( const FVector& Loc3, uint32 InENF, ActorQuery NewQuery)
-	: Location( Loc3, E_Unsafe)
-	, ExtraNodeFlags( InENF)
-	, Query( NewQuery)
-{}
+{
+	Location = cg::Vector( Loc3, E_Unsafe);
+	if ( !Location.IsValid() )
+		return_invalid_helper;
+	ExtraNodeFlags = InENF;
+	Query = NewQuery;
+}
 
 FCheckResult* GenericQueryHelper::QueryGrids( Grid* Grid)
 {
-	if ( ExtraNodeFlags == 0xFFFFFFFF )
-		return nullptr;
-	GSBaseMarker Marker;
 	FCheckResult* Results = nullptr;
-
-	(*Query)( Grid->GlobalActors, *this, Results); //Globals
-	cg::Box TmpBox = Bounds - Grid->Box.Min;
-	cg::Integers Min = cg::Max((TmpBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
-	cg::Integers Max = cg::Min((TmpBox.Max * Grid_Mult), cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
-	for ( int i=Min.i ; i<=Max.i ; i++ )
-	for ( int j=Min.j ; j<=Max.j ; j++ )
-	for ( int k=Min.k ; k<=Max.k ; k++ )			
+	if ( IsValid() )
 	{
-		GridElement* Node = Grid->Node(i,j,k);
-		(*Query)( Node->BigActors, *this, Results); //Big actors
-		if ( Node->Tree && Node->Tree->ActorCount && IntersectsBox(Node->Tree->OptimalBounds) )
-			Node->Tree->GenericQuery( *this, Results); //Tree actors
+		GSBaseMarker Marker;
+		(*Query)( Grid->GlobalActors, *this, Results); //Globals
+		cg::Box TmpBox = Bounds - Grid->Box.Min;
+		cg::Integers Min = cg::Max((TmpBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
+		cg::Integers Max = cg::Min((TmpBox.Max * Grid_Mult), cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
+		for ( int i=Min.i ; i<=Max.i ; i++ )
+		for ( int j=Min.j ; j<=Max.j ; j++ )
+		for ( int k=Min.k ; k<=Max.k ; k++ )			
+		{
+			GridElement* Node = Grid->Node(i,j,k);
+			(*Query)( Node->BigActors, *this, Results); //Big actors
+			if ( Node->Tree && Node->Tree->ActorCount && IntersectsBox(Node->Tree->OptimalBounds) )
+				Node->Tree->GenericQuery( *this, Results); //Tree actors
+		}
 	}
 	return Results;
 }
@@ -696,9 +706,12 @@ bool GenericQueryHelper::IntersectsBox( const cg::Box& Box) const
 
 PointHelper::PointHelper( const FVector& InLocation, const FVector& InExtent, uint32 InExtraNodeFlags)
 	: GenericQueryHelper( InLocation, InExtraNodeFlags, (ActorQuery)&ActorInfo::PointQuery)
-	, Extent( InExtent, E_Unsafe)
 {
-	Bounds = cg::Box( Location-Extent, Location+Extent, E_Strict);
+	if ( IsValid() )
+	{
+		Extent = cg::Vector( InExtent, E_Unsafe);
+		Bounds = cg::Box( Location-Extent, Location+Extent, E_Strict);
+	}
 }
 
 //*************************************************
@@ -710,10 +723,13 @@ PointHelper::PointHelper( const FVector& InLocation, const FVector& InExtent, ui
 //TODO: MinGW may remove IR, see if Stack alignment is necessary
 RadiusHelper::RadiusHelper( const FVector& InOrigin, float InRadius, uint32 InExtraNodeFlags)
 	: GenericQueryHelper( InOrigin, InExtraNodeFlags, (ActorQuery)&ActorInfo::RadiusQuery)
-	, RadiusSq( InRadius * InRadius )
 {
-	cg::Vector IR = cg::Vector(InRadius,InRadius,InRadius).Absolute();
-	Bounds = cg::Box( Location-IR, Location+IR, E_Strict);
+	if ( IsValid() )
+	{
+		RadiusSq = InRadius * InRadius;
+		cg::Vector IR = cg::Vector(InRadius,InRadius,InRadius).Absolute();
+		Bounds = cg::Box( Location-IR, Location+IR, E_Strict);
+	}
 }
 
 
@@ -727,15 +743,15 @@ RadiusHelper::RadiusHelper( const FVector& InOrigin, float InRadius, uint32 InEx
 EncroachHelper::EncroachHelper( AActor* InActor, const FVector& Loc3, FRotator* Rot3, uint32 InExtraNodeFlags)
 {
 	if ( !InActor || !InActor->bCollideActors )
-	{
-		ExtraNodeFlags = 0xFFFFFFFF;
-		return;
-	}
+		return_invalid_helper;
+	Location = cg::Vector( Loc3, E_Unsafe);
+	if ( !Location.IsValid() )
+		return_invalid_helper;
+
 	Actor = InActor;
 	Rotation = Rot3;
 
 	ExtraNodeFlags = InExtraNodeFlags;
-	Location = cg::Vector( Loc3, E_Unsafe);
 
 	if ( Actor->Brush )
 	{
@@ -762,7 +778,7 @@ EncroachHelper::EncroachHelper( AActor* InActor, const FVector& Loc3, FRotator* 
 
 EncroachHelper::~EncroachHelper()
 {
-	if ( Actor->Brush )
+	if ( Actor->Brush && (ExtraNodeFlags != 0xFFFFFFFF) )
 	{
 		Exchange( Actor->Location, *(FVector*)&Location);
 		Exchange( Actor->Rotation, *Rotation);

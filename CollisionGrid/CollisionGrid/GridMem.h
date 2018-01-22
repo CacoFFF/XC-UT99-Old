@@ -97,6 +97,7 @@ public:
 		_next = nullptr;
 		for ( uint32 i=0; i<HOLDER_COUNT; i++)
 			_free[i] = i;
+		UE_DEV_LOG( *(PlainText(TEXT("[CG] Allocated element holder for "))+T::Name()+TEXT(" with ")+_freecount+TEXT(" entries.")) );
 	}
 
 	//Gets index of an element by pointer
@@ -110,9 +111,14 @@ public:
 	//Verifies that is contained by ANY of the chained holders (can release the object as well)
 	bool IsValid( T* N)
 	{
+		uint32 HolderMemSize = HOLDER_COUNT * sizeof(T);
+		uint32 ElemAddr = (uint32)N;
 		for ( ElementHolder<T,kb>* Link=this ; Link ; Link=Link->_next )
-			if ( (N >= Link->_holder) && (N < &Link->_holder[HOLDER_COUNT]) )
+		{
+			uint32 StartAddr = (uint32)Link->_holder;
+			if ( ElemAddr >= StartAddr && ElemAddr < StartAddr+HolderMemSize )
 				return true;
+		}
 		return false;
 	}
 
@@ -130,7 +136,7 @@ public:
 				T* Result = &Link->_holder[ free];
 				int32 idx = Link->GetIndex(Result);
 //				debugf( *(PlainText ( TEXT("Grabbing: ")) + idx + TEXT(" @ ") + free + TEXT(" / ") + Link->_freecount + TEXT("@")+i) );
-				if ( idx != free )
+				if ( idx != free ) //Deprecate this asap
 				{
 					PlainText TXT( TEXT("GrabElement: Index mismatch: "));
 					TXT = TXT + idx + TEXT("/") + free;
@@ -140,7 +146,7 @@ public:
 			}
 			else if ( !Link->_next )
 			{
-				debugf( *(PlainText(TEXT("[CG] Allocating extra element holder for "))+T::Name()) );
+				UE_DEV_LOG( *(PlainText(TEXT("[CG] Allocating extra element holder for "))+T::Name()) );
 				Link->_next = new (A_16) ElementHolder<T,kb>;
 				Link->_next->Init();
 				UE_DEV_THROW( !Link->_next, "Unable to allocate new element holder");
@@ -160,8 +166,7 @@ public:
 			{
 				if ( (uint32)Link->_freecount >= HOLDER_COUNT )
 					appFailAssert("ElementHolder::ReleaseElement trying to release more elements that grabbed");
-				else
-					Link->_free[Link->_freecount++] = idx;
+				Link->_free[Link->_freecount++] = idx;
 				return true;
 			}
 		}
@@ -182,10 +187,10 @@ public:
 	//Picks up a new element, will create new holder if no new elements
 	ActorLink* GrabElement( ActorLink*& Container, ActorInfo* NewInfo)
 	{
-		ActorLink* res = ElementHolder<ActorLink,32>::GrabElement();
-		if ( !res ) //Error already thrown
-			return nullptr;
+		ActorLink* res = ElementHolder<ActorLink,32>::GrabElement(); //Never NULL, or error thrown
+		UE_DEV_THROW( !IsValid(res), "ActorLinkHolder grabbed invalid (?) link");
 		res->Next = Container;
+		UE_DEV_THROW( res->Next && !G_ALH->IsValid(res->Next), "ActorLinkHolder: invalid container");
 		res->Info = NewInfo;
 		Container = res;
 		return res;
@@ -193,15 +198,17 @@ public:
 };
 
 //
-// Customized element holder for ActorInfo(s) (should contain ~707 elements)
+// Customized element holder for ActorInfo(s) (should contain ~ elements)
 //
-class ActorInfoHolder : public ElementHolder<ActorInfo,36>
+class ActorInfoHolder : public ElementHolder<ActorInfo,64>
 {
 public:
+	ActorInfoHolder() : ElementHolder() {}
+
 	//Picks up a new element, will create new holder if no new elements
 	ActorInfo* GrabElement( class AActor* InitFor)
 	{
-		ActorInfo* res = ElementHolder<ActorInfo,36>::GrabElement();
+		ActorInfo* res = ElementHolder<ActorInfo,64>::GrabElement();
 		if ( res && !res->Init(InitFor) )
 		{
 			ReleaseElement(res);
@@ -215,7 +222,7 @@ public:
 		if ( AI->Flags.bCommited )
 		{
 			AI->Flags.bCommited = false;
-			ElementHolder<ActorInfo,36>::ReleaseElement(AI);
+			ElementHolder<ActorInfo,64>::ReleaseElement(AI);
 		}
 	}
 };

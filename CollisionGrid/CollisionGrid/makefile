@@ -1,4 +1,4 @@
-CXX = g++ -std=gnu++14 -msse2 -m32 -fpermissive -fno-strict-aliasing -O2 -Wall
+CXX = g++ -std=gnu++14 -msse2 -m32 -fpermissive -fno-strict-aliasing -O2 -Wall -fvisibility=hidden  
 
 OTHERSTUFF = -Wl,--version-script=CG_Exports.txt
 CFLAGS = 

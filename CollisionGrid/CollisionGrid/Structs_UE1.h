@@ -98,6 +98,7 @@ struct FVector
 	FVector( float inX, float inY, float inZ)
 		: X(inX), Y(inY), Z(inZ) {}
 
+	const TCHAR* String() const;
 #ifdef GRIDMATH
 	//Safe constructor
 	FVector( const cg::Vector& V)
@@ -173,7 +174,10 @@ struct FCheckResult : public FIteratorActorList
 	float       Time;       // Time until hit, if line check.
 	int32		Item;       // Primitive data item which was hit, INDEX_NONE=none.
 
-	FCheckResult( FCheckResult* InNext) : FIteratorActorList(InNext) {}
+	FCheckResult( FCheckResult* InNext) : FIteratorActorList(InNext)
+	{
+		*(uint32*)&Time = 0x3F800000; //Time = 1.f (MOV)
+	}
 };
 
 

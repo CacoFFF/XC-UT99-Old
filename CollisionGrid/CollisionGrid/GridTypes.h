@@ -74,6 +74,14 @@ MS_ALIGN(16) struct DE ActorInfo
 		struct
 		{	cg::Box pBox;			} P; //Primitive mode
 	};
+	//[16] Container info!
+/*	uint8 GXStart;
+	uint8 GYStart;
+	uint8 GZStart;
+	uint8 GXEnd;
+	uint8 GYEnd;
+	uint8 GZEnd;
+	*/
 
 	ActorInfo() {}
 
@@ -90,7 +98,6 @@ MS_ALIGN(16) struct DE ActorInfo
 	cg::Box cBox();
 	cg::Vector cLocation();
 } GCC_ALIGN(16);
-
 
 //int tat = sizeof(ActorInfo);
 
@@ -187,6 +194,7 @@ MS_ALIGN(16) struct DE MiniTree
 	void RemoveActorInfo( ActorInfo* InActor, const cg::Vector& Location);
 	void CalcOptimalBounds();
 	void CleanupActors();
+	uint32 CountActors();
 
 	void GenericQuery( const GenericQueryHelper& Helper, FCheckResult*& ResultList);
 	void LineQuery( const PrecomputedRay& Ray, FCheckResult*& ResultList);
@@ -206,10 +214,10 @@ MS_ALIGN(16) struct DE PrecomputedRay
 	cg::Vector Extent;
 	cg::Vector coX;
 	float Length;
-	uint32 UsePoint;
+	uint32 ExtraNodeFlags;
 	bool(PrecomputedRay::*Hits_CylActor)( ActorInfo*, FCheckResult*& Link) const;
 
-	PrecomputedRay( const FVector& TraceStart, const FVector& TraceEnd, const FVector& TraceExtent);
+	PrecomputedRay( const FVector& TraceStart, const FVector& TraceEnd, const FVector& TraceExtent, uint32 ENF);
 
 	bool IntersectsBox( const cg::Box& Box) const;
 
@@ -218,6 +226,7 @@ MS_ALIGN(16) struct DE PrecomputedRay
 	bool Hits_VCylActor( ActorInfo* AInfo, FCheckResult*& Link) const;
 	bool Hits_UCylActor( ActorInfo* AInfo, FCheckResult*& Link) const;
 
+	inline bool IsValid() { return ExtraNodeFlags != 0xFFFFFFFF; }
 } GCC_ALIGN(16);
 
 
@@ -238,6 +247,7 @@ public:
 	GenericQueryHelper( const FVector& Loc3, uint32 InENF, ActorQuery NewQuery);
 	bool IntersectsBox( const cg::Box& Box) const;
 	FCheckResult* QueryGrids( Grid* Grids);
+	inline bool IsValid() { return ExtraNodeFlags != 0xFFFFFFFF; }
 } GCC_ALIGN(16);
 
 // Point query helper

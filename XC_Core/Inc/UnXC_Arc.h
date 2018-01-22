@@ -255,6 +255,18 @@ public:
 	UBOOL ArContainsCode;
 	INT Stopper;
 };
+
+//
+// Archive constructor.
+//
+template <class T> T Arctor( FArchive_Proxy& Ar )
+{
+	T Tmp;
+	Ar << Tmp;
+	return Tmp;
+}
+
+
 #else
 	#define FArchive_Proxy FArchive
 	#define ARCHIVE_DELETE(ar) { delete ar; ar = NULL; }

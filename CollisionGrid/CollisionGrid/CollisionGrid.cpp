@@ -116,8 +116,8 @@ GCC_STACK_ALIGN void FCollisionGrid::RemoveActor(AActor *Actor)
 GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorLineCheck(FMemStack& Mem, FVector End, FVector Start, FVector Extent, uint8 ExtraNodeFlags)
 {
 	FCheckResult* Result = nullptr;
-	PrecomputedRay Ray( Start, End, Extent);
-	if ( !Ray.UsePoint )
+	PrecomputedRay Ray( Start, End, Extent, ExtraNodeFlags);
+	if ( Ray.IsValid() )
 		Result = Grid->LineQuery( Ray, ExtraNodeFlags);
 	return Result;
 }

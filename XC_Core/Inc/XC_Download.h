@@ -15,10 +15,9 @@ class XC_CORE_API UXC_Download : public UDownload
 	INT CompressedSize; //Works as padding... actually, this is what v440 IMPLEMENTED!!!!
 	UBOOL EnableLZMA;
 	BYTE IsLZMA;
-	BYTE IsBinary; //Take special considerations with this file, NOT IMPLEMENTED
+	BYTE IsInvalid; //Remove from download list ASAP
 	BYTE IsUNative; //UPackage has native code, NOT IMPLEMENTED
 	BYTE IsDecompressing;
-	UBOOL WaitingForApproval; //Needs approval before loading, NOT IMPLEMENTED
 	TCHAR FileHash[64]; //Last char always 0x00, NOT IMPLEMENTED
 	struct FThreadDecompressor* Decompressor;
 

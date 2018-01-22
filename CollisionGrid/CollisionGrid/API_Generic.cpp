@@ -48,6 +48,12 @@ static char AnsiBuffer[BUFFER_LINES][BUFFER_LINE_SIZE];
 static uint32 CurAnsi = 0;
 #endif
 
+const TCHAR* FVector::String() const
+{
+	PlainText Tmp = PlainText(TEXT("(")) + X + TEXT(",") + Y + TEXT(",") + Z + TEXT(")");
+	CurLine--; //Make this line reusable for next buffer
+	return *Tmp;
+}
 
 const TCHAR* cg::Vector::String() const
 {
@@ -115,11 +121,17 @@ PlainText PlainText::operator+(uint32 N)
 PlainText PlainText::operator+(float F)
 {	return (*this) + (int32)F;	}
 
+PlainText PlainText::operator+(const FVector& V)
+{	return (*this) + V.String();	}
+
 PlainText PlainText::operator+ (const cg::Vector& V)
 {	return (*this) + V.String();	}
 
 PlainText PlainText::operator+ (const cg::Integers& V)
 {	return (*this) + V.String();	}
+
+PlainText PlainText::operator+ (const void* Ptr)
+{	return (*this) + (uint32)Ptr;	}
 
 const TCHAR* PlainText::operator*()
 {

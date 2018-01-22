@@ -126,8 +126,6 @@ IMPLEMENT_CLASS(UXC_ServerCommandlet)
 XC_Core extended download protocols
 =============================================================================*/
 
-static FMallocThreadedProxy MallocProxy( E_Temporary);
-
 struct FThreadDecompressor : public FThread
 {
 	volatile UBOOL bClosedByMain;
@@ -384,7 +382,6 @@ THREAD_ENTRY(LZMADecompress,arg)
 		TInfo->ThreadEnded();
 		delete TInfo;
 	}
-	MallocProxy.Exit();
 	return 0;
 }
 
@@ -418,7 +415,7 @@ THREAD_ENTRY(UZDecompress,arg)
 				if ( Signature == 5678 ) //UZ2 Support
 					Codec.AddCodec(new FCodecRLE);
 				Codec.AddCodec(new FCodecHuffman);
-				Codec.Decode( *CFileAr, *UFileAr );
+				Codec.Decode( CFileAr, UFileAr );
 			}
 			ARCHIVE_DELETE( UFileAr);
 			if ( !TInfo->Download->Error[0] )
@@ -448,7 +445,6 @@ THREAD_ENTRY(UZDecompress,arg)
 		TInfo->ThreadEnded();
 		delete TInfo;
 	}
-	MallocProxy.Exit();
 	return 0;
 }
 
@@ -457,7 +453,6 @@ void UXC_Download::StartDecompressor()
 	if ( IsDecompressing ) //XC_IpDrv makes reentrant calls
 		return;
 	IsDecompressing = 1;
-	MallocProxy.Init();
 	Decompressor = new( TEXT("Decompressor Thread")) FThreadDecompressor(this);
 	if ( IsLZMA )
 		Decompressor->RunThread( &LZMADecompress, Decompressor);
@@ -495,7 +490,6 @@ void UXC_Download::Destroy()
 {
 	if ( Decompressor )
 		Decompressor->bClosedByMain = true;
-	MallocProxy.Exit();
 	Super::Destroy();
 }
 

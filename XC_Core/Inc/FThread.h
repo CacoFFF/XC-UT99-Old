@@ -3,6 +3,9 @@
 	Thread abstractions.
 =============================================================================*/
 
+#ifndef INC_FTHREAD
+#define INC_FTHREAD
+
 //Move to CPP
 #ifdef __UNIX__
 	#define ENTRY_DECL(func) void *(*func)(void *)
@@ -42,3 +45,5 @@ struct XC_CORE_API FThread
 	#define THREAD_ENTRY(entryfunc,arg) void* entryfunc(void* arg)
 #endif
 
+
+#endif

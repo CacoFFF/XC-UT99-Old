@@ -13,8 +13,8 @@ Revision history:
 class FCodec
 {
 public:
-	virtual UBOOL Encode( FArchive_Proxy& In, FArchive_Proxy& Out )=0;
-	virtual UBOOL Decode( FArchive_Proxy& In, FArchive_Proxy& Out )=0;
+	virtual UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )=0;
+	virtual UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )=0;
 };
 
 /*-----------------------------------------------------------------------------
@@ -41,16 +41,16 @@ private:
 		return *P1 - *P2;
 	}
 public:
-	UBOOL Encode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		TArray<BYTE> CompressBufferArray(MAX_BUFFER_SIZE);
 		TArray<INT>  CompressPosition   (MAX_BUFFER_SIZE+1);
 		CompressBuffer = &CompressBufferArray(0);
 		INT i, First=0, Last=0;
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
-			CompressLength = Min<INT>( In.TotalSize()-In.Tell(), MAX_BUFFER_SIZE );
-			In.Serialize( CompressBuffer, CompressLength );
+			CompressLength = Min<INT>( In->TotalSize()-In->Tell(), MAX_BUFFER_SIZE );
+			In->Serialize( CompressBuffer, CompressLength );
 			for( i=0; i<CompressLength+1; i++ )
 				CompressPosition(i) = i;
 			appQsort( &CompressPosition(0), CompressLength+1, sizeof(INT), (QSORT_COMPARE)ClampedBufferCompare );
@@ -59,24 +59,24 @@ public:
 					First = i;
 				else if( CompressPosition(i)==0 )
 					Last = i;
-			Out << CompressLength << First << Last;
+			(*Out) << CompressLength << First << Last;
 			for( i=0; i<CompressLength+1; i++ )
-				Out << CompressBuffer[CompressPosition(i)?CompressPosition(i)-1:0];
+				(*Out) << CompressBuffer[CompressPosition(i)?CompressPosition(i)-1:0];
 		}
 		return 0;
 	}
-	UBOOL Decode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		TArray<BYTE> DecompressBuffer(MAX_BUFFER_SIZE+1);
 		TArray<INT>  Temp(MAX_BUFFER_SIZE+1);
 		INT DecompressLength, DecompressCount[256+1], RunningTotal[256+1], i, j;
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
 			INT First, Last;
-			In << DecompressLength << First << Last;
+			(*In) << DecompressLength << First << Last;
 			check(DecompressLength<=MAX_BUFFER_SIZE+1);
-			check(DecompressLength<=In.TotalSize()-In.Tell());
-			In.Serialize( &DecompressBuffer(0), ++DecompressLength );
+			check(DecompressLength<=In->TotalSize()-In->Tell());
+			In->Serialize( &DecompressBuffer(0), ++DecompressLength );
 			for( i=0; i<257; i++ )
 				DecompressCount[ i ]=0;
 			for( i=0; i<DecompressLength; i++ )
@@ -94,7 +94,7 @@ public:
 				Temp(RunningTotal[Index] + DecompressCount[Index]++) = i;
 			}
 			for( i=First,j=0 ; j<DecompressLength-1; i=Temp(i),j++ )
-				Out << DecompressBuffer(i);
+				(*Out) << DecompressBuffer(i);
 		}
 		return 1;
 	}
@@ -110,21 +110,21 @@ class FCodecRLE : public FCodec
 {
 private:
 	enum {RLE_LEAD=5};
-	UBOOL EncodeEmitRun( FArchive_Proxy& Out, BYTE Char, BYTE Count )
+	UBOOL EncodeEmitRun( FArchive_Proxy* Out, BYTE Char, BYTE Count )
 	{
 		for( INT Down=Min<INT>(Count,RLE_LEAD); Down>0; Down-- )
-			Out << Char;
+			(*Out) << Char;
 		if( Count>=RLE_LEAD )
-			Out << Count;
+			(*Out) << Count;
 		return 1;
 	}
 public:
-	UBOOL Encode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		BYTE PrevChar=0, PrevCount=0, B;
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
-			In << B;
+			(*In) << B;
 			if( B!=PrevChar || PrevCount==255 )
 			{
 				EncodeEmitRun( Out, PrevChar, PrevCount );
@@ -136,14 +136,14 @@ public:
 		EncodeEmitRun( Out, PrevChar, PrevCount );
 		return 0;
 	}
-	UBOOL Decode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		INT Count=0;
 		BYTE PrevChar=0, B, C;
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
-			In << B;
-			Out << B;
+			(*In) << B;
+			(*Out) << B;
 			if( B!=PrevChar )
 			{
 				PrevChar = B;
@@ -151,10 +151,10 @@ public:
 			}
 			else if( ++Count==RLE_LEAD )
 			{
-				In << C;
+				(*In) << C;
 				check(C>=2);
 				while( C-->RLE_LEAD )
-					Out << B;
+					(*Out) << B;
 				Count = 0;
 			}
 		}
@@ -221,9 +221,9 @@ private:
 		return (*B)->Count - (*A)->Count;
 	}
 public:
-	UBOOL Encode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
-		INT SavedPos = In.Tell();
+		INT SavedPos = In->Tell();
 		INT Total=0, i;
 
 		// Compute character frequencies.
@@ -231,10 +231,10 @@ public:
 		for( i=0; i<256; i++ )
 			Huff(i) = new FHuffman(i);
 		TArray<FHuffman*> Index = Huff;
-		while( !In.AtEnd() )
-			Huff(Arctor<BYTE>(In))->Count++, Total++;
-		In.Seek( SavedPos );
-		Out << Total;
+		while( !In->AtEnd() )
+			Huff(Arctor<BYTE>(*In))->Count++, Total++;
+		In->Seek( SavedPos );
+		(*Out) << Total;
 
 		// Build compression table.
 		while( Huff.Num()>1 && Huff.Last()->Count==0 )
@@ -260,33 +260,33 @@ public:
 		FHuffman* Root = Huff.Pop();
 
 		// Calc stats.
-		while( !In.AtEnd() )
-			BitCount += Index(Arctor<BYTE>(In))->Bits.Num();
-		In.Seek( SavedPos );
+		while( !In->AtEnd() )
+			BitCount += Index(Arctor<BYTE>(*In))->Bits.Num();
+		In->Seek( SavedPos );
 
 		// Save table and bitstream.
 		FBitWriter Writer( BitCount );
 		Root->WriteTable( Writer );
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
-			FHuffman* P = Index(Arctor<BYTE>(In));
+			FHuffman* P = Index(Arctor<BYTE>(*In));
 			for( INT i=0; i<P->Bits.Num(); i++ )
 				Writer.WriteBit( P->Bits(i) );
 		}
 		check(!Writer.IsError());
 		check(Writer.GetNumBits()==BitCount);
-		Out.Serialize( Writer.GetData(), Writer.GetNumBytes() );
+		Out->Serialize( Writer.GetData(), Writer.GetNumBytes() );
 
 		// Finish up.
 		delete Root;
 		return 0;
 	}
-	UBOOL Decode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		INT Total;
-		In << Total;
-		TArray<BYTE> InArray( In.TotalSize()-In.Tell() );
-		In.Serialize( &InArray(0), InArray.Num() );
+		(*In) << Total;
+		TArray<BYTE> InArray( In->TotalSize()-In->Tell() );
+		In->Serialize( &InArray(0), InArray.Num() );
 		FBitReader Reader( &InArray(0), InArray.Num()*8 );
 		FHuffman Root(-1);
 		Root.ReadTable( Reader );
@@ -295,7 +295,7 @@ public:
 			check(!Reader.AtEnd());
 			for( FHuffman* Node=&Root; Node->Ch==-1; Node=Node->Child(Reader.ReadBit()) );
 			BYTE B = Node->Ch;
-			Out << B;
+			(*Out) << B;
 		}
 		return 1;
 	}
@@ -308,21 +308,21 @@ public:
 class FCodecMTF : public FCodec
 {
 public:
-	UBOOL Encode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		BYTE List[256], B, C;
 		INT i;
 		for( i=0; i<256; i++ )
 			List[i] = i;
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
-			In << B;
+			(*In) << B;
 			for( i=0; i<256; i++ )
 				if( List[i]==B )
 					break;
 			check(i<256);
 			C = i;
-			Out << C;
+			(*Out) << C;
 			INT NewPos=0;
 			for( i; i>NewPos; i-- )
 				List[i]=List[i-1];
@@ -330,17 +330,17 @@ public:
 		}
 		return 0;
 	}
-	UBOOL Decode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		BYTE List[256], B, C;
 		INT i;
 		for( i=0; i<256; i++ )
 			List[i] = i;
-		while( !In.AtEnd() )
+		while( !In->AtEnd() )
 		{
-			In << B;
+			(*In) << B;
 			C = List[B];
-			Out << C;
+			(*Out) << C;
 			INT NewPos=0;
 			for( i=B; i>NewPos; i-- )
 				List[i]=List[i-1];
@@ -358,35 +358,28 @@ class FCodecFull : public FCodec
 {
 private:
 	TArray<FCodec*> Codecs;
-	void Code( FArchive_Proxy& In, FArchive_Proxy& Out, INT Step, INT First, UBOOL (FCodec::*Func)(FArchive_Proxy&,FArchive_Proxy&) )
+	void Code( FArchive_Proxy* In, FArchive_Proxy* Out, INT Step, INT First, UBOOL (FCodec::*Func)(FArchive_Proxy*,FArchive_Proxy*) )
 	{
 		TArray<BYTE> InData, OutData;
-		FLOAT TotalTime=0.f;
 		for( INT i=0; i<Codecs.Num(); i++ )
 		{
 			FBufferReader Reader(InData);
 			FBufferWriter Writer(OutData);
-			FTime StartTime, EndTime;
-			StartTime = appSeconds();
-			(Codecs(First + Step*i)->*Func)( *(i ? &Reader : &In), *(i<Codecs.Num()-1 ? &Writer : &Out) );
-			EndTime = appSeconds() - StartTime;
-			TotalTime += EndTime.GetFloat();
-//			GWarn->Logf(TEXT("stage %d: %f secs"), i, EndTime.GetFloat() );
+			(Codecs(First + Step*i)->*Func)( (i ? ((FArchive_Proxy*)&Reader) : In), (i<Codecs.Num()-1 ? ((FArchive_Proxy*)&Writer) : Out) );
 			if( i<Codecs.Num()-1 )
 			{
 				InData = OutData;
 				OutData.Empty();
 			}
 		}
-//		GWarn->Logf(TEXT("Total: %f secs"), TotalTime );
 	}
 public:
-	UBOOL Encode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		Code( In, Out, 1, 0, &FCodec::Encode );
 		return 0;
 	}
-	UBOOL Decode( FArchive_Proxy& In, FArchive_Proxy& Out )
+	UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
 		Code( In, Out, -1, Codecs.Num()-1, &FCodec::Decode );
 		return 1;

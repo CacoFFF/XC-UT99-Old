@@ -84,8 +84,10 @@ public:
 	PlainText operator+ (int32 N);
 	PlainText operator+ (uint32 N);
 	PlainText operator+ (float F);
+	PlainText operator+ (const FVector& V);
 	PlainText operator+ (const cg::Vector& V);
 	PlainText operator+ (const cg::Integers& V);
+	PlainText operator+ (const void* Ptr);
 
 	const TCHAR* operator*();
 	void Reset();

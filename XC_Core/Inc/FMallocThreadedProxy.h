@@ -12,7 +12,7 @@
 
 enum ETemporary    { E_Temporary=0 };
 
-class FMallocThreadedProxy : public FMalloc
+class XC_CORE_API FMallocThreadedProxy : public FMalloc
 {
 public:
 	INT Signature; //Stuff

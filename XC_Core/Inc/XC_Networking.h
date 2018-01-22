@@ -126,6 +126,14 @@ public:
 	{
 		return (TMap<AActor*,UActorChannel*>*) (((BYTE*)&ActorChannels) + b440Net * 20);
 	}
+	inline UDownload** GetDownload()
+	{
+		return (UDownload**) (((BYTE*)&Download) + b440Net * 20);
+	}
+	inline TArray<FDownloadInfo>* GetDownloadInfo()
+	{
+		return (TArray<FDownloadInfo>*) (((BYTE*)&DownloadInfo) + b440Net * 20);
+	}
 
 	//Improved non-virtual functions
 	UChannel* CreateChannel( enum EChannelType Type, UBOOL bOpenedLocally, INT ChannelIndex=INDEX_NONE );

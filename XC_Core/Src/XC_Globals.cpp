@@ -6,9 +6,12 @@
 #include "XC_Core.h"
 #include "XC_CoreGlobals.h"
 #include "Atomics.h"
+XC_CORE_API extern UBOOL b440Net;
 #include "UnXC_Arc.h"
 #include "FPackageFileSummary.h"
 #include "FMallocThreadedProxy.h"
+#include "FOutputDeviceInterceptor.h"
+#include "FThread.h"
 
 XC_CORE_API FMemStack GXCMem;
 
@@ -370,6 +373,154 @@ void FMallocThreadedProxy::Exit()
 }
 
 
+
+//*************************************************
+// Thread-safe Log proxy
+//*************************************************
+
+
+FOutputDeviceInterceptor::FOutputDeviceInterceptor( FOutputDevice* InNext)
+	:	Next( InNext )
+	,	LogCritical(NULL)
+	,	SerializeLock(0)
+	,	Repeater(NAME_Log)
+	,	CriticalSet(0)
+{
+	ClearRepeater();
+}
+
+FOutputDeviceInterceptor::~FOutputDeviceInterceptor()
+{
+	CriticalSet = true;
+	if ( LogCritical )
+		ARCHIVE_DELETE(LogCritical);
+	if ( Next )
+		delete Next;
+}
+
+void FOutputDeviceInterceptor::SetRepeaterText( TCHAR* Text)
+{
+	FName NewRepeater( Text, FNAME_Intrinsic);
+	Repeater = (EName)NewRepeater.GetIndex();
+}
+
+void FOutputDeviceInterceptor::Serialize( const TCHAR* Msg, EName Event )
+{
+	guard(FOutputDeviceInterceptor::Serialize)
+	if ( Msg && Msg[0] ) //No empty output or infinite loop
+	{
+		FLogLine Line;
+		Line.Event = Event;
+		Line.Len = Min( appStrlen( Msg), 1014-appStrlen(FName::SafeString(Event)) );
+		appMemcpy( Line.Msg, Msg, Line.Len * sizeof(TCHAR) );
+		Line.Msg[Line.Len] = 0;
+	__SPIN_LOCK( &SerializeLock);
+		ProcessMessage( Line);
+	__SPIN_UNLOCK( &SerializeLock);
+	}
+	unguard;
+}
+
+void FOutputDeviceInterceptor::ProcessMessage( const FLogLine& Line)
+{
+	if ( GIsCriticalError && !CriticalSet ) //Flush all saved lines if we're printing a crash log
+	{
+		FlushRepeater();
+		CriticalSet = true;
+	}
+
+	UBOOL bDoLog = true;
+	if ( Line.Event == NAME_Critical )
+	{
+		if ( !LogCritical )
+		{
+			TCHAR FileName[128] = {0};
+			INT Year, Month, DayOfWeek, Day, Hour, Min, Sec, MSec;
+			appSystemTime( Year, Month, DayOfWeek, Day, Hour, Min, Sec, MSec );
+			appSprintf( FileName, TEXT("Crash__%i-%02d-%02d__%02d-%02d.log"), Year, Month, Day, Hour, Min);
+			LogCritical = (FArchive_Proxy*)GFileManager->CreateFileWriter( FileName);
+		}
+		LogCritical->Serialize( (void*)TEXT("Critical: "), 10 * sizeof(TCHAR) );
+		LogCritical->Serialize( (void*)Line.Msg, Line.Len * sizeof(TCHAR) );
+		LogCritical->Serialize( (void*)LINE_TERMINATOR, appStrlen(LINE_TERMINATOR) * sizeof(TCHAR) );
+		LogCritical->Flush();
+	}
+	else if ( Line.Event != NAME_Title )
+	{
+		if ( RepeatCount == 0 ) //Try to setup repeater
+		{
+			for ( INT i=0 ; i<OLD_LINES ; i++ )
+			{
+				DWORD Idx = (CurCmp-i) % OLD_LINES;
+				if ( MessageBuffer[Idx].Matches(Line) )
+				{
+					bDoLog = false;
+					StartCmp = Idx;
+					LastCmp = StartCmp+(i!=0); //Multi line comparison means we checked first line
+					RepeatCount = 1+(i==0); //Single line comparison already means a full repetition
+					break;
+				}
+			}
+		}
+		else //Repeater already up
+		{
+			if ( MessageBuffer[LastCmp].Matches(Line) )
+			{
+				bDoLog = false;
+				if ( LastCmp == CurCmp )
+				{
+					LastCmp = StartCmp;
+					RepeatCount++;
+				}
+				else
+					LastCmp = (LastCmp + 1) % OLD_LINES;
+			}
+			else
+				FlushRepeater();
+		}
+	}
+
+	if ( bDoLog )
+	{
+		CurCmp = (CurCmp + 1) % OLD_LINES;
+		appMemcpy( &MessageBuffer[CurCmp], &Line, sizeof(INT)*2 + sizeof(TCHAR)*(Line.Len+1));
+		Next->Serialize( Line.Msg, Line.Event);
+	}
+}
+
+void FOutputDeviceInterceptor::FlushRepeater()
+{
+	if ( RepeatCount == 0 )
+		return;
+	if ( RepeatCount > 1 )
+	{
+		TCHAR Ch[128];
+		if ( CurCmp == StartCmp ) //One line
+			appSprintf( Ch, TEXT("=== Last line repeats %i times."), RepeatCount);
+		else
+			appSprintf( Ch, TEXT("=== Last %i lines repeat %i times."), (CurCmp-StartCmp)%OLD_LINES + 1, RepeatCount);
+		Next->Serialize( Ch, Repeater);
+	
+		if ( StartCmp != CurCmp ) //Multi-line, there may be lines that didn't fully complete a repetition cycle, post them
+			while ( LastCmp != StartCmp )
+			{
+				Next->Serialize( MessageBuffer[LastCmp].Msg, MessageBuffer[LastCmp].Event);
+				LastCmp = (LastCmp - 1) % OLD_LINES;
+			}
+	}
+	ClearRepeater();
+}
+
+void FOutputDeviceInterceptor::ClearRepeater()
+{
+	for ( DWORD i=0 ; i<OLD_LINES ; i++ )
+		MessageBuffer[i].Len = 0; //Prevents matches
+	RepeatCount = 0;
+	StartCmp = 0;
+	LastCmp = 0;
+	CurCmp = 0;
+}
+
 //*************************************************
 // Enhanced package file finder
 // Strict loading by Name/GUID combo for net games
@@ -394,7 +545,7 @@ XC_CORE_API FArchive_Proxy& operator<<( FArchive_Proxy& Ar, FPackageFileSummary&
 	if( Sum.GetFileVersion()>=68 )
 	{
 		INT GenerationCount = Sum.Generations.Num();
-		Ar << Sum.Guid << GenerationCount;
+		Ar << Sum.Guid.A << Sum.Guid.B << Sum.Guid.C << Sum.Guid.D << GenerationCount;
 		if( Ar.IsLoading() )
 			Sum.Generations = TArray<FGenerationInfo>( GenerationCount );
 		for( INT i=0; i<GenerationCount; i++ )
@@ -409,7 +560,7 @@ XC_CORE_API FArchive_Proxy& operator<<( FArchive_Proxy& Ar, FPackageFileSummary&
 		{
 			Ar.Seek( HeritageOffset );
 			for( INT i=0; i<HeritageCount; i++ )
-				Ar << Sum.Guid;
+				Ar << Sum.Guid.A << Sum.Guid.B << Sum.Guid.C << Sum.Guid.D;
 		}
 		Ar.Seek( Saved );
 		if( Ar.IsLoading() )

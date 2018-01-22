@@ -137,7 +137,10 @@ MS_ALIGN(16) struct DE Vector
 		: X(iX) , Y(iY) , Z(iZ) , W(iW)
 	{}
 
-	Vector( float* f)
+//	Vector( float* f)
+//	{	_mm_store_ps((float*)this, _mm_loadu_ps(f));	}
+
+	Vector( const float* f)
 	{	_mm_store_ps((float*)this, _mm_loadu_ps(f));	}
 
 	Vector( const FVector& V, EUnsafe)
@@ -329,6 +332,17 @@ MS_ALIGN(16) struct DE Vector
 		v = _mm_add_ss( v, w);
 		return v.m128_f32[0];*/
 		return X*X+Y*Y+Z*Z;
+	}
+
+	float SizeXYSq() const
+	{
+		float size;
+		__m128 v = _mm_load_ps( fa() );
+		v = _mm_mul_ps( v, v);
+		__m128 w = _mm_pshufd_ps( v, 0b10110001); //Y,X,W,Z
+		w = _mm_add_ss( v, w);
+		_mm_store_ss( &size, w);
+		return size;
 	}
 
 	uint32 SignBits() //Get sign bits of every component

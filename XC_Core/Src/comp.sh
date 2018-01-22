@@ -4,6 +4,7 @@ rm XC_Networking.o
 rm XC_CoreScript.o
 rm XC_Globals.o
 rm XC_Generic.o
+rm XC_Visuals.o
 
 #You may need to put crti.o, crtn.o in this directory
 
@@ -32,12 +33,18 @@ gcc-2.95  -c -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pent
 -DGPackage=XC_Core -Werror -I../inc -I../../Core/Inc -I../../Engine/Inc -I../../XC_Core/Inc -I/usr/include/i386-linux-gnu/ \
 -o../../XC_Core/Src/XC_Generic.o XC_Generic.cpp
 
+# compile and output to this folder -> no linking yet!
+gcc-2.95  -c -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pentium -D_REENTRANT -fPIC -fsigned-char -pipe \
+-DGPackage=XC_Core -Werror -I../inc -I../../Core/Inc -I../../Engine/Inc -I../../XC_Core/Inc -I/usr/include/i386-linux-gnu/ \
+-o../../XC_Core/Src/XC_Visuals.o XC_Visuals.cpp
+
+
 # link with UT libs
 gcc-2.95  -shared -o ../../System/XC_Core.so -Wl,-rpath,. \
 -export-dynamic -Wl,-soname,XC_Core.so \
 -Wl,--eh-frame-hdr \
 -Wl,--traditional-format \
--lm -lc -ldl -lnsl -lpthread ./XC_CoreScript.o ./XC_Networking.o ./XC_LZMA.o ./XC_Globals.o ./XC_Generic.o \
+-lm -lc -ldl -lnsl -lpthread ./XC_CoreScript.o ./XC_Networking.o ./XC_LZMA.o ./XC_Globals.o ./XC_Generic.o ./XC_Visuals.o \
 ../../System/Core.so ../../System/Engine.so  
 
 cp -f ../../System/XC_Core.so ../../../ut-server/System/XC_Core.so

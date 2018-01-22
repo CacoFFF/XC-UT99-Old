@@ -15,8 +15,13 @@ enum { CACHE_LINE_SIZE = 32 }; // Cache line size.
 #define MS_ALIGN(n) 
 #define GCC_STACK_ALIGN __attribute__((force_align_arg_pointer))
 
-#define DLLIMPORT 
-#define TEST_EXPORT	extern "C"
+#if __GNUC__ >= 4
+	#define DLLIMPORT	__attribute__ ((visibility ("default")))
+	#define TEST_EXPORT	extern "C" __attribute__ ((visibility ("default"))) 
+#else
+	#define DLLIMPORT 
+	#define TEST_EXPORT	extern "C"
+#endif
 #define TEXT(str) str
 
 #define DISABLE_OPTIMIZATION

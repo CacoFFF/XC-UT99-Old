@@ -31,6 +31,7 @@
 	#pragma warning(disable : 4100) //'[___]': unreferenced formal parameter
 	#pragma warning(disable : 4201) //nonstandard extension used: nameless struct/union
 	#pragma warning(disable : 4244) //'initializing': conversion from '[___]' to '[___]', possible loss of data
+	#pragma warning(disable : 4291) //no matching operator delete found; memory will not be freed if initialization throws an exception
 	#pragma warning(disable : 4324) //'[___]': structure was padded due to alignment specifier
 
 	#define DISABLE_OPTIMIZATION optimize("",off)
