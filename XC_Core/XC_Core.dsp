@@ -89,6 +89,13 @@ LINK32=link.exe
 
 # Name "XC_Core - Win32 Release"
 # Name "XC_Core - Win32 Debug"
+# Begin Group "Header"
+
+# PROP Default_Filter "h"
+# Begin Source File
+
+SOURCE=.\Inc\Devices.h
+# End Source File
 # Begin Source File
 
 SOURCE=.\Inc\XC_Core.h
@@ -96,6 +103,15 @@ SOURCE=.\Inc\XC_Core.h
 # Begin Source File
 
 SOURCE=.\Inc\XC_CoreGlobals.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\Inc\XC_Networking.h
+# End Source File
+# End Group
+# Begin Source File
+
+SOURCE=.\Src\Devices.cpp
 # End Source File
 # Begin Source File
 
