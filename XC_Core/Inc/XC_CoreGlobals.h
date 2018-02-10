@@ -22,10 +22,6 @@ XC_CORE_API UProperty* FindScriptVariable( UStruct* InStruct, const TCHAR* PropN
 XC_CORE_API void SortStringsA( TArray<FString>* List);
 XC_CORE_API void SortStringsSA( FString* List, INT ArrayMax);
 
-XC_CORE_API void ThreadedLog( EName InName, const TCHAR* InStrLog); //Use this from a worker thread
-XC_CORE_API void ThreadedLogFlush(); //Use this from main thread to print other threads' logs
-
-
 
 enum EBrushToMeshFlags
 {

@@ -10,7 +10,6 @@
 #include "XC_Download.h"
 #include "XC_LZMA.h"
 #include "UnXC_Arc.h"
-#include "FMallocThreadedProxy.h"
 #include "FCodec_XC.h"
 
 

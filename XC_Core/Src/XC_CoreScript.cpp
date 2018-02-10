@@ -74,11 +74,12 @@ INT DLL_EXPORT STDCALL DllMain( HINSTANCE hInInstance, DWORD Reason, void* Reser
 #elif __LINUX_X86__
 __attribute__((constructor)) INT FixNamesOnLoad()
 {
-	if ( FName::GetInitialized() )
 #else
 INT DummyFixNames()
 {
 #endif
+	guard(FixNames);
+	if ( FName::GetInitialized() )
 	{
 		FixNameCase( TEXT("execTotalSize") );
 		FixNameCase( TEXT("execPosition") );
@@ -111,6 +112,7 @@ INT DummyFixNames()
 		FixNameCase( TEXT("HasFunction") );
 		FixNameCase( TEXT("FixName") );
 	}
+	unguard;
 	return 1;
 }
 

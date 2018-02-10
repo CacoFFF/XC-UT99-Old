@@ -52,7 +52,7 @@ you need and add the proper macros and definitions in your own private header
 	#include <windows.h>
 	#undef TEXT
 #else
-	#define DO_GUARD 0
+//	#define DO_GUARD 0
 	#include <unistd.h>	
 #endif
 

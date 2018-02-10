@@ -143,26 +143,45 @@ typedef FWindowsPlatformAtomics FPlatformAtomics;
 #endif
 
 #define __SPIN_LOCK(alock)  while(true) if ( FPlatformAtomics::InterlockedCompareExchange( alock, 1, 0) == 0) break
-#define __SPIN_UNLOCK(alock) FPlatformAtomics::InterlockedExchange( alock, 0)
+#define __UNLOCK(alock) FPlatformAtomics::InterlockedExchange( alock, 0)
 #define __SPIN_UNTIL_DIFF(avar,avalue) while (true) if ( FPlatformAtomics::InterlockedCompareExchange(avar,avalue,avalue) != avalue ) break
 #define __SPIN_UNTIL_EQUAL(avar,avalue) while (true) if ( FPlatformAtomics::InterlockedCompareExchange(avar,avalue,avalue) == avalue ) break
 
-class FSpinLockedFunction
+class FSpinLock
 {
 	volatile INT *Lock;
 public:	
-	FSpinLockedFunction( volatile INT* InLock)
+	FSpinLock( volatile INT* InLock)
 	:	Lock(InLock)
 	{
 		__SPIN_LOCK(Lock);
 	}
 	
-	~FSpinLockedFunction()
+	~FSpinLock()
 	{
-		__SPIN_UNLOCK(Lock);
+		__UNLOCK(Lock);
 	}
 };
 
-
+class FSleepLock
+{
+	volatile INT *Lock;
+public:	
+	FSleepLock( volatile INT* InLock)
+	:	Lock(InLock)
+	{
+		while(true)
+		{
+			if ( FPlatformAtomics::InterlockedCompareExchange( Lock, 1, 0) == 0)
+				break;
+			appSleep(0.f);
+		}
+	}
+	
+	~FSleepLock()
+	{
+		__UNLOCK(Lock);
+	}
+};
 
 #endif

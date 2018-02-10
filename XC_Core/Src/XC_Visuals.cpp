@@ -394,7 +394,7 @@ static void meshBuildBounds( UMesh* Mesh )
 XC_CORE_API void BrushToMesh( ABrush* Brush, UMesh* ApplyTo, DWORD Flags)
 {
 	guard(BrushToMesh);
-	if ( !Brush || !ApplyTo || !Brush->Brush || !Brush->Brush->Polys || ApplyTo->Verts.Num() )
+	if ( !Brush || !ApplyTo || !Brush->Brush || !Brush->Brush->Polys || ApplyTo->Verts.Num() || !GIsEditor )
 	{
 		debugf( TEXT("BrushToMesh error"));
 		return;
