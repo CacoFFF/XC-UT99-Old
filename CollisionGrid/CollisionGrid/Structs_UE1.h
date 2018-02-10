@@ -116,6 +116,13 @@ struct FVector
 		_mm_storeu_ps( (float*)this, _mm_load_ps( V.fa()) );
 		return *this;
 	}
+
+	bool operator!=( const FVector& V ) const
+	{
+		__m128 cmp = _mm_cmpeq_ps( _mm_loadu_ps( &X), _mm_loadu_ps( &V.X)); //Comparison result (-1 if equal, 0 if not equal)
+		return (_mm_movemask_ps( cmp) & 0b0111) != 0;
+//		return X!=V.X || Y!=V.Y || Z!=V.Z;
+	}
 #endif
 };
 
@@ -173,6 +180,8 @@ struct FCheckResult : public FIteratorActorList
 	class UPrimitive*	Primitive;  // Actor primitive which was hit, or NULL=none.
 	float       Time;       // Time until hit, if line check.
 	int32		Item;       // Primitive data item which was hit, INDEX_NONE=none.
+
+	int32 Padding[2]; //Will this protect the 'Next' pointer inside a stack?
 
 	FCheckResult( FCheckResult* InNext) : FIteratorActorList(InNext)
 	{

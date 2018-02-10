@@ -47,3 +47,7 @@
 	#define ENABLE_OPTIMIZATION
 
 #endif
+
+#define guard(func)			{static const TCHAR __FUNC_NAME__[]=TEXT(#func); try{
+#define unguard				}catch(TCHAR*Err){appUnwindf(TEXT("%s"),__FUNC_NAME__);throw Err;}catch(...){appUnwindf(TEXT("%s"),__FUNC_NAME__); throw;}}
+#define unguardf(msg)		}catch(TCHAR*Err){appUnwindf(TEXT("%s"),__FUNC_NAME__);throw Err;}catch(...){appUnwindf(TEXT("%s"),__FUNC_NAME__); appUnwindf msg; throw;}}

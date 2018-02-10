@@ -69,7 +69,6 @@ public:
 	DebugLock( const char* Keyword, char Lock);
 };
 
-
 //***********************************************************************************
 // Simple text parser and concatenator
 class PlainText
@@ -144,19 +143,23 @@ extern uint32 Loaded;
 typedef void* (*vp_func_i) (int32);
 extern vp_func_i GetIndexedObject;
 
-typedef void (FOutputDevice::*v_foutputdevice_func_tcp)(const TCHAR*);
-extern v_foutputdevice_func_tcp Debugf;
+typedef void (FOutputDevice::*v_foutputdevice_tcp_varg)(const TCHAR*,...);
+extern v_foutputdevice_tcp_varg Debugf;
 
 typedef void (VARARGS *v_func_acp_acp_i)(const char*, const char*, int32);
 extern v_func_acp_acp_i AppFailAssert;
 #define appFailAssert(a) (*AppFailAssert)(a,__FILE__,__LINE__)
+
+typedef void (VARARGS *v_func_tcp_varg)(const TCHAR* Fmt, ... );
+extern v_func_tcp_varg AppUnwindf;
+#define appUnwindf(a,...) (*AppUnwindf)(a,##__VA_ARGS__)
 
 typedef int32 (AActor::*i_aactor_v)() const;
 extern i_aactor_v IsMovingBrushFunc;
 
 typedef FOutputDevice** foutputdevicepp_var;
 extern FOutputDevice** Core_GLog;
-#define debugf(t) ((*Core_GLog)->*Debugf)(t)
+#define debugf(t,...) ((*Core_GLog)->*Debugf)(t,__VA_ARGS__)
 #define debugf_ansi(t) ((*Core_GLog)->*Debugf)(TEXT(t))
 
 typedef FNameEntry*** fnametableppp_var;

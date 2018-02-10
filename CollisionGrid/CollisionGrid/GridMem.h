@@ -33,6 +33,8 @@ public:
 	GenericMemStack( uint32 InSize)
 		: Cur(0), End( InSize - sizeof(GenericMemStack)) {}
 
+	bool Validate( void* Ptr);
+
 	template<typename T> void Pop()
 	{
 		Cur -= sizeof(T);
@@ -44,10 +46,21 @@ public:
 inline void* operator new( uint32 Size, GenericMemStack* Mem )
 {
 	UE_DEV_THROW( Mem->Cur+Size > Mem->End, "Generic memory stack fully used");
-	void* Result =  (void*) (((uint8*)Mem) + sizeof(GenericMemStack) + Mem->Cur);
+	void* Result =  (void*) (((uint32)Mem) + sizeof(GenericMemStack) + Mem->Cur);
 	Mem->Cur += Size;
 	return Result;
 }
+
+inline bool GenericMemStack::Validate( void* Ptr)
+{
+	uint32 PtrVal = (uint32)Ptr;
+	uint32 Start = (uint32)this + sizeof(GenericMemStack);
+	uint32 Top = Start + End;
+	UE_DEV_THROW( PtrVal < Start || PtrVal >= Top, "Validation for mem object failed" );
+	return PtrVal >= Start && PtrVal < Top;
+}
+
+
 
 class GSBaseMarker
 {
@@ -64,13 +77,14 @@ public:
 template<typename T,int kb> class ElementHolder
 {
 	//Ideally keep data in 4kb*n size blocks, amount of blocks is reasonably deducted here
-	//Why substract 24 bytes? _freecount=4, _next=4, appMallocAlign=16
-	#define HOLDER_COUNT ((1024*kb-24)/(sizeof(uint32)+sizeof(T)))
+	//Why substract 32 bytes? _freecount=4, _next=4, __pad=8 , appMallocAlign=16
+	#define HOLDER_COUNT ((1024*kb-32)/(sizeof(uint32)+sizeof(T)))
 
-	T                    _holder[HOLDER_COUNT];  //Has to go first to avoid eating up data due to aligment
-	int32                _free[HOLDER_COUNT];
-	int32                _freecount;
 	ElementHolder<T,kb>* _next;
+	int32                _freecount;
+	int32                _pad[2]; //Keep data aligned
+	T                    _holder[HOLDER_COUNT];
+	int32                _free[HOLDER_COUNT];
 
 public:
 	//Constructor
@@ -97,7 +111,7 @@ public:
 		_next = nullptr;
 		for ( uint32 i=0; i<HOLDER_COUNT; i++)
 			_free[i] = i;
-		UE_DEV_LOG( *(PlainText(TEXT("[CG] Allocated element holder for "))+T::Name()+TEXT(" with ")+_freecount+TEXT(" entries.")) );
+		UE_DEV_LOG( TEXT("[CG] Allocated element holder for %s with %i entries at %i"), T::Name(), _freecount, this);
 	}
 
 	//Gets index of an element by pointer
@@ -119,6 +133,14 @@ public:
 			if ( ElemAddr >= StartAddr && ElemAddr < StartAddr+HolderMemSize )
 				return true;
 		}
+		PlainText Error = PlainText(TEXT("[CG ]IsValid cannot validate element ")) + T::Name() + TEXT(" ") + ElemAddr + TEXT(" (H=") + HolderMemSize + TEXT(") against:");
+		for ( ElementHolder<T,kb>* Link=this ; Link ; Link=Link->_next )
+		{
+			uint32 StartAddr = (uint32)Link->_holder;
+			Error = Error + TEXT(" [") + StartAddr + TEXT("-") + (StartAddr+HolderMemSize) + TEXT("]");
+		}
+		((*Core_GLog)->*Debugf)( *Error);
+//		appFailAssert( Error.Ansi() );
 		return false;
 	}
 
@@ -134,21 +156,12 @@ public:
 				Link->_freecount--;
 				int32 free = Link->_free[Link->_freecount];
 				T* Result = &Link->_holder[ free];
-				int32 idx = Link->GetIndex(Result);
-//				debugf( *(PlainText ( TEXT("Grabbing: ")) + idx + TEXT(" @ ") + free + TEXT(" / ") + Link->_freecount + TEXT("@")+i) );
-				if ( idx != free ) //Deprecate this asap
-				{
-					PlainText TXT( TEXT("GrabElement: Index mismatch: "));
-					TXT = TXT + idx + TEXT("/") + free;
-					appFailAssert( TXT.Ansi() );
-				}
-				return Result;
+				return Result; //Index never mismatches, code is good
 			}
 			else if ( !Link->_next )
 			{
-				UE_DEV_LOG( *(PlainText(TEXT("[CG] Allocating extra element holder for "))+T::Name()) );
+				UE_DEV_LOG( TEXT("[CG] Allocating extra element holder for %s"), T::Name() );
 				Link->_next = new (A_16) ElementHolder<T,kb>;
-				Link->_next->Init();
 				UE_DEV_THROW( !Link->_next, "Unable to allocate new element holder");
 			}
 		}
@@ -164,12 +177,13 @@ public:
 			int32 idx = Link->GetIndex( (T*)N);
 			if ( idx != -1 )
 			{
-				if ( (uint32)Link->_freecount >= HOLDER_COUNT )
+				if ( (uint32)Link->_freecount >= HOLDER_COUNT ) //Deprecate soon
 					appFailAssert("ElementHolder::ReleaseElement trying to release more elements that grabbed");
 				Link->_free[Link->_freecount++] = idx;
 				return true;
 			}
 		}
+		//Deprecate these at some point
 		PlainText Error = PlainText( TEXT("ElementHolder::ReleaseElement error, TYPE=")) + T::Name();
 		appFailAssert( Error.Ansi() );
 		return false;
@@ -184,17 +198,7 @@ public:
 class ActorLinkHolder : public ElementHolder<ActorLink,32>
 {
 public:
-	//Picks up a new element, will create new holder if no new elements
-	ActorLink* GrabElement( ActorLink*& Container, ActorInfo* NewInfo)
-	{
-		ActorLink* res = ElementHolder<ActorLink,32>::GrabElement(); //Never NULL, or error thrown
-		UE_DEV_THROW( !IsValid(res), "ActorLinkHolder grabbed invalid (?) link");
-		res->Next = Container;
-		UE_DEV_THROW( res->Next && !G_ALH->IsValid(res->Next), "ActorLinkHolder: invalid container");
-		res->Info = NewInfo;
-		Container = res;
-		return res;
-	}
+	ActorLinkHolder() : ElementHolder() {}
 };
 
 //
@@ -228,10 +232,13 @@ public:
 };
 
 //
-// Customized element holder for MiniTree(s) (should contain ~495 elements)
+// Customized element holder for MiniTree(s) (should contain 779 elements)
 //
 class MiniTreeHolder : public ElementHolder<MiniTree,64>
-{};
+{
+public:
+	MiniTreeHolder() : ElementHolder() {}
+};
 inline void* operator new( uint32 Size, MiniTreeHolder* EH)
 {	return EH->GrabElement();	}
 inline void operator delete( void* Ptr, MiniTreeHolder* EH)

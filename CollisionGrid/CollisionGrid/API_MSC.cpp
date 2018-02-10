@@ -24,15 +24,15 @@ extern "C" int __cdecl _purecall()
 {
 	return 0;
 }
-/*
-extern "C" void *__CxxFrameHandler;
+
+extern "C" void __declspec(dllimport) *__CxxFrameHandler;
 
 extern "C" void  __declspec(naked) __CxxFrameHandler3(void)
 {
 	// Jump indirect: Jumps to __CxxFrameHandler
 	_asm jmp __CxxFrameHandler ; Trampoline bounce
 }
-*/
+
 
 uint32 __stdcall DllMain( void* hinstDLL, uint32 fdwReason, void* lpReserved )
 {

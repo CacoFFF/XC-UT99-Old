@@ -30,3 +30,31 @@ enum { CACHE_LINE_SIZE = 32 }; // Cache line size.
 #if UNICODE
 	#error "SO should have UNICODE=OFF"
 #endif
+
+#include <setjmp.h>
+struct jmp_buf_wrapper
+{
+	jmp_buf buf;
+};
+
+//Import
+class __Context
+{
+public:
+	__Context() { *(jmp_buf_wrapper*)&Last = *(jmp_buf_wrapper*)&Env; }
+	~__Context() { *(jmp_buf_wrapper*)&Env = *(jmp_buf_wrapper*)&Last; }
+	__attribute__ ((visibility ("default"))) static jmp_buf Env __asm__("_9__Context.Env");
+protected:
+	jmp_buf Last;
+};
+
+#define guard(func)			{static const TCHAR __FUNC_NAME__[]=TEXT(#func); \
+									__Context __LOCAL_CONTEXT__; try{ \
+									if(setjmp(__Context::Env)) { throw 1; } else {
+#define unguard				}}catch(char*Err){throw Err;}catch(...) \
+									{appUnwindf(TEXT("%s"),__FUNC_NAME__); throw 1;}}
+#define unguardf(msg)		}}catch(char*Err){throw Err;}catch(...) \
+									{appUnwindf(TEXT("%s"),__FUNC_NAME__); \
+									appUnwindf msg; throw;}}
+
+

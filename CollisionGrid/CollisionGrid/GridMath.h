@@ -272,13 +272,18 @@ MS_ALIGN(16) struct DE Vector
 	//**************************
 	//Value handling
 	//See if contains nan or infinity
-	bool IsValid()
+	int32 InvalidBits()
 	{
 		__m128 m = _mm_load_ps1( reinterpret_cast<const float*>(&NanMask) );
 		m = _mm_cmpeq_ps( _mm_and_ps( mm(), m), m); //See if (v & m == m)
-		return _mm_movemask_ps( m) == 0; //See if none of the 4 values threw a NAN/INF
+		return _mm_movemask_ps( m); //See if none of the 4 values threw a NAN/INF
+	}
+	bool IsValid()
+	{
+		return InvalidBits() == 0; //See if none of the 4 values threw a NAN/INF
 	}
 	//IMPORTANT: SEE IF SSE ORDERED (THAT CHECKS FOR NAN'S) WORKS WITH INFINITY
+
 
 	//Compute >= in parallel, store in integers
 	Integers GreaterThanZeroPS()

@@ -21,13 +21,18 @@ bool ActorInfo::Init( AActor* InActor)
 	ObjIndex = InActor->Index;
 	Actor = InActor;
 
-	C.Location = cg::Vector( (float*)&Actor->Location);
-	C.Location.W = 0;
-	if ( !C.Location.IsValid() ) //Validate location
+	C.Location = cg::Vector( &Actor->Location.X);
+	if ( C.Location.InvalidBits() & 0x0111 ) //Validate location
 	{
-		debugf( *(PlainText(TEXT("[CG] Invalid actor location: "))+Actor) );
-		return false;
+		debugf( TEXT("[CG] Invalid actor location: %s [%f,%f,%f]"), Actor->GetName(), C.Location.X, C.Location.Y, C.Location.Z );
+		cg::Vector NewLoc( &Actor->ColLocation.X);
+		if ( NewLoc.InvalidBits() & 0x0111 ) //EXPERIMENTAL, RELOCATE ACTOR
+			return false;
+		C.Location = NewLoc;
+		Actor->Location = FVector( NewLoc);
+		debugf( TEXT("[CG] Relocating to [%f,%f,%f]"), Actor->Location.X, Actor->Location.Y, Actor->Location.Z);
 	}
+	C.Location.W = 0;
 
 	if ( InActor->Brush )
 	{
@@ -45,20 +50,19 @@ bool ActorInfo::Init( AActor* InActor)
 	}
 	Actor->CollisionTag = reinterpret_cast<uint32>(this);
 	Flags.bCommited = 1;
-//	debugf( *(PlainText( TEXT("[CG] Inserting actor "))+Actor));
 	return true;
 }
 
 bool ActorInfo::IsValid()
 {
 #define ABORT(text) { debugf_ansi(text); return false; }
-	if ( !Flags.bCommited )
-		ABORT("[CG] ActorInfo::IsValid -> Using invalid memory");
+	if ( !Flags.bCommited ) //Can happen in grid elements
+		return false;
 	if ( (*GetIndexedObject)(ObjIndex) != Actor )
 		ABORT("[CG] ActorInfo::IsValid -> Using invalid object");
 	if ( Actor->bDeleteMe || !Actor->bCollideActors )
 	{
-		debugf( *(PlainText( TEXT("[CG] ActorInfo::IsValid -> Actor ")) + Actor + TEXT(" shouldn't be in the grid")));
+		debugf( TEXT("[CG] ActorInfo::IsValid -> %s shouldn't be in the grid"), Actor->GetName() );
 		return false;
 	}
 	if ( reinterpret_cast<ActorInfo*>(Actor->CollisionTag) != this )
@@ -93,40 +97,14 @@ cg::Vector ActorInfo::cLocation()
 //
 //*************************************************
 
-//Container is checked
-void ActorLink::Decommit( ActorLink*& AL)
-{
-	G_AIH->ReleaseElement( AL->Info );
-	ActorLink* Next = AL->Next; //TEST FIX
-	G_ALH->ReleaseElement( AL);
-	AL = Next;
-}
-
-bool ActorLink::Unlink( ActorLink** Container, ActorInfo* AInfo)
-{
-	ActorLink** ALR = Container;
-	while ( *ALR )
-	{
-		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "ActorLink::Unlink reached invalid container");
-		if ( (*ALR)->Info == AInfo )
-		{
-			ActorLink* Next = (*ALR)->Next; //TEST FIX
-			UE_DEV_THROW( Next && !G_ALH->IsValid(Next), "ActorLink::Unlink next is invalid");
-			G_ALH->ReleaseElement( *ALR );
-			*ALR = Next;
-			return true;
-		}
-		ALR = &((*ALR)->Next);
-	}
-	return false;
-}
-
 uint32 ActorLink::UnlinkInvalid( ActorLink** Container)
 {
+	guard(ActorLink::UnlinkInvalid);
 	uint32 ActorCount = 0;
 	ActorLink** ALR = Container;
 	while ( *ALR )
 	{
+		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "ActorLink::UnlinkInvalid -> reached invalid container");
 		ActorInfo* AInfo = (*ALR)->Info;
 		if ( AInfo->IsValid() )
 		{
@@ -136,10 +114,66 @@ uint32 ActorLink::UnlinkInvalid( ActorLink** Container)
 		else
 		{
 			UE_DEV_LOG_ANSI( "[CG] ActorLink::UnlinkInvalid decommited an invalid actor");
-			Decommit( *ALR);
+			G_AIH->ReleaseElement( AInfo);
+			ActorLink* Next = (*ALR)->Next;
+			UE_DEV_THROW( Next && !G_ALH->IsValid(Next), "ActorLink::UnlinkInvalid -> Next is invalid");
+			G_ALH->ReleaseElement( *ALR );
+			*ALR = Next;
 		}
 	}
 	return ActorCount;
+	unguard;
+}
+
+//*************************************************
+//
+// ActorLinkContainer
+//
+//*************************************************
+
+void ActorLinkContainer::Add( ActorInfo* AInfo)
+{
+	ActorLink* NewLink = G_ALH->GrabElement();
+	NewLink->Info = AInfo;
+	NewLink->Next = ActorList;
+	ActorList = NewLink;
+	ActorCount++;
+}
+
+bool ActorLinkContainer::Remove( ActorInfo* AInfo)
+{
+	guard(ActorLinkContainer::Remove);
+	for ( ActorLink** LinkScan = &ActorList ; *LinkScan ; LinkScan = &(*LinkScan)->Next )
+		if ( G_ALH->IsValid(*LinkScan) && ((*LinkScan)->Info == AInfo) )
+		{
+			G_ALH->ReleaseElement(*LinkScan);
+			*LinkScan = (*LinkScan)->Next;
+			ActorCount--;
+			return true;
+		}
+	return false;
+	unguard;
+}
+
+void ActorLinkContainer::MoveAll(ActorLinkContainer& Destination) //Should only move less than 3 actor links
+{
+	Destination.ActorCount += ActorCount;
+	ActorCount = 0;
+	while ( ActorList )
+	{
+		ActorLink* Next = ActorList->Next;
+		ActorList->Next = Destination.ActorList;
+		Destination.ActorList = ActorList;
+		ActorList = Next;
+	}
+}
+
+uint32 ActorLinkContainer::DebugCount()
+{
+	uint32 i = 0;
+	for ( ActorLink* ALink=ActorList ; ALink ; ALink=ALink->Next )
+		i++;
+	return i;
 }
 
 
@@ -152,11 +186,11 @@ uint32 ActorLink::UnlinkInvalid( ActorLink** Container)
 void Grid::Init()
 {
 	//Zero these 16 bytes using one MOVAPS instruction
-	*(cg::Vector*)&GlobalActors = cg::Vector(E_Zero);
+	*(cg::Vector*)&Actors = cg::Vector(E_Zero);
 	for (int32 i = 0; i<Size.i ; i++)
 	for (int32 j = 0; j<Size.j ; j++)
 	for (int32 k = 0; k<Size.k ; k++)
-		Node(i,j,k)->Init( i, j, k, 1);
+		Node(i,j,k)->Init( i, j, k);
 }
 
 
@@ -180,7 +214,7 @@ Grid* Grid::AllocateFor(ULevel* Level)
 		Result->Size = GridSize;
 		Result->Size.l = 0;
 		Result->Init();
-		debugf( *(PlainText(TEXT("[CG] Grid allocated "))+Result->Size) );
+		debugf( TEXT("[CG] Grid allocated %s"), Result->Size.String() );
 	}
 	return Result;
 }
@@ -196,15 +230,27 @@ Grid* Grid::AllocateFull()
 	return NewGrid;
 }
 
-void GridElement::Init( uint8 i, uint8 j, uint8 k, uint8 bValid) //Move to CPP
+void GridElement::Init( uint8 i, uint8 j, uint8 k) //Move to CPP
 {
-	X = i;
-	Y = j;
-	Z = k;
-	IsValid = bValid;
-	BigActors = nullptr;
+//	X = i;
+//	Y = j;
+//	Z = k;
+	Actors = ActorLinkContainer();
 	Tree = nullptr;
 	CollisionTag = 0;
+}
+
+cg::Integers GridElement::CalcCoords(Grid* FromGrid)
+{
+	uint32 k = ((uint32)this - (uint32) FromGrid->Nodes) / sizeof(struct GridElement);
+	uint32 mult = FromGrid->Size.j * FromGrid->Size.k;
+	uint32 i = k / mult;
+	k -= i * mult;
+	mult = FromGrid->Size.k;
+	uint32 j = k / mult;
+	k -= j * mult;
+	UE_DEV_THROW( FromGrid->Node(i,j,k) != this, "Error in coordinate calculation");
+	return cg::Integers(i,j,k,0);
 }
 
 //Shut down the main grid
@@ -235,7 +281,7 @@ bool Grid::InsertActor( AActor* Actor)
 		//Attempt removal first, what to do upon failure?
 		if ( !RemoveActor(Actor) )
 		{
-			debugf( *(PlainText(TEXT("[CG] Anomaly in InsertActor: CollisionTag not zero for "))+Actor) );
+			debugf( TEXT("[CG] Anomaly in InsertActor: CollisionTag not zero for %s"), Actor->GetName() );
 			return false;
 		}
 	}
@@ -273,22 +319,19 @@ bool Grid::InsertActor( AActor* Actor)
 	if ( bGlobalPlacement )
 	{
 		AInfo->LocationType = ELT_Global;
-		G_ALH->GrabElement( GlobalActors, AInfo);
+		Actors.Add( AInfo);
 	}
 	else if ( iLinks > 1 )
 	{
 		AInfo->LocationType = ELT_Node;
 		while ( iLinks-- > 0 )
-			G_ALH->GrabElement( GridElements[iLinks]->BigActors, AInfo);
+			GridElements[iLinks]->Actors.Add( AInfo);
 	}
 	else if ( iLinks == 1 )
 	{
 		AInfo->LocationType = ELT_Tree;
 		if ( !GridElements[0]->Tree )
-		{
-			cg::Integers Coords( GridElements[0]->X, GridElements[0]->Y, GridElements[0]->Z, 0);
-			GridElements[0]->Tree = new(G_MTH) MiniTree( this, Coords);
-		}
+			GridElements[0]->Tree = new(G_MTH) MiniTree( this, GridElements[0]->CalcCoords(this) );
 		GridElements[0]->Tree->InsertActorInfo( AInfo, ActorBox);
 	}
 	else
@@ -297,6 +340,7 @@ bool Grid::InsertActor( AActor* Actor)
 		Actor->CollisionTag = 0;
 		return false;
 	}
+	Actor->ColLocation = Actor->Location;
 	return true;
 }
 
@@ -307,6 +351,10 @@ bool Grid::RemoveActor( class AActor* OutActor)
 	if ( OutActor->CollisionTag == 0 )
 		return false;
 
+	//FAILS IN LINUX
+//	if ( OutActor->Location != OutActor->ColLocation )
+//		debugf( TEXT("[CG] %s moved without proper hashing"), OutActor->GetName() );
+
 	ActorInfo* AInfo = reinterpret_cast<ActorInfo*>(OutActor->CollisionTag);
 	if ( G_AIH->IsValid(AInfo) && AInfo->Flags.bCommited )
 	{
@@ -316,7 +364,7 @@ bool Grid::RemoveActor( class AActor* OutActor)
 		cg::Box ActorBox = AInfo->cBox();
 
 		if ( AInfo->LocationType == ELT_Global )
-			ActorLink::Unlink( &GlobalActors, AInfo);
+			Actors.Remove( AInfo);
 		else if ( AInfo->LocationType == ELT_Node )
 		{
 			cg::Box LocalBox = ActorBox - Box.Min;
@@ -325,7 +373,7 @@ bool Grid::RemoveActor( class AActor* OutActor)
 			for ( int i=Min.i ; i<=Max.i ; i++ )
 			for ( int j=Min.j ; j<=Max.j ; j++ )
 			for ( int k=Min.k ; k<=Max.k ; k++ )
-				ActorLink::Unlink( &Node(i,j,k)->BigActors, AInfo);
+				Node(i,j,k)->Actors.Remove( AInfo);
 		}
 		else if ( AInfo->LocationType == ELT_Tree )
 		{
@@ -336,7 +384,7 @@ bool Grid::RemoveActor( class AActor* OutActor)
 		AInfo->LocationType = ELT_Max;
 	}
 	else
-		debugf( *(PlainText(TEXT("[CG] Anomaly in RemoveActor: "))+OutActor) );
+		debugf( TEXT("[CG] Anomaly in RemoveActor: %s"), OutActor->GetName() );
 	return true;
 }
 
@@ -354,34 +402,10 @@ void Grid::Tick()
 	{
 		MiniTree* T = *MTR;
 		if ( (T->Timer > 0) && (T->Timer-- == 1) )
-		{
 			T->CleanupActors();
-			T->CalcOptimalBounds();
-		}
 		MTR = &((*MTR)->Next);
 	}
 
-	int32 Weight = (Size.i+Size.j+Size.k)/2;
-	uint32 Top = Size.i*Size.j*Size.k;
-	while ( Weight-- > 0 )
-	{
-		if ( CurNodeCleanup < Top )
-		{
-			if ( Nodes[CurNodeCleanup].BigActors )
-			{
-				Weight -= ActorLink::UnlinkInvalid( &Nodes[CurNodeCleanup].BigActors);
-				Weight--;
-			}
-			CurNodeCleanup++;
-		}
-		else
-		{
-			CurNodeCleanup = 0;
-			ActorLink::UnlinkInvalid( &GlobalActors);
-			Weight = 0;
-		}
-	}
-	
 }
 
 //*************************************************
@@ -393,38 +417,28 @@ void Grid::Tick()
 
 //Construct as GE's main node
 MiniTree::MiniTree( Grid* G, const cg::Integers& C)
-	:	RealBounds( G->GetNodeBoundingBox(C) )
-	,	OptimalBounds( E_Zero)
-	,	Depth(0)
-	,	Timer(0)
-	,	ChildCount(0)
-	,	ChildIdx(0)
-	,	ActorCount(0)
-	,	Actors(nullptr)
+	:	Bounds( G->GetNodeBoundingBox(C) )
 {
 	*(cg::Vector*)&Children[0] = cg::Vector(E_Zero); //Vectorized zero set
 	*(cg::Vector*)&Children[4] = cg::Vector(E_Zero);
+	*(cg::Vector*)&Children[8] = cg::Vector(E_Zero); //Init other stuff as zero as well
 	Next = G->TreeList;
 	G->TreeList = this;
 }
 
 //Construct a subnode, attempt to retrieve actor from parent node
 MiniTree::MiniTree( MiniTree* T, uint32 SubOctant)
-	:	RealBounds( T->GetSubOctantBox(SubOctant) )
-	,	Depth( T->Depth+1)
-	,	Timer(0)
-	,	ChildCount(0)
-	,	ChildIdx(SubOctant)
-	,	ActorCount(0)
-	,	Actors(nullptr)
+	:	Bounds( T->GetSubOctantBox(SubOctant) )
 {
 	UE_DEV_THROW( T->Children[SubOctant] != nullptr, "[CG] Attempting to create MiniTree in already occupied subtree slot");
 	T->Children[SubOctant] = this;
 	T->ChildCount++;
 	*(cg::Vector*)&Children[0] = cg::Vector(E_Zero); //Vectorized zero set
 	*(cg::Vector*)&Children[4] = cg::Vector(E_Zero);
+	*(cg::Vector*)&Children[8] = cg::Vector(E_Zero); //Init other stuff as zero as well
+	Depth = T->Depth + 1;
 
-	ActorLink** ALR = &T->Actors;
+	ActorLink** ALR = &T->Actors.ActorList;
 	while ( *ALR )
 	{
 		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "Invalid actor link in MiniTree constructor");
@@ -438,22 +452,25 @@ MiniTree::MiniTree( MiniTree* T, uint32 SubOctant)
 				AInfo->TopDepth = Depth + (GetSubOctant( ActorBox.Min) == GetSubOctant( ActorBox.Max));
 			ActorLink* AL = *ALR; //Remove from this chain, keep pointer
 			*ALR = AL->Next;
-			AL->Next = Actors;
-			Actors = AL;
-			ActorCount++;
+			AL->Next = Actors.ActorList;
+			Actors.ActorList = AL;
+			Actors.ActorCount++;
+			T->Actors.ActorCount--;
 		}
 		else
-			ALR = &(ALR[0]->Next); //No removal, advance pointer
+			ALR = &(*ALR)->Next; //No removal, advance pointer
 	}
-	CalcOptimalBounds(); //Parent tree doesn't need bounds update, no actors being removed
+
+	if ( Actors.ActorCount ) //Tell parent we have actors
+		T->HasActors |= (1 << SubOctant);
 }
 
 
 cg::Box MiniTree::GetSubOctantBox( uint32 Index) const
 {
 	cg::Integers Bits( Index << 31, (Index & 0b10) << 30, (Index & 0b100) << 29, 0);
-	cg::Vector Mid = RealBounds.CenterPoint();
-	cg::Vector Mod = cg::Vector( _mm_or_ps( (RealBounds.Max - Mid).mm(), *(__m128*)&Bits)); //Put sign bits
+	cg::Vector Mid = Bounds.CenterPoint();
+	cg::Vector Mod = cg::Vector( _mm_or_ps( (Bounds.Max - Mid).mm(), *(__m128*)&Bits)); //Put sign bits
 	return cg::Box( Mid, Mid+Mod);
 }
 
@@ -470,29 +487,23 @@ cg::Box MiniTree::GetSubOctantBox( uint32 Index) const
 */
 uint32 MiniTree::GetSubOctant( const cg::Vector& Point) const
 {
-	cg::Vector Mid = RealBounds.CenterPoint();
+	cg::Vector Mid = Bounds.CenterPoint();
 	return (Point - Mid).SignBits() & 0b0111;
 }
 
 
 void MiniTree::InsertActorInfo( ActorInfo* AInfo, const cg::Box& Box)
 {
-	if ( ActorCount == 0 ) //Doesn't matter if it goes in this Node, but expand anyways
-		OptimalBounds = Box;
-	else
-		OptimalBounds.Expand(Box);
-	ActorCount++;
-
 	uint32 Oc1 = GetSubOctant( Box.Min);
 	uint32 Oc2 = GetSubOctant( Box.Max);
 	AInfo->TopDepth = Min( Depth + (Oc1 == Oc2), MAX_TREE_DEPTH);
-	UE_DEV_THROW( AInfo->TopDepth > MAX_TREE_DEPTH, "IAF: Bad TopDepth");
 
 	//Add here, timer not needed
-	if ( (AInfo->TopDepth == Depth) || (ActorCount < REQUIRED_FOR_SUBDIVISION) )
+	if ( (AInfo->TopDepth == Depth) || (Actors.ActorCount < REQUIRED_FOR_SUBDIVISION) )
 	{
 		AInfo->CurDepth = Depth;
-		G_ALH->GrabElement( Actors, AInfo);
+		Actors.Add( AInfo);
+		UE_DEV_THROW( Actors.DebugCount() != Actors.ActorCount, "MiniTree::InsertActorInfo actor count mismatch");
 	}
 	//Add in sub box
 	else
@@ -501,99 +512,59 @@ void MiniTree::InsertActorInfo( ActorInfo* AInfo, const cg::Box& Box)
 		if ( Children[Oc1] == nullptr )
 			new(G_MTH) MiniTree( this, Oc1);
 		Children[Oc1]->InsertActorInfo( AInfo, Box);
+		HasActors |= (uint8)(1 << Oc1);
 	}
-	UE_DEV_THROW( CountActors() != ActorCount, "MiniTree::InsertActorInfo actor count mismatch");
 }
 
 //NOT RECURSIVE, location is absolute, AInfo has already been unlinked
 //AInfo has already been validated
 void MiniTree::RemoveActorInfo( ActorInfo* AInfo, const cg::Vector& Location)
 {
-	UE_DEV_THROW( Depth != 0, "[CG] RemoveActorInfo should only be called on top tree (Depth=0)");
-	UE_DEV_THROW( AInfo->TopDepth > MAX_TREE_DEPTH, "RAF: Bad TopDepth");
 	MiniTree* DepthLink[MAX_TREE_DEPTH+2];
+	uint32 OctIdx[MAX_TREE_DEPTH+2];
 	DepthLink[0] = this;
+	OctIdx[0] = 0;
 	int32 CurDepth = 0;
 	while ( CurDepth < AInfo->CurDepth )
 	{
-		UE_DEV_THROW( CurDepth != DepthLink[CurDepth]->Depth, "[CG] RemoveActorInfo: MiniTree depth mismatch");
-		UE_DEV_THROW( ActorLink::Unlink( &DepthLink[CurDepth]->Actors, AInfo), "[CG] RemoveActorInfo: unlinked before hitting CurDepth!!");
 		uint32 OcIdx = DepthLink[CurDepth]->GetSubOctant( Location);
 		DepthLink[CurDepth+1] = DepthLink[CurDepth]->Children[OcIdx];
+		OctIdx[CurDepth+1] = OcIdx;
 		CurDepth++;
-		if ( !DepthLink[CurDepth] ) //In case of error, cleanup immediately
+		if ( !DepthLink[CurDepth] ) //In case of error, cleanup immediately // DEPRECATE LATER
 		{
 			Timer = 1;
-			PlainText Error( TEXT("[CG] Error in RemoveActorInfo: Link at CurDepth="));
-			debugf( *(Error + CurDepth + TEXT("[OCT=")+ OcIdx +TEXT("] is non-existant, Actor is ") + AInfo->Actor) );
+			debugf( TEXT("[CG] Error in RemoveActorInfo: Link at CurDepth=%i [OCT=%i] is non-existant for %s"), CurDepth, OcIdx, AInfo->Actor->GetName() );
 			return;
 		}
 	}
-	if ( ActorLink::Unlink( &DepthLink[CurDepth]->Actors, AInfo) )
+	//Optimization
+	if ( DepthLink[CurDepth]->Actors.Remove( AInfo) )
 	{
-		while ( CurDepth >= 0 )
-			DepthLink[CurDepth--]->ActorCount--;
+		for ( ; CurDepth >= 0 && !DepthLink[CurDepth]->ShouldQuery() ; CurDepth-- )
+			DepthLink[CurDepth]->HasActors &= ~(1 << OctIdx[CurDepth]);
 	}
-	UE_DEV_THROW( CountActors() != ActorCount, "MiniTree::RemoveActorInfo actor count mismatch");
 	if ( Timer == 0 )
 		Timer = 20;
 }
 
-void MiniTree::CalcOptimalBounds()
+void MiniTree::CleanupActors() //Queries already perform-cleanup operations, just check flags and count
 {
-	if ( !ActorCount )
-		OptimalBounds = cg::Box( E_Zero);
-	else
-	{
-		if ( Actors )
-		{
-			OptimalBounds = Actors->Info->cBox(); //Take first box
-			for ( ActorLink* Link=Actors->Next ; Link ; Link=Link->Next ) //Add others
-				OptimalBounds.Expand( Link->Info->cBox() ); //Fast
-		}
-		if ( ChildCount )
-		{
-			for ( uint32 i=0 ; i<8 ; i++ )
-				if ( Children[i] )
-				{
-					Children[i]->CalcOptimalBounds();
-					OptimalBounds.Expand( Children[i]->OptimalBounds, E_NoZero); //Slow
-				}
-		}
-	}
-
-}
-
-void MiniTree::CleanupActors()
-{
-	uint32 NewActorCount = ActorLink::UnlinkInvalid( &Actors);
 	if ( ChildCount )
 	{
 		for ( uint32 i=0 ; i<8 ; i++ )
 			if ( Children[i] )
 			{
 				Children[i]->CleanupActors();
-				NewActorCount += Children[i]->ActorCount;
-				if ( !Children[i]->ActorCount )
+				if ( !Children[i]->ShouldQuery() )
 				{
 					G_MTH->ReleaseElement( Children[i]);
 					Children[i] = nullptr;
 					ChildCount--;
+					HasActors &= ~(1 << i); 
 				}
 			}
 	}
-	ActorCount = NewActorCount;
+	else
+		HasActors = 0;
 }
-
-uint32 MiniTree::CountActors()
-{
-	uint32 Count = 0;
-	if ( ChildCount )
-		for ( uint32 i=0 ; i<8 ; i++ )
-			if ( Children[i] )
-				Count += Children[i]->CountActors();
-	for ( ActorLink* Link=Actors ; Link ; Link=Link->Next )
-		Count++;
-	return Count;
-}
-

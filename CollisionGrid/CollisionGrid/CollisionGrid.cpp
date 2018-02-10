@@ -20,7 +20,7 @@ GenericMemStack* G_Stack = nullptr;
 class FCollisionGrid : public FCollisionHashBase
 {
 public:
-	Grid* Grid;
+	struct Grid* Grid;
 	static uint32 GridCount;
 
 	//FCollisionGrid interface.
@@ -62,6 +62,7 @@ extern "C"
 
 TEST_EXPORT FCollisionHashBase* GNewCollisionHash( ULevel* Level)
 {
+	//Test unreal engine's unwind semantics
 	if ( !LoadUE() )
 		return nullptr;
 	if ( Loaded == 1 )
@@ -69,7 +70,7 @@ TEST_EXPORT FCollisionHashBase* GNewCollisionHash( ULevel* Level)
 	if ( !G_ALH )	G_ALH = new (A_16) ActorLinkHolder();
 	if ( !G_AIH )	G_AIH = new (A_16) ActorInfoHolder();
 	if ( !G_MTH )	G_MTH = new (A_16) MiniTreeHolder();
-	if ( !G_Stack )	G_Stack = new (SIZE_KBytes, 256) GenericMemStack( 256 * 1024); //5461 results
+	if ( !G_Stack )	G_Stack = new (SIZE_KBytes, 256) GenericMemStack( 256 * 1024); //~5000 results
 	debugf_ansi( "[CG] Element holders succesfully spawned.");
 	//Unreal Engine destroys this object
 	//Therefore use Unreal Engine allocator
@@ -115,27 +116,31 @@ GCC_STACK_ALIGN void FCollisionGrid::RemoveActor(AActor *Actor)
 
 GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorLineCheck(FMemStack& Mem, FVector End, FVector Start, FVector Extent, uint8 ExtraNodeFlags)
 {
+	guard(FCollisionGrid::ActorLineCheck);
 	FCheckResult* Result = nullptr;
 	PrecomputedRay Ray( Start, End, Extent, ExtraNodeFlags);
 	if ( Ray.IsValid() )
 		Result = Grid->LineQuery( Ray, ExtraNodeFlags);
 	return Result;
+	unguard;
 }
 
 GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorPointCheck(FMemStack& Mem, FVector Location, FVector Extent, uint32 ExtraNodeFlags)
 {
 	PointHelper Helper( Location, Extent, ExtraNodeFlags);
-	return Helper.QueryGrids( Grid);
+	return Helper.QueryGrid( Grid);
 }
 
 GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorRadiusCheck(FMemStack& Mem, FVector Location, float Radius, uint32 ExtraNodeFlags)
 {
 	RadiusHelper Helper( Location, Radius, ExtraNodeFlags);
-	return Helper.QueryGrids( Grid);
+	return Helper.QueryGrid( Grid);
 }
 
 GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorEncroachmentCheck(FMemStack& Mem, AActor* Actor, FVector Location, FRotator Rotation, uint32 ExtraNodeFlags)
 {
+	guard(FCollisionGrid::ActorEncroachmentCheck);
 	EncroachHelper Helper( Actor, Location, &Rotation, ExtraNodeFlags);
-	return Helper.QueryGrids( Grid);
+	return Helper.QueryGrid( Grid);
+	unguard;
 }
