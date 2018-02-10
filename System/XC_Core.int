@@ -4,3 +4,8 @@ Object=(Name=XC_Core.StripSourceCommandlet,Class=Class,MetaClass=Core.Commandlet
 Object=(Name=XC_Core.DeobfuscateNamesCommandlet,Class=Class,MetaClass=Core.Commandlet)
 Object=(Name=XC_Core.LZMACompressCommandlet,Class=Class,MetaClass=Core.Commandlet)
 Object=(Name=XC_Core.LZMADecompressCommandlet,Class=Class,MetaClass=Core.Commandlet)
+
+[Progress]
+DecompressFile=Decompressing file %s (F10 Cancels)
+DecompressDesc=%s %iK > %iK
+RemainingFiles=File %i of %i (%s pending installation)

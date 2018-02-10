@@ -1,7 +1,7 @@
 =========================================================
 XC_Core - Base extension for native UT99 addons by Higor
 
-Version 7b
+Version 8
 
 =============
 Installation:
@@ -55,16 +55,13 @@ UBinary serializer:
 ===================
 Now merged into XC_Core, proves minimal binary file handling to UnrealScript.
 Check classes BinarySerializer (Object) and BinaryTester (Actor) for usage guidelines.
-
-NOTES:
 For security measures file writer doesn't allow creating files outside of the game directory.
 
 
 ======
 Notes:
 ======
-Having XC_Core files installed allows you to use LZMA channel download from servers that have this feature.
-This package is required to run XC_Engine and XC_IpDrv.
+This package is required to run all other XC Tools.
 
 
 ========================
