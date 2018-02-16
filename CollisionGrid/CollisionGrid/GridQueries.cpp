@@ -1,6 +1,6 @@
 
-#include "GridTypes.h" //Must go before API to enable FVector::operator=
 #include "API.h"
+#include "GridTypes.h"
 #include "GridMem.h"
 
 
@@ -17,19 +17,6 @@ cg::Vector ZNormals[2] = { cg::Vector( 0, 0, 1, 0), cg::Vector( 0 ,0,-1, 0) };
 cg::Integers Vector3Mask = cg::Integers(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0x00000000);
 
 static uint32 CollisionTag = 0;
-
-inline float appSqrt( float F)
-{
-	float result;
-	__m128 res = _mm_sqrt_ss( _mm_load_ss( &F));
-	_mm_store_ss( &result, res);
-	return result;
-}
-
-inline float Square( float F)
-{
-	return F*F;
-}
 
 static uint32 RemoveBadResults( FCheckResult** Result)
 {
@@ -73,27 +60,28 @@ static uint32 RemoveBadResults( FCheckResult** Result)
 
 ActorInfo* ActorLinkContainer::Iterator::GetInfo()
 {
-	while ( *Cur )
+	guard(ActorLinkContainer::Iterator::GetInfo);
+	while ( Cur < Cont.ArrayNum )
 	{
-		if ( !G_ALH->IsValid(*Cur) )
-			break;
-		UE_DEV_THROW( !G_ALH->IsValid(*Cur), "Iterator::GetValid hit invalid link");
-		ActorLink** Last = Cur;
-		ActorInfo* AInfo = (*Cur)->Info;
-		Cur = &(*Cur)->Next;
+		ActorInfo* AInfo = Cont(Cur++);
+		if ( !G_AIH->IsValid(AInfo) )
+		{
+			debugf_ansi( "[CG] Removing bad actor info reference");
+			Cont.Remove(--Cur);
+		}
 		if ( AInfo->CollisionTag != CollisionTag )
 		{
 			AInfo->CollisionTag = CollisionTag;
 			if ( AInfo->IsValid() )
 				return AInfo;
 			//Invalid AInfo, purge link and info (held in Last)
+			debugf_ansi( "[CG] Removing expired actor info");
 			G_AIH->ReleaseElement( AInfo);
-			G_ALH->ReleaseElement( *Last);
-			Cur = Last; //Go back
-			*Cur = (*Cur)->Next;
+			Cont.Remove(--Cur);
 		}
 	}
 	return nullptr;
+	unguard;
 }
 
 //*************************************************
@@ -105,7 +93,7 @@ ActorInfo* ActorLinkContainer::Iterator::GetInfo()
 GSBaseMarker::GSBaseMarker()
 {
 	CollisionTag++;
-	UE_DEV_THROW( G_Stack->Cur != 0, "Multiple GSBaseMarker stacked!" );
+	UE_DEV_THROW( G_Stack->Cur != 0, "Multiple GSBaseMarker stacked!" ); //Deprecate soon
 }
 
 GSBaseMarker::~GSBaseMarker()
@@ -130,8 +118,15 @@ FCheckResult* Grid::LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags)
 	cg::Vector Start = (Ray.Org - Ray.Extent) - Box.Min;
 	cg::Vector End   = (Ray.End + Ray.Extent) - Box.Min;
 	//FAILS IF TRACE ORIGINATES OR ENDS OUTSIDE OF GRID!!!
-	cg::Integers iS = cg::Max((Start * Grid_Mult)-Grid_Mult*4, cg::Vector(E_Zero)           ).Truncate32();
-	cg::Integers iE = cg::Min((End   * Grid_Mult)+Grid_Mult*4, cg::Vectorize(Size-XYZi_One) ).Truncate32();
+	cg::Integers iS;
+	cg::Integers iE;
+	{
+		cg::Vector Max = cg::Vectorize( Size - XYZi_One);
+		cg::Vector fS = Clamp(Start * Grid_Mult, cg::Vector(E_Zero), Max);
+		cg::Vector fE = Clamp(End   * Grid_Mult, cg::Vector(E_Zero), Max);
+		iS = fS.Truncate32();
+		iE = fE.Truncate32();
+	}
 	int32 iD[3];
 	for ( uint32 i=0 ; i<3 ; i++ )
 	{
@@ -180,7 +175,7 @@ FCheckResult* Grid::LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags)
 					bAdd = true;
 				else if ( GB[i]->Tree )
 					bAdd = Ray.IntersectsBox( GB[i]->Tree->Bounds);
-				else if ( Ray.IntersectsBox( GetNodeBoundingBox(GB[i]->CalcCoords(this)) ) )
+				else if ( Ray.IntersectsBox( GetNodeBoundingBox( GB[i]->Coords() ) ) )
 					bAdd = true;
 
 				if ( bAdd )
@@ -194,7 +189,7 @@ FCheckResult* Grid::LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags)
 	}
 	while ( iGE != bGE );
 	unguardf( (TEXT("iS%s iE%s"), iS.String(), iE.String()) );
-	
+
 	uint32 Bads = RemoveBadResults( &Result);
 	if ( Bads )
 	{
@@ -266,10 +261,8 @@ PrecomputedRay::PrecomputedRay( const FVector& TraceStart, const FVector& TraceE
 		return_invalid_helper;
 
 	//Compute comparison
-	cg::Vector Cmp;
-	Segment *= Segment;
-	_mm_store_ps( Cmp.fa(), _mm_cmpge_ps( _mm_load_ps(Segment.fa()), _mm_load_ps(SMALL_VECTOR.fa()) ));
-	uint32 R = _mm_movemask_ps( _mm_load_ps(Cmp.fa()) );
+	cg::Vector Cmp = SMALL_VECTOR << (Segment*Segment);
+	uint32 R = _mm_movemask_ps( Cmp );
 	if ( R & 0b0011 ) //(X or Y) > SMALL_NUMBER
 	{
 		Inv = Dir.Reciprocal() & Cmp;
@@ -574,15 +567,16 @@ GenericQueryHelper::GenericQueryHelper( const FVector& Loc3, uint32 InENF, Actor
 
 FCheckResult* GenericQueryHelper::QueryGrid( Grid* Grid)
 {
-	guard(GenericQueryHelper::QueryGrid);
+	guard_slow(GenericQueryHelper::QueryGrid);
 	FCheckResult* Results = nullptr;
 	if ( IsValid() )
 	{
 		GSBaseMarker Marker;
 		QueryContainer( Grid->Actors, Results); //Globals
 		cg::Box TmpBox = Bounds - Grid->Box.Min;
-		cg::Integers Min = cg::Max((TmpBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
-		cg::Integers Max = cg::Min((TmpBox.Max * Grid_Mult), cg::Vectorize(Grid->Size-XYZi_One) ).Truncate32();
+		cg::Vector Top = cg::Vectorize( Grid->Size - XYZi_One);
+		cg::Integers Min = Clamp((TmpBox.Min * Grid_Mult), cg::Vector(E_Zero), Top).Truncate32();
+		cg::Integers Max = Clamp((TmpBox.Max * Grid_Mult), cg::Vector(E_Zero), Top).Truncate32();
 		for ( int i=Min.i ; i<=Max.i ; i++ )
 		for ( int j=Min.j ; j<=Max.j ; j++ )
 		for ( int k=Min.k ; k<=Max.k ; k++ )			
@@ -600,7 +594,7 @@ FCheckResult* GenericQueryHelper::QueryGrid( Grid* Grid)
 		UE_DEV_LOG( TEXT("[CG] Removed %i actors from GenericQuery"), Bads );
 	}
 	return Results;
-	unguard;
+	unguard_slow;
 }
 
 void GenericQueryHelper::QueryContainer(ActorLinkContainer& Container, FCheckResult*& Result) const

@@ -17,19 +17,95 @@ class GNUFix
 #endif
 };
 
+//***********************************************************************************
+// Memory allocator base type
+class FMalloc : public GNUFix
+{
+public:
+	virtual void* Malloc( uint32 Count, const TCHAR* Tag )=0;
+	virtual void* Realloc( void* Original, uint32 Count, const TCHAR* Tag )=0;
+	virtual void Free( void* Original )=0;
+	virtual void DumpAllocs()=0;
+	virtual void HeapCheck()=0;
+	virtual void Init()=0;
+	virtual void Exit()=0;
+};
+
+//***********************************************************************************
+// Unreal dynamic array.
+//
+class FArray
+{
+protected:
+	void* Data;
+public:
+	int32 ArrayNum;
+	int32 ArrayMax;
+
+	int32 Add( int32 Count, int32 ElementSize )
+	{
+		int32 Index = ArrayNum;
+		if( (ArrayNum+=Count)>ArrayMax )
+		{
+			ArrayMax = ArrayNum + 3*ArrayNum/8 + 32;
+			Realloc( ElementSize );
+		}
+		return Index;
+	}
+	void Shrink( uint32 ElementSize )
+	{
+		if( ArrayMax != ArrayNum )
+		{
+			ArrayMax = ArrayNum;
+			Realloc( ElementSize );
+		}
+	}
+	void Empty() //If I call this from superclass the program dies!!
+	{
+		if( Data )
+			appFree( Data );
+		Data = nullptr;
+		ArrayNum = ArrayMax = 0;
+	}
+
+	FArray()
+		: Data(nullptr), ArrayNum(0), ArrayMax(0)  {}
+//	~FArray()
+//	{	Empty();	}
+protected:
+	void DLLIMPORT Realloc( int32 ElementSize ) LINUX_SYMBOL(Realloc__6FArrayi);
+	FArray( int32 InNum, int32 ElementSize )
+		: Data( nullptr ), ArrayNum( InNum ), ArrayMax( InNum )
+	{
+		Realloc( ElementSize );
+	}
+};
 
 
 //***********************************************************************************
 // Simplified Array Templates
-template< class T > class TArray
+template< class T > class TArray : public FArray
 {
-protected:
-	T* Data;
 public:
-	INT	  ArrayNum;
-	INT	  ArrayMax;
+	typedef T ElementType;
+	TArray() : FArray() {}
+	TArray( int32 InNum ) : FArray( InNum, sizeof(T)) {}
+	T& operator()( int32 i ) { return ((T*)Data)[i]; }
+	const T& operator()( int32 i ) const { return ((T*)Data)[i]; }
+	void Shrink() { FArray::Shrink( sizeof(T) ); }
 
-	T& operator()( int32 i )	{	return ((T*)Data)[i];	}
+	int32 Add( int32 n=1 )
+	{
+		return FArray::Add( n, sizeof(T) );
+	}
+
+	int32 AddItem( const T& Item )
+	{
+//		debugf( TEXT("Adding item at slot %i/%i"), ArrayNum, ArrayMax);
+		INT Index=Add();
+		(*this)(Index)=Item;
+		return Index;
+	}
 };
 
 template< class T > class TTransArray : public TArray<T>
@@ -38,7 +114,7 @@ public:
 	class UObject* Owner;
 };
 
-class FString : protected TArray< TCHAR >
+class FString : protected TArray<TCHAR>
 {
 public:
 	const TCHAR* operator*() const
@@ -54,21 +130,6 @@ template< class TK, class TI > class TMap
 	INT HashCount;
 };
 
-
-
-//***********************************************************************************
-// Memory allocator base type
-class FMalloc : public GNUFix
-{
-public:
-	virtual void* Malloc( uint32 Count, const TCHAR* Tag )=0;
-	virtual void* Realloc( void* Original, uint32 Count, const TCHAR* Tag )=0;
-	virtual void Free( void* Original )=0;
-	virtual void DumpAllocs()=0;
-	virtual void HeapCheck()=0;
-	virtual void Init()=0;
-	virtual void Exit()=0;
-};
 
 
 //***********************************************************************************
@@ -89,7 +150,6 @@ struct FNameEntry
 
 //***********************************************************************************
 // Actor structures
-
 struct FVector
 {
 	float X, Y, Z;
@@ -113,7 +173,7 @@ struct FVector
 	//Fast, unsafe assignment
 	FVector operator=( const cg::Vector& V)
 	{
-		_mm_storeu_ps( (float*)this, _mm_load_ps( V.fa()) );
+		_mm_storeu_ps( (float*)this, _mm_loadu_ps( (float*)&V) );
 		return *this;
 	}
 
@@ -154,8 +214,8 @@ struct FBox
 		const cg::Integers Mask( 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000);
 		cg::Box B;
 		__m128 mask = _mm_castsi128_ps( _mm_load_si128( Mask.mm() ));
-		_mm_store_ps( B.Min.fa(), _mm_and_ps( _mm_loadu_ps(&Min.X), mask) );
-		_mm_store_ps( B.Max.fa(), _mm_and_ps( _mm_loadu_ps(&Max.X), mask) );
+		_mm_storeu_ps( *B.Min, _mm_and_ps( _mm_loadu_ps(&Min.X), mask) );
+		_mm_storeu_ps( *B.Max, _mm_and_ps( _mm_loadu_ps(&Max.X), mask) );
 		return B;
 	}
 #endif
@@ -226,5 +286,3 @@ public:
 	// FOutputDevice interface.
 	virtual void Serialize( const TCHAR* V, EName Event )=0;
 };
-
-

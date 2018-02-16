@@ -14,6 +14,7 @@ enum { CACHE_LINE_SIZE = 32 }; // Cache line size.
 #define GCC_ALIGN(n) __attribute__((aligned(n)))
 #define MS_ALIGN(n) 
 #define GCC_STACK_ALIGN __attribute__((force_align_arg_pointer))
+#define LINUX_SYMBOL(t) __asm__(#t)
 
 #if __GNUC__ >= 4
 	#define DLLIMPORT	__attribute__ ((visibility ("default")))
@@ -43,7 +44,7 @@ class __Context
 public:
 	__Context() { *(jmp_buf_wrapper*)&Last = *(jmp_buf_wrapper*)&Env; }
 	~__Context() { *(jmp_buf_wrapper*)&Env = *(jmp_buf_wrapper*)&Last; }
-	__attribute__ ((visibility ("default"))) static jmp_buf Env __asm__("_9__Context.Env");
+	static DLLIMPORT jmp_buf Env LINUX_SYMBOL(_9__Context.Env);
 protected:
 	jmp_buf Last;
 };

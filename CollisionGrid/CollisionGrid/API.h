@@ -1,10 +1,26 @@
 #pragma once
 
 #undef _MSC_EXTENSIONS
-#include "PlatformTypes.h"
-#include "Structs_UE1.h"
 
-class UObject;
+#define appMalloc(size)       GMalloc->Malloc(size,TEXT(""))
+#define appFree(ptr)          GMalloc->Free(ptr)
+#define debugf(t,...) (GLog->*Debugf)(t,__VA_ARGS__)
+#define debugf_ansi(t) (GLog->*Debugf)(TEXT(t))
+#define appFailAssert(a) (*AppFailAssert)(a,__FILE__,__LINE__)
+#define appUnwindf(a,...) (*AppUnwindf)(a,##__VA_ARGS__)
+
+#include "PlatformTypes.h"
+
+extern DLLIMPORT class FMalloc* GMalloc;
+extern DLLIMPORT class FOutputDevice* GLog;
+
+
+//#include "Structs_UE1.h"
+
+class  UObject;
+class    AActor;
+struct FVector;
+struct FNameEntry;
 
 namespace cg
 {
@@ -106,25 +122,34 @@ void* appMallocAligned( uint32 Size, uint32 Align);
 void* appFreeAligned( void* Ptr);
 
 
-enum EAlign
-{	A_16 = 16	};
+enum EAlign { A_16 = 16 };
 enum ESize
 {	SIZE_Bytes = 0,
 	SIZE_KBytes = 10,
 	SIZE_MBytes = 20	};
+enum EStack { E_Stack = 0 };
 
 
+extern "C" void* memset ( void* ptr, int value, uint32 num );
 
-
+void* operator new( uint32 Size);
 void* operator new( uint32 Size, const TCHAR* Tag); //Allocate objects using UE1's allocator
 void* operator new( uint32 Size, ESize Units, uint32 RealSize); //Allocate objects using additional memory (alignment optional)
 void* operator new( uint32 Size, EAlign Tag );
 void* operator new( uint32 Size, EAlign Tag, ESize Units, uint32 RealSize);
 
+//Placement new
+inline void* operator new( uint32 Size, void* Address, EStack Tag)
+{
+	return Address;
+}
+
 void CDECL operator delete(void *A);
 void CDECL operator delete(void *A, unsigned int B);
 void CDECL operator delete[](void *A);
 void CDECL operator delete[](void *A, unsigned int B);
+
+
 
 //Delete objects created with new(A_16)
 #define Delete_A( A) if (A) { \
@@ -148,26 +173,14 @@ extern v_foutputdevice_tcp_varg Debugf;
 
 typedef void (VARARGS *v_func_acp_acp_i)(const char*, const char*, int32);
 extern v_func_acp_acp_i AppFailAssert;
-#define appFailAssert(a) (*AppFailAssert)(a,__FILE__,__LINE__)
 
 typedef void (VARARGS *v_func_tcp_varg)(const TCHAR* Fmt, ... );
 extern v_func_tcp_varg AppUnwindf;
-#define appUnwindf(a,...) (*AppUnwindf)(a,##__VA_ARGS__)
 
 typedef int32 (AActor::*i_aactor_v)() const;
 extern i_aactor_v IsMovingBrushFunc;
 
-typedef FOutputDevice** foutputdevicepp_var;
-extern FOutputDevice** Core_GLog;
-#define debugf(t,...) ((*Core_GLog)->*Debugf)(t,__VA_ARGS__)
-#define debugf_ansi(t) ((*Core_GLog)->*Debugf)(TEXT(t))
-
 typedef FNameEntry*** fnametableppp_var;
 extern FNameEntry*** Core_NameTable;
-
-typedef FMalloc** fmallocpp_var;
-extern FMalloc** Core_GMalloc;
-#define appMalloc(size)       (*Core_GMalloc)->Malloc(size,TEXT(""))
-#define appFree(ptr)          (*Core_GMalloc)->Free(ptr)
 
 

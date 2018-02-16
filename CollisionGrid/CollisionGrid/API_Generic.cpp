@@ -51,21 +51,21 @@ static uint32 CurAnsi = 0;
 const TCHAR* FVector::String() const
 {
 	PlainText Tmp = PlainText(TEXT("(")) + X + TEXT(",") + Y + TEXT(",") + Z + TEXT(")");
-	CurLine--; //Make this line reusable for next buffer
+//	CurLine--; //Make this line reusable for next buffer
 	return *Tmp;
 }
 
 const TCHAR* cg::Vector::String() const
 {
 	PlainText Tmp = PlainText(TEXT("(")) + X + TEXT(",") + Y + TEXT(",") + Z + TEXT(",") + W + TEXT(")");
-	CurLine--; //Make this line reusable for next buffer
+//	CurLine--; //Make this line reusable for next buffer
 	return *Tmp;
 }
 
 const TCHAR* cg::Integers::String() const
 {
 	PlainText Tmp = PlainText(TEXT("[")) + i + TEXT(",") + j + TEXT(",") + k + TEXT(",") + l + TEXT("]");
-	CurLine--; //Make this line reusable for next buffer
+//	CurLine--; //Make this line reusable for next buffer
 	return *Tmp;
 }
 
@@ -154,9 +154,14 @@ char* PlainText::Ansi()
 #endif
 
 
+void* operator new( uint32 Size)
+{
+	return appMalloc(Size);
+}
+
 void* operator new( uint32 Size, const TCHAR* Tag)
 {
-	return (*Core_GMalloc)->Malloc( Size, Tag);
+	return GMalloc->Malloc( Size, Tag);
 }
 
 void* operator new( uint32 Size, ESize Units, uint32 RealSize)

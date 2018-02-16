@@ -51,7 +51,7 @@ enum ELocationType { ELT_Global = 0 , ELT_Node = 1 , ELT_Tree = 2 , ELT_Max = 3 
 //
 // Basic Actor container
 //
-MS_ALIGN(16) struct DE ActorInfo
+struct DE ActorInfo
 {
 	//[16]
 	uint32 ObjIndex;
@@ -92,48 +92,52 @@ MS_ALIGN(16) struct DE ActorInfo
 
 	cg::Box cBox();
 	cg::Vector cLocation();
-} GCC_ALIGN(16);
+};
 
 //int tat = sizeof(ActorInfo);
 
 //
-// Actor node, holds references
-//
-struct ActorLink
-{
-	ActorInfo* Info;
-	uint32 Pad1;
-	ActorLink* Next;
-	uint32 Pad2;
-
-	static const TCHAR* Name() { return TEXT("ActorLink"); }
-	static uint32 UnlinkInvalid( ActorLink** Container);
-};
-//static_assert( sizeof(ActorLink) == 8, "ActorLink struct size should be 8");
-
-//
 // Actor Link container with helper functions
 //
-struct ActorLinkContainer
+class DE ActorLinkContainer : public TArray<struct ActorInfo*>
 {
-	uint32 ActorCount;
-	ActorLink* ActorList;
+public:
+	ActorLinkContainer()
+		: TArray<ActorInfo*>()
+	{}
 
-	ActorLinkContainer() : ActorCount(0) , ActorList(nullptr) {}
+	~ActorLinkContainer()
+	{
+		if( Data )
+			appFree( Data );
+		Data = nullptr;
+		ArrayNum = ArrayMax = 0;
+	}
 
-	void Add( ActorInfo* AInfo);
-	bool Remove( ActorInfo* AInfo);
-	void MoveAll( ActorLinkContainer& Destination);
+	void Remove( int32 Index) //Fast remove, no memory move or deallocation
+	{
+		if ( Index < --ArrayNum )
+			(*this)(Index) = (*this)(ArrayNum);
+		(*this)(ArrayNum) = 0; //Temporary
+	}
 
-	uint32 DebugCount();
+	bool RemoveItem( ActorInfo* AInfo)
+	{
+		for ( int32 i=0 ; i<ArrayNum ; i++ )
+			if ( (*this)(i) == AInfo )
+			{
+				Remove(i);
+				return true;
+			}
+		return false;
+	}
 
 	class Iterator
 	{
 		ActorLinkContainer& Cont;
-		ActorLink** Cur;
-
+		int32 Cur;
 	public:
-		Iterator( ActorLinkContainer& InContainer) : Cont(InContainer), Cur(&(InContainer.ActorList)) {}
+		Iterator( ActorLinkContainer& InContainer) : Cont(InContainer), Cur(0) {}
 		ActorInfo* GetInfo();
 	};
 };
@@ -141,57 +145,52 @@ struct ActorLinkContainer
 //
 // Grid 'node' used as container for actors
 //
-MS_ALIGN(16) struct DE GridElement
+struct DE GridElement
 {
-//	uint8 X, Y, Z, Pad;
 	ActorLinkContainer Actors;
 	MiniTree* Tree;
 	uint32 CollisionTag;
+	uint8 X, Y, Z, W;
 
-	void Init( uint8 i, uint8 j, uint8 k);
-	cg::Integers CalcCoords( struct Grid* FromGrid);
-} GCC_ALIGN(16);
+	GridElement( uint32 i, uint32 j, uint32 k);
+	~GridElement() {};
+
+	cg::Integers Coords()
+	{
+		return cg::Integers( X, Y, Z, W);
+	}
+};
 
 //
 // Grid of 128^3 cubes
-// Dynamically allocated with user-made alignment
 //
-MS_ALIGN(16) struct DE Grid
+struct DE Grid
 {
 	cg::Integers Size;
 	cg::Box Box;
-	cg::Vector ReducedBoxSize; //Optimization
 	ActorLinkContainer Actors;
 	MiniTree* TreeList;
-	uint32 CurNodeCleanup;
-	
-	//Variable-sized (through allocation)
-	GridElement Nodes[1];
+	GridElement* Nodes;
 
+	Grid( class ULevel* Level);
+	~Grid();
+	
 	bool InsertActor( class AActor* InActor);
 	bool RemoveActor( class AActor* OutActor);
 	FCheckResult* LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags);
 	void Tick();
 
-
 	//Accessor
-	GridElement* Node( uint32 i, uint32 j, uint32 k);
+	GridElement* Node( int32 i, int32 j, int32 k);
 	GridElement* Node( const cg::Integers& I);
 	cg::Box GetNodeBoundingBox( const cg::Integers& Coords) const;
-
-	//Global grid for now...
-	static Grid* AllocateFor( class ULevel* Level);
-	static Grid* AllocateFull();
-	void Init();
-	void Exit();
-
-} GCC_ALIGN(16);
+};
 
 
 //
 // Mini octree for grid
 //
-MS_ALIGN(16) struct DE MiniTree
+struct DE MiniTree
 {
 	cg::Box Bounds;
 	MiniTree* Children[8];
@@ -205,6 +204,7 @@ MS_ALIGN(16) struct DE MiniTree
 	MiniTree() {}
 	MiniTree( Grid* G, const cg::Integers& C);
 	MiniTree( MiniTree* T, uint32 SubOctant);
+	~MiniTree();
 
 	static const TCHAR* Name() { return TEXT("MiniTree"); }
 
@@ -214,17 +214,17 @@ MS_ALIGN(16) struct DE MiniTree
 	void InsertActorInfo( ActorInfo* InActor, const cg::Box& Box);
 	void RemoveActorInfo( ActorInfo* InActor, const cg::Vector& Location);
 	void CleanupActors();
-	bool ShouldQuery() { return HasActors || Actors.ActorCount; }
+	bool ShouldQuery() { return HasActors != 0 || Actors.ArrayNum != 0; }
 
 	void GenericQuery( const GenericQueryHelper& Helper, FCheckResult*& ResultList);
 	void LineQuery( const PrecomputedRay& Ray, FCheckResult*& ResultList);
-} GCC_ALIGN(16);
+};
 
 
 //
 // Trace helper
 //
-MS_ALIGN(16) struct DE PrecomputedRay
+struct DE PrecomputedRay
 {
 	cg::Vector Org;
 	cg::Vector End;
@@ -248,20 +248,19 @@ MS_ALIGN(16) struct DE PrecomputedRay
 	bool Hits_VCylActor( ActorInfo* AInfo, FCheckResult*& Link) const;
 
 	inline bool IsValid() { return ExtraNodeFlags != 0xFFFFFFFF; }
-} GCC_ALIGN(16);
+};
 
 typedef void (GenericQueryHelper::*ActorQuery)( ActorInfo*, FCheckResult*&) const;
 //
 // Base model of the query helper
 //
-MS_ALIGN(16) class DE GenericQueryHelper
+class DE GenericQueryHelper
 {
 public:
 	cg::Vector Location;
 	cg::Box Bounds;
 	uint32 ExtraNodeFlags; //0xFFFFFFFF = invalid query
 	ActorQuery Query;
-	//2 extra DWORDs as padding
 
 	GenericQueryHelper() {}
 	GenericQueryHelper( const FVector& Loc3, uint32 InENF, ActorQuery NewQuery);
@@ -270,10 +269,10 @@ public:
 	void QueryContainer( ActorLinkContainer& Container, FCheckResult*& Result) const;
 	inline bool IsValid() { return ExtraNodeFlags != 0xFFFFFFFF; }
 
-} GCC_ALIGN(16);
+};
 
 // Point query helper
-MS_ALIGN(16) class DE PointHelper : public GenericQueryHelper
+class DE PointHelper : public GenericQueryHelper
 {
 public:
 	cg::Vector Extent;
@@ -282,10 +281,10 @@ public:
 
 	void PointQuery(ActorInfo* AInfo, FCheckResult*& ResultList) const;
 
-} GCC_ALIGN(16);
+};
 
 // Radius query helper
-MS_ALIGN(16) class DE RadiusHelper : public GenericQueryHelper
+class DE RadiusHelper : public GenericQueryHelper
 {
 public:
 	float RadiusSq;
@@ -294,10 +293,10 @@ public:
 
 	void RadiusQuery(ActorInfo* AInfo, FCheckResult*& ResultList) const;
 
-} GCC_ALIGN(16);
+};
 
 // Encroach query helper
-MS_ALIGN(16) class DE EncroachHelper : public GenericQueryHelper
+class DE EncroachHelper : public GenericQueryHelper
 {
 public:
 	AActor* Actor;
@@ -309,4 +308,4 @@ public:
 	void EncroachmentQuery(ActorInfo* AInfo, FCheckResult*& ResultList) const;
 	void EncroachmentQueryCyl(ActorInfo* AInfo, FCheckResult*& ResultList) const;
 
-} GCC_ALIGN(16);
+};

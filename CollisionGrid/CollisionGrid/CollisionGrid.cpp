@@ -8,10 +8,8 @@
 #include "GridTypes.h"
 #include "GridMem.h"
 
-ActorLinkHolder* G_ALH = nullptr;
 ActorInfoHolder* G_AIH = nullptr;
 MiniTreeHolder* G_MTH = nullptr;
-FCollisionHashBase* G_CHB = nullptr;
 GenericMemStack* G_Stack = nullptr;
 
 //
@@ -27,7 +25,7 @@ public:
 	FCollisionGrid( class ULevel* Level)
 	{
 		GridCount++;
-		Grid = Grid::AllocateFor( Level);
+		Grid = new ::Grid( Level);
 	}
 	~FCollisionGrid();
 
@@ -48,8 +46,6 @@ public:
 	virtual FCheckResult* ActorRadiusCheck(FMemStack& Mem, FVector Location, float Radius, uint32 ExtraNodeFlags);
 	virtual FCheckResult* ActorEncroachmentCheck(FMemStack& Mem, AActor* Actor, FVector Location, FRotator Rotation, uint32 ExtraNodeFlags);
 	virtual void CheckActorNotReferenced(AActor* Actor) {};
-
-
 };
 
 uint32 FCollisionGrid::GridCount = 0;
@@ -62,41 +58,36 @@ extern "C"
 
 TEST_EXPORT FCollisionHashBase* GNewCollisionHash( ULevel* Level)
 {
-	//Test unreal engine's unwind semantics
 	if ( !LoadUE() )
 		return nullptr;
 	if ( Loaded == 1 )
 		debugf_ansi( "[CG] CollisionGrid library succesfully initialized.");
-	if ( !G_ALH )	G_ALH = new (A_16) ActorLinkHolder();
-	if ( !G_AIH )	G_AIH = new (A_16) ActorInfoHolder();
-	if ( !G_MTH )	G_MTH = new (A_16) MiniTreeHolder();
+	if ( !G_AIH )	G_AIH = new ActorInfoHolder();
+	if ( !G_MTH )	G_MTH = new MiniTreeHolder();
 	if ( !G_Stack )	G_Stack = new (SIZE_KBytes, 256) GenericMemStack( 256 * 1024); //~5000 results
 	debugf_ansi( "[CG] Element holders succesfully spawned.");
 	//Unreal Engine destroys this object
 	//Therefore use Unreal Engine allocator
-	G_CHB = new(TEXT("FCollisionGrid")) FCollisionGrid( Level);
-	return G_CHB;
+	return new(TEXT("FCollisionGrid")) FCollisionGrid( Level);
 }
 
 }
 
 FCollisionGrid::~FCollisionGrid()
 {
-	Grid->Exit();
 	//		DebugLock( "DeleteGrid", 'D');
 	GridCount--;
 	if ( !GridCount )
 	{
-		Delete_A(G_ALH);
-		Delete_A(G_AIH);
-		Delete_A(G_MTH);
-		if ( G_Stack )
-		{
-			delete G_Stack;
-			G_Stack = nullptr;
-		}
+		G_AIH->Exit();
+		G_MTH->Exit();
+		delete G_Stack;
+		G_AIH = nullptr;
+		G_MTH = nullptr;
+		G_Stack = nullptr;
 	}
-	appFreeAligned( Grid);
+	delete Grid;
+	Grid = nullptr;
 };
 
 GCC_STACK_ALIGN void FCollisionGrid::Tick()
@@ -139,8 +130,7 @@ GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorRadiusCheck(FMemStack& Mem, F
 
 GCC_STACK_ALIGN FCheckResult* FCollisionGrid::ActorEncroachmentCheck(FMemStack& Mem, AActor* Actor, FVector Location, FRotator Rotation, uint32 ExtraNodeFlags)
 {
-	guard(FCollisionGrid::ActorEncroachmentCheck);
 	EncroachHelper Helper( Actor, Location, &Rotation, ExtraNodeFlags);
 	return Helper.QueryGrid( Grid);
-	unguard;
 }
+

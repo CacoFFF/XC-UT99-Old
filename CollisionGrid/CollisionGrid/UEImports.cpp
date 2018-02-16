@@ -11,9 +11,7 @@ v_foutputdevice_tcp_varg     Debugf              = nullptr;
 v_func_acp_acp_i             AppFailAssert       = nullptr;
 v_func_tcp_varg              AppUnwindf          = nullptr;
 i_aactor_v                   IsMovingBrushFunc   = nullptr;
-FOutputDevice**              Core_GLog           = nullptr;
 FNameEntry***                Core_NameTable      = nullptr;
-FMalloc**                    Core_GMalloc        = nullptr;
 /*
 static_assert( sizeof(GetIndexedObject) == 4, "Wrong size of GetIndexedObject pointer");
 static_assert( sizeof(Debugf) == 4, "Wrong size of Debugf pointer");
@@ -74,28 +72,24 @@ bool LoadUE()
 		void* hEngine = GetModuleHandleA( "Engine.dll");
 		GetF( GetIndexedObject , hCore  , "?GetIndexedObject@UObject@@SAPAV1@H@Z");
 		GetF( Debugf           , hCore  , "?Logf@FOutputDevice@@QAAXPBGZZ"        );
-		Get ( Core_GLog        , hCore  , "?GLog@@3PAVFOutputDevice@@A"          );
 		GetF( AppFailAssert    , hCore  , "?appFailAssert@@YAXPBD0H@Z"           );
 		GetF( AppUnwindf       , hCore  , "?appUnwindf@@YAXPBGZZ"                );
 		Get ( Core_NameTable   , hCore  , "?Names@FName@@0V?$TArray@PAUFNameEntry@@@@A");
-		Get ( Core_GMalloc     , hCore  , "?GMalloc@@3PAVFMalloc@@A"             );
 		GetF( IsMovingBrushFunc, hEngine, "?IsMovingBrush@AActor@@QBEHXZ"        ); 
 	}
 
 #elif __GNUC__
 	void* h = dlopen( nullptr, RTLD_NOW | RTLD_GLOBAL);
 #define Get(dest,symbol) { void* A=dlsym(h,symbol); __asm__ ( "mov %%eax,(%%ecx)": : "a"(A), "c"(&dest) : "memory" ); }
-	Get( Core_GLog        , "GLog"                       );
 	Get( GetIndexedObject , "GetIndexedObject__7UObjecti");
 	Get( Debugf           , "Logf__13FOutputDevicePCce"  );
 	Get( AppFailAssert    , "appFailAssert__FPCcT0i"     );
 	Get( AppUnwindf       , "appUnwindf__FPCce"          );
 	Get( Core_NameTable   , "_5FName.Names"              );
-	Get( Core_GMalloc     , "GMalloc"                    );
 	Get( IsMovingBrushFunc, "IsMovingBrush__C6AActor"    );
 #endif
 
 	Loaded++;
-	return GetIndexedObject && Debugf && Core_GLog && AppFailAssert && AppUnwindf && Core_NameTable && Core_GMalloc && IsMovingBrushFunc;
+	return GetIndexedObject && Debugf && AppFailAssert && AppUnwindf && Core_NameTable && IsMovingBrushFunc;
 }
 

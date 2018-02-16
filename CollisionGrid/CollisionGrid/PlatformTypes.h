@@ -5,10 +5,14 @@
 	#define UE_DEV_THROW(n,t)
 	#define UE_DEV_LOG(t,...) 
 	#define UE_DEV_LOG_ANSI(t) 
+	#define guard_slow(n) {
+	#define unguard_slow }
 #else
 	#define UE_DEV_THROW(n,t) if(n) { appFailAssert(t); }
 	#define UE_DEV_LOG(t,...) debugf(t,__VA_ARGS__)
 	#define UE_DEV_LOG_ANSI(t) debugf_ansi(t)
+	#define guard_slow(n) guard(n)
+	#define unguard_slow unguard
 #endif
 
 // Unsigned base types.

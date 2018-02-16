@@ -1,7 +1,7 @@
 
 
-#include "GridTypes.h"
 #include "API.h"
+#include "GridTypes.h"
 #include "GridMem.h"
 
 
@@ -16,8 +16,7 @@
 //Set important variables
 bool ActorInfo::Init( AActor* InActor)
 {
-	static_assert( sizeof(ActorInfo) == 48, "Size of ActorInfo struct is not 48, check alignment/packing settings!");
-
+	guard_slow(ActorInfo::Init);
 	ObjIndex = InActor->Index;
 	Actor = InActor;
 
@@ -49,8 +48,11 @@ bool ActorInfo::Init( AActor* InActor)
 		Flags.bIsMovingBrush = 0;
 	}
 	Actor->CollisionTag = reinterpret_cast<uint32>(this);
+	CurDepth = 0;
+	TopDepth = 0;
 	Flags.bCommited = 1;
 	return true;
+	unguard_slow;
 }
 
 bool ActorInfo::IsValid()
@@ -90,177 +92,58 @@ cg::Vector ActorInfo::cLocation()
 }
 
 
-
-//*************************************************
-//
-// ActorLink
-//
-//*************************************************
-
-uint32 ActorLink::UnlinkInvalid( ActorLink** Container)
-{
-	guard(ActorLink::UnlinkInvalid);
-	uint32 ActorCount = 0;
-	ActorLink** ALR = Container;
-	while ( *ALR )
-	{
-		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "ActorLink::UnlinkInvalid -> reached invalid container");
-		ActorInfo* AInfo = (*ALR)->Info;
-		if ( AInfo->IsValid() )
-		{
-			ActorCount++;
-			ALR = &((*ALR)->Next);
-		}
-		else
-		{
-			UE_DEV_LOG_ANSI( "[CG] ActorLink::UnlinkInvalid decommited an invalid actor");
-			G_AIH->ReleaseElement( AInfo);
-			ActorLink* Next = (*ALR)->Next;
-			UE_DEV_THROW( Next && !G_ALH->IsValid(Next), "ActorLink::UnlinkInvalid -> Next is invalid");
-			G_ALH->ReleaseElement( *ALR );
-			*ALR = Next;
-		}
-	}
-	return ActorCount;
-	unguard;
-}
-
-//*************************************************
-//
-// ActorLinkContainer
-//
-//*************************************************
-
-void ActorLinkContainer::Add( ActorInfo* AInfo)
-{
-	ActorLink* NewLink = G_ALH->GrabElement();
-	NewLink->Info = AInfo;
-	NewLink->Next = ActorList;
-	ActorList = NewLink;
-	ActorCount++;
-}
-
-bool ActorLinkContainer::Remove( ActorInfo* AInfo)
-{
-	guard(ActorLinkContainer::Remove);
-	for ( ActorLink** LinkScan = &ActorList ; *LinkScan ; LinkScan = &(*LinkScan)->Next )
-		if ( G_ALH->IsValid(*LinkScan) && ((*LinkScan)->Info == AInfo) )
-		{
-			G_ALH->ReleaseElement(*LinkScan);
-			*LinkScan = (*LinkScan)->Next;
-			ActorCount--;
-			return true;
-		}
-	return false;
-	unguard;
-}
-
-void ActorLinkContainer::MoveAll(ActorLinkContainer& Destination) //Should only move less than 3 actor links
-{
-	Destination.ActorCount += ActorCount;
-	ActorCount = 0;
-	while ( ActorList )
-	{
-		ActorLink* Next = ActorList->Next;
-		ActorList->Next = Destination.ActorList;
-		Destination.ActorList = ActorList;
-		ActorList = Next;
-	}
-}
-
-uint32 ActorLinkContainer::DebugCount()
-{
-	uint32 i = 0;
-	for ( ActorLink* ALink=ActorList ; ALink ; ALink=ALink->Next )
-		i++;
-	return i;
-}
-
-
 //*************************************************
 //
 // Grid
 //
 //*************************************************
 
-void Grid::Init()
-{
-	//Zero these 16 bytes using one MOVAPS instruction
-	*(cg::Vector*)&Actors = cg::Vector(E_Zero);
-	for (int32 i = 0; i<Size.i ; i++)
-	for (int32 j = 0; j<Size.j ; j++)
-	for (int32 k = 0; k<Size.k ; k++)
-		Node(i,j,k)->Init( i, j, k);
-}
-
-
-Grid* Grid::AllocateFor(ULevel* Level)
+Grid::Grid( ULevel* Level)
+	: Actors()
+	, TreeList(nullptr)
 {
 	UModel* Model = Level->Model;
-	Grid* Result = nullptr;
-	//This is an additive map and has no bounds
 	if ( Model->RootOutside )
-		Result = AllocateFull();
+	{
+		Size = cg::Integers( 128, 128, 128, 0);
+		Box = cg::Box( cg::Vector(-32768,-32768,-32768,0), cg::Vector(32768,32768,32768,0), E_Strict);
+	}
 	else
 	{
-		//Get dimensions from map
 		cg::Box GridBox( &Model->Points(0), Model->Points.ArrayNum);
-		cg::Integers GridSize = ((GridBox.Max - GridBox.Min) * Grid_Mult + cg::Vector(0.99f,0.99f,0.99f)).Truncate32();
-		UE_DEV_THROW( GridSize.i > 128 || GridSize.j > 128 || GridSize.k > 128, "New grid exceeds 128^3 dimensions");
-
-		//Allocate optimal grid
-		Result = (Grid*)appMallocAligned(sizeof(Grid) + sizeof(GridElement) * GridSize.i * GridSize.j * GridSize.k, 16);
-		Result->Box = GridBox;
-		Result->Size = GridSize;
-		Result->Size.l = 0;
-		Result->Init();
-		debugf( TEXT("[CG] Grid allocated %s"), Result->Size.String() );
+		Size = ((GridBox.Max - GridBox.Min) * Grid_Mult + cg::Vector(0.99f,0.99f,0.99f)).Truncate32();
+		Size.l = 0;
+		Box = GridBox;
+		UE_DEV_THROW( Size.i > 128 || Size.j > 128 || Size.k > 128, "New grid exceeds 128^3 dimensions"); //Never deprecate
 	}
-	return Result;
+	uint32 BlockSize = Size.i * Size.j * Size.k * sizeof(struct GridElement);
+	Nodes = (GridElement*) appMalloc( BlockSize);
+	uint32 l = 0;
+	for ( int32 i=0 ; i<Size.i ; i++ )
+	for ( int32 j=0 ; j<Size.j ; j++ )
+	for ( int32 k=0 ; k<Size.k ; k++ )
+		new ( Nodes + l++, E_Stack) GridElement(i,j,k);
+	debugf( TEXT("[CG] Grid allocated [%i,%i,%i]"), Size.i, Size.j, Size.k );
 }
 
-Grid* Grid::AllocateFull()
+Grid::~Grid()
 {
-	Grid* NewGrid = (Grid*)appMallocAligned(sizeof(Grid) + sizeof(GridElement) * 128 * 128 * 128, 16);
-	NewGrid->Size = cg::Integers( 128, 128, 128, 0);
-	NewGrid->Box = cg::Box( cg::Vector(-32768,-32768,-32768,0), cg::Vector(32768,32768,32768,0), E_Strict);
-	NewGrid->Init();
-
-	debugf_ansi("[CG] Grid allocated [FULL]");
-	return NewGrid;
+	uint32 Total = Size.i * Size.j * Size.k;
+	for ( uint32 i=0 ; i<Total ; i++ )
+		Nodes[i].~GridElement();
+	appFree( Nodes);
 }
 
-void GridElement::Init( uint8 i, uint8 j, uint8 k) //Move to CPP
-{
-//	X = i;
-//	Y = j;
-//	Z = k;
-	Actors = ActorLinkContainer();
-	Tree = nullptr;
-	CollisionTag = 0;
-}
+GridElement::GridElement( uint32 i, uint32 j, uint32 k)
+	: Actors()
+	, Tree(nullptr)
+	, CollisionTag(0)
+	, X(i), Y(j), Z(k), W(0)
+{}
 
-cg::Integers GridElement::CalcCoords(Grid* FromGrid)
+GridElement* Grid::Node( int32 i, int32 j, int32 k)
 {
-	uint32 k = ((uint32)this - (uint32) FromGrid->Nodes) / sizeof(struct GridElement);
-	uint32 mult = FromGrid->Size.j * FromGrid->Size.k;
-	uint32 i = k / mult;
-	k -= i * mult;
-	mult = FromGrid->Size.k;
-	uint32 j = k / mult;
-	k -= j * mult;
-	UE_DEV_THROW( FromGrid->Node(i,j,k) != this, "Error in coordinate calculation");
-	return cg::Integers(i,j,k,0);
-}
-
-//Shut down the main grid
-void Grid::Exit()
-{
-
-}
-
-GridElement* Grid::Node( uint32 i, uint32 j, uint32 k)
-{
+	UE_DEV_THROW( i >= Size.i || j >= Size.j || k >= Size.k , "Bad node request"); //Never deprecate
 	return &Nodes[ i*Size.j*Size.k + j*Size.k + k];
 }
 
@@ -269,10 +152,9 @@ GridElement* Grid::Node( const cg::Integers& I)
 	return Node( I.i, I.j, I.k);
 }
 
-
 bool Grid::InsertActor( AActor* Actor)
 {
-	UE_DEV_THROW( !Actor, "Grid::InsertActor with NULL parameter");
+	guard_slow(Grid::InsertActor);
 	if ( !Actor->bCollideActors || Actor->bDeleteMe ) //Validate actor flags
 		return false;
 
@@ -291,47 +173,52 @@ bool Grid::InsertActor( AActor* Actor)
 
 	//Classify whether to add as boundary actor or inner actor
 	//It may even be possible that an actor actually doesn't fit here!!
-	cg::Box ActorBox = AInfo->cBox();
 
 	GridElement* GridElements[MAX_NODE_LINKS];
 	int32 iLinks = 0;
 	bool bGlobalPlacement = false;
 
-	cg::Box RRActorBox = (ActorBox-Box.Min) * Grid_Mult; //Transform to local coords
-	cg::Integers Min = cg::Max(RRActorBox.Min, cg::Vector(E_Zero)).Truncate32();
-	cg::Integers Max = cg::Min(RRActorBox.Max, cg::Vectorize( Size - XYZi_One) ).Truncate32();
-			
-	//Calculate how big the node list will be before doing any listing
-	cg::Integers Total = XYZi_One + Max - Min;
-	if ( Total.i <= 0 || Total.j <= 0 || Total.k <= 0 )
-	{} //Force a no-placement
-	else if ( Total.i*Total.j*Total.k >= MAX_NODE_LINKS )
-		bGlobalPlacement = true;
-	else
+	cg::Box ActorBox = AInfo->cBox();
+	if ( Box.Intersects(ActorBox) )
 	{
-		for ( int i=Min.i ; i<=Max.i ; i++ )
-		for ( int j=Min.j ; j<=Max.j ; j++ )
-		for ( int k=Min.k ; k<=Max.k ; k++ )
-			GridElements[iLinks++] = Node(i,j,k);
+		cg::Box RRActorBox = (ActorBox-Box.Min) * Grid_Mult; //Transform to local coords
+		cg::Vector fMax = cg::Vectorize(Size - XYZi_One);
+		cg::Integers Min = Clamp(RRActorBox.Min, cg::Vector(E_Zero), fMax).Truncate32();
+		cg::Integers Max = Clamp(RRActorBox.Max, cg::Vector(E_Zero), fMax).Truncate32();
+			
+		//Calculate how big the node list will be before doing any listing
+		cg::Integers Total = XYZi_One + Max - Min;
+		UE_DEV_THROW( Total.i <= 0 || Total.j <= 0 || Total.k <= 0, "Bad iBounds calculation"); 
+		if ( Total.i <= 0 || Total.j <= 0 || Total.k <= 0 )
+		{} //Force a no-placement
+		else if ( Total.i*Total.j*Total.k >= MAX_NODE_LINKS )
+			bGlobalPlacement = true;
+		else
+		{
+			for ( int32 i=Min.i ; i<=Max.i ; i++ )
+			for ( int32 j=Min.j ; j<=Max.j ; j++ )
+			for ( int32 k=Min.k ; k<=Max.k ; k++ )
+				GridElements[iLinks++] = Node( i, j, k);
+		}
 	}
 
 	//Placement is uniform, this is required to keep the same ActorInfo in all grids
 	if ( bGlobalPlacement )
 	{
 		AInfo->LocationType = ELT_Global;
-		Actors.Add( AInfo);
+		Actors.AddItem( AInfo);
 	}
 	else if ( iLinks > 1 )
 	{
 		AInfo->LocationType = ELT_Node;
 		while ( iLinks-- > 0 )
-			GridElements[iLinks]->Actors.Add( AInfo);
+			GridElements[iLinks]->Actors.AddItem( AInfo);
 	}
 	else if ( iLinks == 1 )
 	{
 		AInfo->LocationType = ELT_Tree;
 		if ( !GridElements[0]->Tree )
-			GridElements[0]->Tree = new(G_MTH) MiniTree( this, GridElements[0]->CalcCoords(this) );
+			GridElements[0]->Tree = new(G_MTH->GrabElement(),E_Stack) MiniTree( this, GridElements[0]->Coords() );
 		GridElements[0]->Tree->InsertActorInfo( AInfo, ActorBox);
 	}
 	else
@@ -342,6 +229,7 @@ bool Grid::InsertActor( AActor* Actor)
 	}
 	Actor->ColLocation = Actor->Location;
 	return true;
+	unguard_slow;
 }
 
 
@@ -364,7 +252,7 @@ bool Grid::RemoveActor( class AActor* OutActor)
 		cg::Box ActorBox = AInfo->cBox();
 
 		if ( AInfo->LocationType == ELT_Global )
-			Actors.Remove( AInfo);
+			Actors.RemoveItem( AInfo);
 		else if ( AInfo->LocationType == ELT_Node )
 		{
 			cg::Box LocalBox = ActorBox - Box.Min;
@@ -373,7 +261,7 @@ bool Grid::RemoveActor( class AActor* OutActor)
 			for ( int i=Min.i ; i<=Max.i ; i++ )
 			for ( int j=Min.j ; j<=Max.j ; j++ )
 			for ( int k=Min.k ; k<=Max.k ; k++ )
-				Node(i,j,k)->Actors.Remove( AInfo);
+				Node(i,j,k)->Actors.RemoveItem( AInfo);
 		}
 		else if ( AInfo->LocationType == ELT_Tree )
 		{
@@ -397,6 +285,7 @@ cg::Box Grid::GetNodeBoundingBox( const cg::Integers& Coords) const
 
 void Grid::Tick()
 {
+	guard(Grid::Tick);
 	MiniTree** MTR = &TreeList;
 	while ( *MTR )
 	{
@@ -405,7 +294,7 @@ void Grid::Tick()
 			T->CleanupActors();
 		MTR = &((*MTR)->Next);
 	}
-
+	unguard;
 }
 
 //*************************************************
@@ -438,39 +327,36 @@ MiniTree::MiniTree( MiniTree* T, uint32 SubOctant)
 	*(cg::Vector*)&Children[8] = cg::Vector(E_Zero); //Init other stuff as zero as well
 	Depth = T->Depth + 1;
 
-	ActorLink** ALR = &T->Actors.ActorList;
-	while ( *ALR )
+	for ( int32 i=T->Actors.ArrayNum-1 ; i>=0 ; i-- )
 	{
-		UE_DEV_THROW( !G_ALH->IsValid(*ALR), "Invalid actor link in MiniTree constructor");
-		ActorInfo* AInfo = (*ALR)->Info;
-		UE_DEV_THROW( !G_AIH->IsValid(AInfo), "Invalid actor info in MiniTree constructor");
-		if ( (AInfo->TopDepth >= Depth) && (GetSubOctant( AInfo->C.Location) == SubOctant) ) //Belongs here
+		ActorInfo* AInfo = T->Actors(i);
+		if ( G_AIH->IsValid(AInfo) && AInfo->IsValid() )
 		{
-			cg::Box ActorBox = AInfo->cBox();
-			AInfo->CurDepth = Depth;
-			if ( Depth < MAX_TREE_DEPTH ) //Important to continue subdivision spree
-				AInfo->TopDepth = Depth + (GetSubOctant( ActorBox.Min) == GetSubOctant( ActorBox.Max));
-			ActorLink* AL = *ALR; //Remove from this chain, keep pointer
-			*ALR = AL->Next;
-			AL->Next = Actors.ActorList;
-			Actors.ActorList = AL;
-			Actors.ActorCount++;
-			T->Actors.ActorCount--;
+			UE_DEV_THROW( AInfo->CurDepth == Depth, "AInfo in parent tree has my Depth"); //Destroyed tree must be memzero'd
+			if ( (AInfo->TopDepth >= Depth) && (GetSubOctant( AInfo->C.Location) == SubOctant) ) //Belongs here
+			{
+				cg::Box ActorBox = AInfo->cBox();
+				AInfo->CurDepth = Depth;
+				if ( Depth < MAX_TREE_DEPTH ) //Important to continue subdivision spree
+					AInfo->TopDepth = Depth + (GetSubOctant( ActorBox.Min) == GetSubOctant( ActorBox.Max));
+				Actors.AddItem(AInfo);
+				T->Actors.Remove(i);
+			}
 		}
-		else
-			ALR = &(*ALR)->Next; //No removal, advance pointer
 	}
 
-	if ( Actors.ActorCount ) //Tell parent we have actors
+	if ( Actors.ArrayNum ) //Tell parent we have actors
 		T->HasActors |= (1 << SubOctant);
 }
 
+MiniTree::~MiniTree()
+{}
 
 cg::Box MiniTree::GetSubOctantBox( uint32 Index) const
 {
 	cg::Integers Bits( Index << 31, (Index & 0b10) << 30, (Index & 0b100) << 29, 0);
 	cg::Vector Mid = Bounds.CenterPoint();
-	cg::Vector Mod = cg::Vector( _mm_or_ps( (Bounds.Max - Mid).mm(), *(__m128*)&Bits)); //Put sign bits
+	cg::Vector Mod = cg::Vector( _mm_or_ps( Bounds.Max-Mid, Bits)); //Put sign bits
 	return cg::Box( Mid, Mid+Mod);
 }
 
@@ -494,23 +380,28 @@ uint32 MiniTree::GetSubOctant( const cg::Vector& Point) const
 
 void MiniTree::InsertActorInfo( ActorInfo* AInfo, const cg::Box& Box)
 {
-	uint32 Oc1 = GetSubOctant( Box.Min);
-	uint32 Oc2 = GetSubOctant( Box.Max);
-	AInfo->TopDepth = Min( Depth + (Oc1 == Oc2), MAX_TREE_DEPTH);
+	uint32 Oc1;
+	uint32 Oc2;
+	if ( Depth == MAX_TREE_DEPTH )
+		AInfo->TopDepth = Depth;
+	else
+	{
+		Oc1 = GetSubOctant( Box.Min);
+		Oc2 = GetSubOctant( Box.Max);
+		AInfo->TopDepth = Depth + (Oc1 == Oc2);
+	}
 
 	//Add here, timer not needed
-	if ( (AInfo->TopDepth == Depth) || (Actors.ActorCount < REQUIRED_FOR_SUBDIVISION) )
+	if ( (AInfo->TopDepth == Depth) || (Actors.ArrayNum < REQUIRED_FOR_SUBDIVISION) )
 	{
 		AInfo->CurDepth = Depth;
-		Actors.Add( AInfo);
-		UE_DEV_THROW( Actors.DebugCount() != Actors.ActorCount, "MiniTree::InsertActorInfo actor count mismatch");
+		Actors.AddItem( AInfo);
 	}
 	//Add in sub box
 	else
 	{
-		UE_DEV_THROW( Oc1 != Oc2, "MiniTree::InsertActorInfo attempting to subdivide using mismatching suboctants");
 		if ( Children[Oc1] == nullptr )
-			new(G_MTH) MiniTree( this, Oc1);
+			new( G_MTH->GrabElement(), E_Stack) MiniTree( this, Oc1);
 		Children[Oc1]->InsertActorInfo( AInfo, Box);
 		HasActors |= (uint8)(1 << Oc1);
 	}
@@ -531,32 +422,43 @@ void MiniTree::RemoveActorInfo( ActorInfo* AInfo, const cg::Vector& Location)
 		DepthLink[CurDepth+1] = DepthLink[CurDepth]->Children[OcIdx];
 		OctIdx[CurDepth+1] = OcIdx;
 		CurDepth++;
-		if ( !DepthLink[CurDepth] ) //In case of error, cleanup immediately // DEPRECATE LATER
+		if ( !DepthLink[CurDepth] ) //In case of error, cleanup immediately
 		{
 			Timer = 1;
-			debugf( TEXT("[CG] Error in RemoveActorInfo: Link at CurDepth=%i [OCT=%i] is non-existant for %s"), CurDepth, OcIdx, AInfo->Actor->GetName() );
+			debugf( TEXT("[CG] Error in RemoveActorInfo: Link at CurDepth=%i/%i [OCT=%i] is non-existant for %s"), CurDepth, AInfo->CurDepth, OcIdx, AInfo->Actor->GetName() );
 			return;
 		}
 	}
 	//Optimization
-	if ( DepthLink[CurDepth]->Actors.Remove( AInfo) )
+	if ( DepthLink[CurDepth]->Actors.RemoveItem( AInfo) )
 	{
 		for ( ; CurDepth >= 0 && !DepthLink[CurDepth]->ShouldQuery() ; CurDepth-- )
 			DepthLink[CurDepth]->HasActors &= ~(1 << OctIdx[CurDepth]);
 	}
+	else
+		debugf( TEXT("[CG] Failed to remove Actor %s from tree at Depth=%i"), AInfo->Actor->GetName(), CurDepth);
 	if ( Timer == 0 )
 		Timer = 20;
 }
 
 void MiniTree::CleanupActors() //Queries already perform-cleanup operations, just check flags and count
 {
+	guard(MiniTree::CleanupActors);
+/*	for ( int32 i=Actors.ArrayNum-1 ; i>=0 ; i-- )
+		if ( !Actors(i)->IsValid() )
+		{
+			debugf( TEXT("Removing invalid actor %i"), i);
+			G_AIH->ReleaseElement(Actors(i));
+			Actors.Remove(i);
+		}*/
+
 	if ( ChildCount )
 	{
 		for ( uint32 i=0 ; i<8 ; i++ )
 			if ( Children[i] )
 			{
 				Children[i]->CleanupActors();
-				if ( !Children[i]->ShouldQuery() )
+				if ( !Children[i]->ShouldQuery() && !Children[i]->ChildCount )
 				{
 					G_MTH->ReleaseElement( Children[i]);
 					Children[i] = nullptr;
@@ -567,4 +469,5 @@ void MiniTree::CleanupActors() //Queries already perform-cleanup operations, jus
 	}
 	else
 		HasActors = 0;
+	unguard;
 }

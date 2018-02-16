@@ -22,15 +22,25 @@ enum EUnsafe  { E_Unsafe=0 };
 
 struct FVector;
 
+inline float appSqrt( float F)
+{
+	float result;
+	__m128 res = _mm_sqrt_ss( _mm_load_ss( &F));
+	_mm_store_ss( &result, res);
+	return result;
+}
+
+inline float Square( float F)
+{
+	return F*F;
+}
+
 namespace cg
 {
 
 	struct Vector;
 
 static uint32 NanMask = 0x7F800000;
-typedef MS_ALIGN(16) float floatA GCC_ALIGN(16);
-typedef MS_ALIGN(16) int32 intA GCC_ALIGN(16);
-
 
 inline __m128 _newton_raphson_rsqrtss( __m128 n)
 {
@@ -54,10 +64,11 @@ inline __m128 _size_xy_zw( __m128 v)
 
 
 
+
 //
 // 16-aligned SSE integers
 //
-MS_ALIGN(16) struct DE Integers
+struct DE Integers
 {
 	int32 i, j, k, l;
 
@@ -66,7 +77,7 @@ MS_ALIGN(16) struct DE Integers
 	Integers( int32 ii, int32 jj, int32 kk, int32 ll)
 		:	i(ii),	j(jj),	k(kk),	l(ll)	{}
 	Integers( EZero )
-	{	_mm_store_si128( mm(), _mm_setzero_si128() );	}
+	{	_mm_storeu_si128( mm(), _mm_setzero_si128() );	}
 
 	const TCHAR* String() const;
 
@@ -74,15 +85,14 @@ MS_ALIGN(16) struct DE Integers
 	int32& coord( int32 c)
 	{	return (&i)[c];	}
 
-	//This helper function tells the compiler to treat this address as 16-aligned
-	inline intA* ia() const
-	{
-		return (intA*)this;
-	}
-
 	inline __m128i* mm() const
 	{
 		return (__m128i*)this;
+	}
+
+	inline operator __m128() const
+	{
+		return _mm_loadu_ps( (float*)&i);
 	}
 
 	//**************************
@@ -90,8 +100,8 @@ MS_ALIGN(16) struct DE Integers
 	bool operator ==(const Integers& I)
 	{
 		__m128i a, b;
-		a = _mm_load_si128(mm());
-		b = _mm_load_si128(I.mm());
+		a = _mm_loadu_si128(mm());
+		b = _mm_loadu_si128(I.mm());
 		__m128i c = _mm_cmpeq_epi32( a, b);
 		return _mm_movemask_ps( *(__m128*)&c ) == 0b1111;
 	}
@@ -101,32 +111,30 @@ MS_ALIGN(16) struct DE Integers
 	//Basic assignment logic operators
 	Integers operator=(const Integers& I)
 	{
-		_mm_store_si128( mm(), _mm_load_si128( I.mm()) );
+		_mm_storeu_si128( mm(), _mm_loadu_si128( I.mm()) );
 		return *this;
 	}
-
 
 	//*********************
 	//Basic logic operators
 	Integers operator+(const Integers& I) const
 	{
-		__m128i _V = _mm_add_epi32( _mm_load_si128( mm()), _mm_load_si128(I.mm()));
+		__m128i _V = _mm_add_epi32( _mm_loadu_si128( mm()), _mm_loadu_si128(I.mm()));
 		return *(Integers*)&_V;
 	}
 
 	Integers operator-(const Integers& I) const
 	{
-		__m128i _V = _mm_sub_epi32( _mm_load_si128( mm()), _mm_load_si128(I.mm()));
+		__m128i _V = _mm_sub_epi32( _mm_loadu_si128( mm()), _mm_loadu_si128(I.mm()));
 		return *(Integers*)&_V;
 	}
 
-} GCC_ALIGN(16);
-
+};
 
 //
 // 16-aligned SSE vector
 //
-MS_ALIGN(16) struct DE Vector
+struct DE Vector
 {
 	float X, Y, Z, W;
 
@@ -137,14 +145,16 @@ MS_ALIGN(16) struct DE Vector
 		: X(iX) , Y(iY) , Z(iZ) , W(iW)
 	{}
 
-//	Vector( float* f)
-//	{	_mm_store_ps((float*)this, _mm_loadu_ps(f));	}
-
 	Vector( const float* f)
-	{	_mm_store_ps((float*)this, _mm_loadu_ps(f));	}
+	{
+		_mm_storeu_ps( &X, _mm_loadu_ps(f));
+	}
 
 	Vector( const FVector& V, EUnsafe)
-	{ _mm_store_ps((float*)this, _mm_loadu_ps((float*)&V)); W=0; }
+	{
+		_mm_storeu_ps( &X, _mm_loadu_ps((float*)&V));
+		W = 0;
+	}
 
 	Vector( float U, EStatic3D)
 		: X(U) , Y(U) , Z(U) , W(0)
@@ -152,56 +162,61 @@ MS_ALIGN(16) struct DE Vector
 
 	Vector( EZero )
 	{
-		_mm_store_ps(fa(), _mm_setzero_ps());
+		_mm_storeu_ps( &X, _mm_setzero_ps());
 	}
 
 	Vector( const __m128& V)
 	{
-		_mm_store_ps( fa(), V);
+		_mm_storeu_ps( &X, V);
+	}
+
+
+	float* operator*()
+	{
+		return &X;
+	}
+
+	const float* operator*() const
+	{
+		return &X;
 	}
 
 	const TCHAR* String() const;
 
-	//This helper function tells the compiler to treat this address as 16-aligned
-	inline floatA* fa() const
+	inline operator __m128() const
 	{
-		return (floatA*)this;
-	}
-
-	inline __m128 mm() const
-	{
-		return *(__m128*)this;
+		return _mm_loadu_ps( &X);
 	}
 
 	//*********************
 	//Basic arithmetic and logic operators
 	Vector operator+(const Vector& V) const
 	{
-		__m128 _V = _mm_add_ps(_mm_load_ps(fa()), _mm_load_ps(V.fa()));
+		__m128 _V = _mm_add_ps( *this, V );
 		return *(Vector*)&_V;
 	}
 
 	Vector operator-(const Vector& V) const
 	{
-		__m128 _V = _mm_sub_ps(_mm_load_ps(fa()), _mm_load_ps(V.fa()));
+		__m128 _V = _mm_sub_ps( *this, V );
 		return *(Vector*)&_V;
 	}
 
 	Vector operator*(const Vector& V) const
 	{
-		__m128 _V = _mm_mul_ps(_mm_load_ps(fa()), _mm_load_ps(V.fa()));
+		__m128 _V = _mm_mul_ps( *this, V );
 		return *(Vector*)&_V;
 	}
 
 	Vector operator/(const Vector& V) const
 	{
-		__m128 _V = _mm_div_ps(_mm_load_ps(fa()), _mm_load_ps(V.fa()));
+		__m128 _V = _mm_div_ps( *this, V );
 		return *(Vector*)&_V;
 	}
 
 	float operator|(const Vector& V) const //DOT4
 	{
-/*		__m128 _V = _mm_mul_ps(_mm_load_ps(fa()), _mm_load_ps(V.fa()));
+/*		__m128 _V = _mm_mul_ps(_mm_loadu_ps(fa()), _mm_loadu_ps(V.fa()));
 		__m128 x = _mm_castsi128_ps( _mm_shuffle_epi32( _mm_castps_si128(_V), 0b11110101)); //Force a PSHUFD (y,y,w,w)
 		x = _mm_add_ps( x, _V); //x+y,...,z+w,...
 		_V = _mm_movehl_ps( _V, x); //z+w,........
@@ -214,25 +229,25 @@ MS_ALIGN(16) struct DE Vector
 
 	Vector operator*(const float F) const
 	{
-		__m128 _V = _mm_mul_ps(_mm_load_ps(fa()), _mm_load_ps1(&F) );
+		__m128 _V = _mm_mul_ps( *this, _mm_load_ps1(&F) );
 		return *(Vector*)&_V;
 	}
 
 	Vector operator/(const float F) const
 	{
-		__m128 _V = _mm_div_ps(_mm_load_ps(fa()), _mm_load_ps1(&F) );
+		__m128 _V = _mm_div_ps( *this, _mm_load_ps1(&F) );
 		return *(Vector*)&_V;
 	}
 
 	Vector operator&(const Integers& I) const
 	{
-		__m128 _V = _mm_and_ps(_mm_load_ps(fa()), _mm_castsi128_ps(_mm_load_si128( I.mm())) );
+		__m128 _V = _mm_and_ps( *this, I );
 		return *(Vector*)&_V;
 	}
 
 	Vector operator&(const Vector& V) const
 	{
-		__m128 _V = _mm_and_ps(_mm_load_ps(fa()), _mm_load_ps(V.fa()) );
+		__m128 _V = _mm_and_ps( *this, V );
 		return *(Vector*)&_V;
 	}
 
@@ -241,17 +256,23 @@ MS_ALIGN(16) struct DE Vector
 
 	Vector operator-() const
 	{
-		Integers Mask( 0x80000000, 0x80000000, 0x80000000, 0x80000000);
+		const Integers Mask( 0x80000000, 0x80000000, 0x80000000, 0x80000000);
 //		static const __m128 SIGNMASK = _mm_castsi128_ps(_mm_set1_epi32(0x80000000));
-		__m128 _V = _mm_xor_ps( _mm_load_ps(((Vector*)(&Mask))->fa()), _mm_load_ps(fa()));
+		__m128 _V = _mm_xor_ps( Mask, *this);
 		return *(Vector*)&_V;
 	}
 
 	Vector operator=(const Vector& V)
 	{
-		_mm_store_ps( fa(), _mm_load_ps( V.fa()) );
+		_mm_storeu_ps( **this, V );
 		return *this;
 	}
+
+	Vector operator+=(const Vector& V)
+	{	return (*this = *this + V);	}
+
+	Vector operator-=(const Vector& V)
+	{	return (*this = *this - V);	}
 
 	Vector operator*=(const Vector& V)
 	{	return (*this = *this * V);	}
@@ -263,10 +284,16 @@ MS_ALIGN(16) struct DE Vector
 	//**************************
 	//Basic comparison operators
 	bool operator<(const Vector& V) const
-	{	return _mm_movemask_ps(_mm_cmplt_ps(*(__m128*)this, *(__m128*)&V) ) == 0b1111;	}
+	{	return _mm_movemask_ps( *this << V ) == 0b1111;	}
 
 	bool operator<=(const Vector& V) const
-	{	return _mm_movemask_ps(_mm_cmple_ps(*(__m128*)this, *(__m128*)&V)) == 0b1111;	}
+	{	return _mm_movemask_ps(_mm_cmple_ps( *this, V) ) == 0b1111;	}
+
+	Vector operator<<(const Vector& V) const //Bitmask of coordinates where A < B
+	{
+		__m128 _V = _mm_cmplt_ps( *this, V);
+		return *(Vector*)&_V;
+	}
 
 
 	//**************************
@@ -275,7 +302,7 @@ MS_ALIGN(16) struct DE Vector
 	int32 InvalidBits()
 	{
 		__m128 m = _mm_load_ps1( reinterpret_cast<const float*>(&NanMask) );
-		m = _mm_cmpeq_ps( _mm_and_ps( mm(), m), m); //See if (v & m == m)
+		m = _mm_cmpeq_ps( _mm_and_ps( *this, m), m); //See if (v & m == m)
 		return _mm_movemask_ps( m); //See if none of the 4 values threw a NAN/INF
 	}
 	bool IsValid()
@@ -288,8 +315,7 @@ MS_ALIGN(16) struct DE Vector
 	//Compute >= in parallel, store in integers
 	Integers GreaterThanZeroPS()
 	{
-		__m128 self = _mm_load_ps( fa() );
-		__m128i cmp = _mm_castps_si128( _mm_cmpge_ps(self, _mm_setzero_ps()) );
+		__m128i cmp = _mm_castps_si128( _mm_cmpge_ps( *this , _mm_setzero_ps() ) );
 		cmp = _mm_srli_epi32( cmp, 31);
 		return *(Integers*)&cmp;
 	}
@@ -300,8 +326,7 @@ MS_ALIGN(16) struct DE Vector
 	//Cylinder check against Radius, Height
 	bool InCylinder(float Radius, float Height) const //VS2015 generates an unnecessary MOVAPS instruction!
 	{
-		__m128 v = _mm_load_ps( fa() ); //X,Y,Z,W
-		v = _size_xy_zw( v); //XX+YY,YY,ZZ,WW
+		__m128 v = _size_xy_zw( *this ); //XX+YY,YY,ZZ,WW
 		__m128 h = _mm_load_ss(&Height); //H,0,0,0
 		__m128 r = _mm_load_ss(&Radius); //R,0,0,0
 		r = _mm_movelh_ps( r, h); //R,0,H,0
@@ -319,9 +344,8 @@ MS_ALIGN(16) struct DE Vector
 	//Cylinder check against unreal Extent vector
 	bool InCylinder( const Vector& Extent) const //FIX THIS
 	{
-		__m128 v = _mm_load_ps( fa() ); //X,Y,Z,W
-		v = _size_xy_zw( v); //XX+YY,YY,ZZ,WW
-		__m128 r = _mm_load_ps( Extent.fa() ); //R,R,H,0
+		__m128 v = _size_xy_zw( *this ); //XX+YY,YY,ZZ,WW
+		__m128 r = Extent; //R,R,H,0
 		r = _mm_mul_ps( r, r); //RR,RR,HH,0
 		v = _mm_cmple_ps( v, r); //C,C,C,C comparison result (C=0 if greater, C=-1 if less or equal)
 		return (_mm_movemask_ps(v) & 0b0101) == 0b0101; //See that X,Y,Z are all less or equal
@@ -329,7 +353,7 @@ MS_ALIGN(16) struct DE Vector
 
 	float SizeSq() const
 	{
-/*		__m128 v = _mm_load_ps( fa() );
+/*		__m128 v = _mm_loadu_ps( fa() );
 		v = _mm_mul_ps( v, v);
 		__m128 w = _mm_pshufd_ps( v, 0b10110001); //Y,X,W,Z
 		w = _mm_add_ps( w, w); //Y+X, ..., Z+W, ...
@@ -342,7 +366,7 @@ MS_ALIGN(16) struct DE Vector
 	float SizeXYSq() const
 	{
 		float size;
-		__m128 v = _mm_load_ps( fa() );
+		__m128 v = *this;
 		v = _mm_mul_ps( v, v);
 		__m128 w = _mm_pshufd_ps( v, 0b10110001); //Y,X,W,Z
 		w = _mm_add_ss( v, w);
@@ -351,30 +375,31 @@ MS_ALIGN(16) struct DE Vector
 	}
 
 	uint32 SignBits() //Get sign bits of every component
-	{	return _mm_movemask_ps( _mm_load_ps(fa()) );	}
+	{	return _mm_movemask_ps( *this );	}
 
 	//**************************
 	//Transformations
 
 	Vector Absolute() const
 	{
-		Integers Mask( 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF);
-		__m128 _V = _mm_and_ps( _mm_load_ps(((Vector*)(&Mask))->fa()), _mm_load_ps(fa()) );
+		const Integers Mask( 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF);
+		__m128 _V = _mm_and_ps( _mm_loadu_ps( (const float*)&Mask.i ), *this );
 		return *(Vector*)&_V;
 	}
 
 	//Truncate to 4 integers
 	Integers Truncate32()
 	{
-		__m128 m = _mm_load_ps(fa()); //Load
-		__m128i n = _mm_cvttps_epi32( m); //Truncate to integer
-		return *(Integers*)&n;
+		Integers result;
+		__m128i n = _mm_cvttps_epi32( *this ); //Truncate to integer
+		_mm_storeu_si128( result.mm(), n);
+		return result;
 	}
 
 	//Return a normal
 	Vector Normal() const
 	{
-		__m128 a = _mm_load_ps(fa());
+		__m128 a = *this;
 		__m128 b = _mm_mul_ps( a, a);
 		__m128 c = _mm_shuffle_ps( b, b, 0b00011011);
 		c = _mm_add_ps( c, b); //xx+ww, yy+zz, yy+zz, xx+ww
@@ -392,7 +417,7 @@ MS_ALIGN(16) struct DE Vector
 	//Return a normal on 2 components
 	Vector NormalXY() const
 	{
-		__m128 a = _mm_load_ps(fa());
+		__m128 a = *this;
 		__m128 z = _mm_setzero_ps();
 		a = _mm_movelh_ps( a, z); //x,y,0,0
 		__m128 b = _mm_mul_ps( a, a); //xx,yy,0,0
@@ -410,7 +435,7 @@ MS_ALIGN(16) struct DE Vector
 	Vector Reciprocal()
 	{
 //		return Vector(1,1,1,0) / (*this);
-		__m128 x = _mm_load_ps(fa());
+		__m128 x = *this;
 		__m128 z = _mm_rcp_ps(x); //z = 1/x estimate
 		__m128 _V = _mm_sub_ps( _mm_add_ps( z, z), _mm_mul_ps( x, _mm_mul_ps( z, z))); //2z-xzz
 		return *(Vector*)&_V; //~= 1/x to 0.000012%
@@ -419,9 +444,9 @@ MS_ALIGN(16) struct DE Vector
 	//Transform by a normalized XY dir vector
 	Vector TransformByXY( const Vector& Dir) const
 	{
-		__m128 org = _mm_load_ps( fa()     );
-		__m128 dir = _mm_load_ps( Dir.fa() );
-		__m128 y = _mm_load_ps( Vector(1,1,-1,1).fa() );
+		__m128 org = *this;
+		__m128 dir = Dir;
+		__m128 y = Vector(1,1,-1,1);
 
 		//result.x = org DOT dir
 		//result.y = org DOT rotated_dir
@@ -429,7 +454,7 @@ MS_ALIGN(16) struct DE Vector
 
 		//Dir: X,Y
 		//Rotated dir: -Y, X
-		dir = _mm_castsi128_ps( _mm_shuffle_epi32( _mm_castps_si128(dir), 0b00010100)); //Force a PSHUFD (x,y,y,x)
+		dir = _mm_pshufd_ps( dir, 0b00010100); //Force a PSHUFD (x,y,y,x)
 		dir = _mm_mul_ps( dir, y); //x,y,-y,x
 
 		__m128 opvec = _mm_movelh_ps( org, org); //Get X,Y,X,Y here
@@ -441,36 +466,37 @@ MS_ALIGN(16) struct DE Vector
 
 		return *(Vector*)&opvec;
 	}
-
-
-} GCC_ALIGN(16);
+};
 //**************
 
-
-// Members
 inline Vector Min( const Vector& A, const Vector& B)
 {
-	__m128 _V = _mm_min_ps( _mm_load_ps(A.fa()), _mm_load_ps( B.fa()) );
+	__m128 _V = _mm_min_ps( A, B );
 	return *(Vector*) &_V;
 }
 
 inline Vector Max( const Vector& A, const Vector& B)
 {
-	__m128 _V = _mm_max_ps( _mm_load_ps(A.fa()), _mm_load_ps( B.fa()) );
+	__m128 _V = _mm_max_ps( A, B );
+	return *(Vector*) &_V;
+}
+
+inline Vector Clamp( const Vector& Sample, const Vector& Min, const Vector& Max)
+{
+	__m128 _V = _mm_min_ps( _mm_max_ps( Sample, Min), Max);
 	return *(Vector*) &_V;
 }
 
 inline Vector Vectorize( const Integers& i)
 {
-	__m128 _V = _mm_cvtepi32_ps( _mm_load_si128(i.mm()) ); //Load and truncate to integer
+	__m128 _V = _mm_cvtepi32_ps( _mm_loadu_si128(i.mm()) ); //Load and truncate to integer
 	return *(Vector*)&_V;
 }
-
 
 //
 // Simple bounding box type
 //
-MS_ALIGN(16) struct DE Box
+struct DE Box
 {
 	Vector Min, Max;
 
@@ -481,23 +507,29 @@ MS_ALIGN(16) struct DE Box
 	{}
 
 	Box( const Box& B)
-		:	Min(B.Min), Max(B.Max) {}
+		:	Min(B.Min)
+		,	Max(B.Max)
+	{}
 
 	//Create an empty box
 	Box( EZero)
 	{
 		__m128 m = _mm_setzero_ps();
-		_mm_store_ps( Min.fa(), m);
-		_mm_store_ps( Max.fa(), m);
+		_mm_storeu_ps( *Min, m);
+		_mm_storeu_ps( *Max, m);
 	} 
 
 	//Non-strict constructor: used when Min, Max have to be deducted
 	Box( const Vector& A, const Vector& B)
-		:	Min( cg::Min(A,B))	,	Max( cg::Max(A,B))	{}
+		:	Min( cg::Min(A,B))
+		,	Max( cg::Max(A,B))
+	{}
 
 	//Strict constructor: used when Min, Max are obvious
 	Box( const Vector& InMin, const Vector& InMax, EStrict)
-		:	Min( InMin)	,	Max(InMax)	{}
+		:	Min(InMin)
+		,	Max(InMax)
+	{}
 
 	//Construct a box containing all of Unreal vectors in the list
 	Box( FVector* VList, int32 VNum)
@@ -532,8 +564,8 @@ MS_ALIGN(16) struct DE Box
 		mi = _mm_and_ps( mi, mask);
 		ma = _mm_and_ps( ma, mask);
 		//Save
-		_mm_store_ps( Min.fa(), mi);
-		_mm_store_ps( Max.fa(), ma);
+		_mm_storeu_ps( *Min, mi);
+		_mm_storeu_ps( *Max, ma);
 	}
 
 	//Give us one of the component vectors
@@ -545,7 +577,7 @@ MS_ALIGN(16) struct DE Box
 
 	Box operator=(const Box& B)
 	{
-		Min = B.Min;
+		Min = B.Min; //Does compiler automatically propagate user defined = operators?
 		Max = B.Max;
 		return *this;
 	}
@@ -554,26 +586,17 @@ MS_ALIGN(16) struct DE Box
 	//Basic logic operators
 	Box operator+(const Vector& V) const
 	{
-		__m128 _V =  _mm_load_ps(V.fa());
-		__m128 _m[2] = {	_mm_add_ps(_mm_load_ps(Min.fa()), _V),
-							_mm_add_ps(_mm_load_ps(Max.fa()), _V) };
-		return *(Box*)_m;
+		return Box( Min+V, Max+V, E_Strict);
 	}
 
 	Box operator-(const Vector& V) const
 	{
-		__m128 _V =  _mm_load_ps(V.fa());
-		__m128 _m[2] = {	_mm_sub_ps(_mm_load_ps(Min.fa()), _V),
-							_mm_sub_ps(_mm_load_ps(Max.fa()), _V) };
-		return *(Box*)_m;
+		return Box( Min-V, Max-V, E_Strict);
 	}
 
 	Box operator*(const Vector& V) const
 	{
-		__m128 _V =  _mm_load_ps(V.fa());
-		__m128 _m[2] = {	_mm_mul_ps(_mm_load_ps(Min.fa()), _V),
-							_mm_mul_ps(_mm_load_ps(Max.fa()), _V) };
-		return *(Box*)_m;
+		return Box( Min*V, Max*V, E_Strict);
 	}
 	
 	//***********************
@@ -583,8 +606,8 @@ MS_ALIGN(16) struct DE Box
 	{
 		__m128 cmin, cmax;
 		__m128 m = _mm_setzero_ps();
-		cmin = _mm_cmpeq_ps( m, Min.mm() );
-		cmax = _mm_cmpeq_ps( m, Max.mm() );
+		cmin = _mm_cmpeq_ps( m, Min );
+		cmax = _mm_cmpeq_ps( m, Max );
 		m = _mm_cmpeq_ps( cmin, cmax );
 		return _mm_movemask_ps( m) == 0b1111;
 	}
@@ -639,18 +662,15 @@ MS_ALIGN(16) struct DE Box
 	//Enlarge a box by a 'Extent' vector
 	void ExpandBounds( const Vector& By) 
 	{
-		__m128 by = _mm_load_ps( By.fa() );
-		_mm_store_ps( Min.fa(), _mm_sub_ps( _mm_load_ps(Min.fa()),by) );
-		_mm_store_ps( Max.fa(), _mm_add_ps( _mm_load_ps(Max.fa()),by) );
+		Min -= By;
+		Max += By;
 	}
 
-} GCC_ALIGN(16);
-
-
-
+};
 
 } //Namespace cg - end
 
+typedef cg::Vector FVector4;
 
 template<class T> inline T Max( const T A, const T B )
 {

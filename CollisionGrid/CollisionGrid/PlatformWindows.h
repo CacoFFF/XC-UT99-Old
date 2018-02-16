@@ -27,8 +27,10 @@
 	#define GCC_PACK(n)
 	#define GCC_ALIGN(n)
 	#define GCC_STACK_ALIGN
+	#define LINUX_SYMBOL(t) 
 
 	#pragma warning(disable : 4100) //'[___]': unreferenced formal parameter
+	#pragma warning(disable : 4127) //'[___]': conditional expression is constant
 	#pragma warning(disable : 4201) //nonstandard extension used: nameless struct/union
 	#pragma warning(disable : 4244) //'initializing': conversion from '[___]' to '[___]', possible loss of data
 	#pragma warning(disable : 4291) //no matching operator delete found; memory will not be freed if initialization throws an exception

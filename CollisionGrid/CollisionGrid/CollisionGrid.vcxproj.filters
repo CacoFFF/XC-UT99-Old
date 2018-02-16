@@ -44,9 +44,6 @@
     <ClInclude Include="PlatformLinux.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="FVector.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="GridMath.h">
       <Filter>Header Files</Filter>
     </ClInclude>
