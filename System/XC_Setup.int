@@ -1,0 +1,2 @@
+[Public]
+Object=(Name=XC_Setup.XC_SetupCommandlet,Class=Class,MetaClass=Core.Commandlet)

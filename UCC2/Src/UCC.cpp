@@ -6,8 +6,6 @@ Revision history:
 	* Created by Tim Sweeney.
 =============================================================================*/
 
-//Do not import
-#define XC_CORE_API   
 
 #if WIN32
 	#include <windows.h>
@@ -49,7 +47,7 @@ Revision history:
 
 #endif
 
-INT GFilesOpen, GFilesOpened;
+//INT GFilesOpen, GFilesOpened;
 
 /*-----------------------------------------------------------------------------
 	Global variables.
@@ -57,13 +55,17 @@ INT GFilesOpen, GFilesOpened;
 
 // General.
 #if _MSC_VER
+	#define XC_CORE_API DLL_IMPORT
 	extern "C" {HINSTANCE hInstance;}
 #endif
 extern "C" {TCHAR GPackage[64]=TEXT("UCC");}
 
-// Log.
-#include "FOutputDeviceFile_XC.h"
-FOutputDeviceFile_XC Log;
+
+// XC_Core devices
+#include "Devices.h"
+
+// Log
+FOutputDeviceFileXC Log;
 
 // Error.
 #include "FOutputDeviceAnsiError.h"
@@ -94,17 +96,11 @@ FFeedbackContextAnsi_XC Warn;
 	FFileManagerAnsi FileManager;
 #endif
 
-
-
-// Thread-safe devices
-#include "FMallocThreadedProxy.h"
-#include "FOutputDeviceThreadedProxy.h"
-FMallocThreadedProxy ThMalloc( &Malloc);
-FOutputDeviceThreadedProxy ThLog( &Log);
-
+FMallocThreadedProxy ThMalloc( &Malloc );
 
 // Config.
 #include "FConfigCacheIni.h"
+
 
 /*-----------------------------------------------------------------------------
 	Main.
@@ -126,10 +122,24 @@ void ShowBanner( FOutputDevice& Warn )
 	Warn.Logf( TEXT("=======================================") );
 	Warn.Logf( TEXT("ucc.exe: UnrealOS execution environment") );
 	Warn.Logf( TEXT("Copyright 1999 Epic Games Inc") );
-	Warn.Logf( TEXT("Modified by Higor (UCC2 version 1)") );
+	Warn.Logf( TEXT("Modified by Higor (UCC2 version 3)") );
 	Warn.Logf( TEXT("=======================================") );
 	Warn.Logf( TEXT("") );
 }
+
+TCHAR* MakeLogFilename( TCHAR* CmdLine)
+{
+	TCHAR* Filename = appStaticString1024();
+	Filename[0] = 0;
+	if
+	(	!Parse(CmdLine, TEXT("LOG="), Filename+appStrlen(Filename), 1024-appStrlen(Filename) )
+	&&	!Parse(CmdLine, TEXT("ABSLOG="), Filename, 1024 ) )
+	{
+		appStrcat( Filename, TEXT("UCC2.log") );
+	}
+	return Filename;
+}
+
 int main( int argc, char* argv[] )
 {
 	#if __STATIC_LINK
@@ -210,8 +220,13 @@ int main( int argc, char* argv[] )
 			}
 		#endif
 
+		// Finish initializing XC interfaces
+		FMallocThreadedProxy::SetSingleton( &ThMalloc);
+		ThMalloc.SetUndetachable( true);
+		Log.SetFilename( MakeLogFilename(CmdLine));
+
 		// Init engine core.
-		appInit( TEXT("UnrealTournament"), CmdLine, &ThMalloc, &ThLog, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
+		appInit( TEXT("UnrealTournament"), CmdLine, &ThMalloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
 
 		// Init static classes.
 		#if __STATIC_LINK

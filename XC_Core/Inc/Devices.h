@@ -121,6 +121,11 @@ public:
 		UBOOL IsAttached();
 	#endif
 
+	inline void SetUndetachable( UBOOL bEnable)
+	{
+		NoAttachOperations = bEnable;
+	}
+
 	static MALLOC_SET_SINGLETON FMallocThreadedProxy* GetInstance();
 	static MALLOC_SET_SINGLETON void SetSingleton( FMallocThreadedProxy* NewSingleton);
 };

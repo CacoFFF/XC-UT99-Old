@@ -51,7 +51,7 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386
-# ADD LINK32 ..\..\Core\Lib\Core.lib /nologo /subsystem:console /incremental:yes /machine:I386 /out:"..\..\System\UCC.exe"
+# ADD LINK32 ..\..\Core\Lib\Core.lib ..\..\XC_Core\Release\XC_Core.lib /nologo /subsystem:console /incremental:yes /machine:I386 /out:"..\..\System\UCC.exe"
 
 !ELSEIF  "$(CFG)" == "UCC - Win32 Debug"
 
@@ -84,12 +84,20 @@ LINK32=link.exe
 
 # Name "UCC - Win32 Release"
 # Name "UCC - Win32 Debug"
-# Begin Group "Src"
+# Begin Group "Source"
 
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
 # Begin Source File
 
 SOURCE=.\UCC.cpp
+# End Source File
+# End Group
+# Begin Group "Header"
+
+# PROP Default_Filter "h"
+# Begin Source File
+
+SOURCE=.\FFeedbackContextAnsi_XC.h
 # End Source File
 # End Group
 # End Target
