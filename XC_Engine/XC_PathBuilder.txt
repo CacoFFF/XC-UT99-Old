@@ -1,0 +1,34 @@
+======================================
+XC_PathBuilder actor for Unreal Editor
+======================================
+
+This small addition allows the mapper to alter the behaviour of Unreal Editor's path network builder.
+Available for Unreal Editor, when inserting this actor into the map a full path rebuild will run (status box doesn't appear).
+Once path rebuild is done, the actor will instantly self-destruct and be removed from the level.
+
+
+========
+Loading:
+
+As of XC_Engine version 21 this can be used as part of the editor addons.
+You'll find a golden path rebuild button on the left pane.
+
+Hit right click to change the variables of the rebuilder.
+
+
+======
+Rules:
+
+This path rebuild will follow these particular directives
+
+- Max scan distance changes from 1000 to XC_PathBuilder.MaxScanRange (set in default properties via editor)
+** Increasing scan distance may make path pruning impossible, use carefully.
+** Make sure you keep node distances consistent across the ENTIRE map.
+
+- InventorySpot class changes from InventorySpot to [XC_PathBuilder.InventorySpotClass] (set in default properties via editor)
+- InventorySpot paths that are visible in the editor aren't removed.
+- Inventory items that aren't visible in the editor don't get a InventorySpot marker
+** Object groups can be used to quickly hide batches of items that aren't intended to receive InventorySpot markers.
+** If you rebuild paths once, then hide the item and show the InventorySpot marker you can 'manually' keep this marker on this item without being touched by the path rebuilder, this is useful to force a connection onto this individual marker.
+- The 'Event' field of any NavigationPoint actor will force a direct connection to any other NavigationPoint whose Tag or Name matches.
+

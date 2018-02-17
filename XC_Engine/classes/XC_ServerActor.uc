@@ -22,6 +22,21 @@ var array<LoginInfo> LInfos;
 native(640) static final function int Array_Length_LI( out array<LoginInfo> Ar, optional int SetSize);
 native(641) static final function bool Array_Insert_LI( out array<LoginInfo> Ar, int Offset, optional int Count );
 native(642) static final function bool Array_Remove_LI( out array<LoginInfo> Ar, int Offset, optional int Count );
+native(3553) final iterator function DynamicActors( class<actor> BaseClass, out actor Actor, optional name MatchTag );
+
+
+//Prevent duplicates
+event PostBeginPlay()
+{
+	local XC_ServerActor Other;
+	ForEach DynamicActors( class'XC_ServerActor', Other)
+		if ( Other != self )
+		{
+			Destroy();
+			return;
+		}
+}
+
 
 auto state Init
 {

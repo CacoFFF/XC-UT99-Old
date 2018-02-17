@@ -1,0 +1,26 @@
+=================
+TravelManager:
+=================
+The TravelManager is a small addon that's inserted into the game upon XC_GameEngine initialization.
+It can receive console commands and controls the travel list when a server is running.
+
+=== Global Features:
+- Automatically corrects the existing level's travel list owner (if any) when a player changes name.
+If a player's new name already has an existing travel entry, the name change is reverted!.
+This means that a player cannot override an existing travel entry with his own.
+Players' travel info is kept for as long as the coop chain isn't broken.
+
+When (XC_GameEngine.bAutoTravelManager = True):
+- Scans current connections and updates the client's travel list items every two seconds.
+The scanning is performed using class and property caching, avoiding any kind of slowdowns in extremely high traffic theoretical scenarios.
+The most obvious effect of enabling this setting, is the ability to recover all items/status a player had prior to disconnection.
+This can be turned on or off in runtime safely.
+
+=== Commands:
+- TravelInfo
+Lists players and their items in the Single Player travel list!
+
+- TravelUpdate
+Forces manual travel list update on multiplayer games.
+Coop games may implement this if they don't want to run with bAutoTravelManager.
+

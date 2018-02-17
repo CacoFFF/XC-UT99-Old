@@ -1,0 +1,66 @@
+These are a few samples of XC_GameEngine settings.
+
+- Disable the Timing Fix if you're running TickFix, SCF or a custom launcher that fixes timing.
+--- We're assuming that servers that run gametypes without monsters will install all this crap.
+- Use the map sorting functions if you need to fix your mapvote.
+- Copy ServerPackages and ServerActors from your Engine.GameEngine block
+- bFasterUpload (def=true) should be set to False if your server has a 100% working redirect.
+- On slow computers, disable the collision octree: bCollisionHashHook=False
+
+
+Client:
+[XC_Engine.XC_GameEngine]
+bCacheConvertAtJoin=True
+bFasterUpload=True
+;ServerPackages=
+;ServerActors=
+
+Siege server:
+[XC_Engine.XC_GameEngine]
+bDisableTimingFix=True
+bFasterUpload=True
+NoBrushTrackerFix=CTF-Niven
+NoBrushTrackerFix=CTF-'uK-Simplex][
+NoBrushTrackerFix=CTF-Niven][
+; Add any other maps where doors make it unplayable
+;ServerPackages=
+;ServerActors=
+
+CTF/DM/TDM/AS server:
+[XC_Engine.XC_GameEngine]
+bDisableTimingFix=True
+bFasterUpload=True
+;ServerPackages=
+;ServerActors=
+
+Coop server:
+[XC_Engine.XC_GameEngine]
+bSortMaplistByFolder=True
+bAutoTravelManager=True
+bFasterUpload=True
+;ServerPackages=
+;ServerActors=
+
+MH server:
+[XC_Engine.XC_GameEngine]
+bSortMaplistGlobal=True
+bFasterUpload=True
+;ServerPackages=
+;ServerActors=
+
+
+- If you're running a NexGen server and you want to prevent reconnect spam from banned players:
+Add to ServerActors: NexgenXCGE_01.NexgenXCGE_PreLogin
+
+==========================
+Advanced settings (defaults displayed):
+[XC_Engine.XC_GameEngine]
+bUseLevelHook=True	(hooks the level object after map is loaded)
+bUseNewRelevancy=True	(runs the relevancy loop on net servers using xcge code)
+bEnableDebugLogs=False
+bAutoCompressLZMA=False (run LZMA autocompressor)
+bForceLevelHook=False	(use level hook on client sessions)
+bScriptDebug=False	(Displays script callstack on crash logs)
+ClientFrameRateLimit=0  (Engine frame rate limiter for clients)
+bInterceptMalloc=True   (Add thread-safe layer to malloc)
+bInterceptLog=True      (Add thread-safe layer to log, filters log spam by grouping lines together)

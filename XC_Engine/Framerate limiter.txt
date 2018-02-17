@@ -1,0 +1,45 @@
+=================
+Framerate limiter
+=================
+
+XC_Engine can now signal the game launcher that the framerate must be kept at
+a specific value, adding a much needed frame limiter for non-server instances.
+There are three advantages to this:
+
+-- Conformance to engine specifications:
+The framerate is limited between 4 to 200, which are the minimum and
+maximum ranges the level's internal update allow.
+This for example prevents the game from running too fast at over 200 fps.
+
+-- Usability:
+All the user has to do is use the command FPS in console to either view or
+specify the desired framerate, this lets the user quickly adjust the
+framerate in the same way it can be done in other games.
+
+-- Solve renderer technical issues:
+Some of the new renderers have a framerate limiter implemented on them,
+the problem is that they need to reimplement all the timing functions in
+order to do that, and in most of cases these timing functions use RTDSC
+which can cause speed issues in multicore CPU's.
+On the other side the old renderers don't implement any form of limiter,
+this can potentially make the game go over the 200 fps cap.
+
+=========================
+
+By adding an Engine controlled framerate limit (as it is with servers)
+both launchers and renderers need not to do anything other than what they
+were intended to do, while the engine dictates what the FPS limit is.
+
+If you're migrating your config and you have a renderer with a previously
+set FPS limit, you'll need to set it back to 0 (no limit) on the renderer
+and then launch the game using XC_Engine and set the limit using the
+"FPS" command in your game console as follows:
+
+FPS -> displays current framerate limit
+FPS n -> sets framerate limit to 'n' (4-200)
+FPS 0 -> disables frame limiter (equivalent to 200)
+
+The FPS limit is saved in your UnrealTournament.ini under
+
+[XC_Engine.XC_GameEngine]
+ClientFramerateLimit=0

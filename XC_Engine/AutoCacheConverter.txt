@@ -1,0 +1,54 @@
+=========================
+Automatic cache converter
+=========================
+
+The Automatic cache converter is a simple setting that allows the client to copy
+files delivered by the current server it's connected to into the package folders
+with correct names and cases.
+
+The file copy operations occur immediately after loading the map on a remote
+server and new files will be placed into the first directory that matches the
+file system criterias.
+
+All file copy operations will be logged and won't replace existing files.
+
+
+======
+Usage:
+
+This option is disabled by default, you must enable it in order for it to work.
+Set XC_GameEngine.bCacheConvertAtJoin=True.
+
+- The option can be modified via INI as follows
+[XC_Engine.XC_GameEngine]
+bCacheConvertAtJoin=True
+
+- Or via a command:
+SET XC_GAMEENGINE bCacheConvertAtJoin 1
+
+
+=========
+Examples:
+
+- Copying downloaded files into default folders
+[Core.System]
+Paths=../System/*.u
+Paths=../Maps/*.unr
+Paths=../Textures/*.utx
+Paths=../Sounds/*.uax
+Paths=../Music/*.umx
+
+- Copying downloaded files into a common folder
+[Core.System]
+Paths=../Downloaded/*.u
+Paths=../Downloaded/*.unr
+Paths=../Downloaded/*.utx
+Paths=../Downloaded/*.uax
+Paths=../Downloaded/*.umx
+Paths=../System/*.u
+Paths=../Maps/*.unr
+Paths=../Textures/*.utx
+Paths=../Sounds/*.uax
+Paths=../Music/*.umx
+-> Make sure you create the folder you're going to use!!
+

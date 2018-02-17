@@ -8,6 +8,7 @@ var() config bool bFixBroadcastMessage;
 var() config bool bSpectatorHitsTeleporters;
 var() config bool bListenServerPlayerRelevant;
 var() config bool bPatchUdpServerQuery;
+var() config bool bSpawnServerActor;
 
 native(640) static final function int Array_Length_Str( out array<string> Ar, optional int SetSize);
 native(641) static final function bool Array_Insert_Str( out array<string> Ar, int Offset, optional int Count );
@@ -54,4 +55,5 @@ defaultproperties
 	bSpectatorHitsTeleporters=True
 	bListenServerPlayerRelevant=True
 	bPatchUdpServerQuery=True
+	bSpawnServerActor=True
 }

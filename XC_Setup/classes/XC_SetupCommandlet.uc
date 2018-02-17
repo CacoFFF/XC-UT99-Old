@@ -76,7 +76,7 @@ AGAIN:
 	goto AGAIN;
 
 BAD_PARAMETER:
-	if ( !(Left(NextParam,5) ~= "-ini=") )
+	if ( !(Left(NextParam,5) ~= "-ini=") && !(NextParam ~= "-nohomedir") )
 		Log("XC_Setup: Bad parameter "$NextParam);
 	goto AGAIN;
 }

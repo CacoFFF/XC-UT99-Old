@@ -233,6 +233,8 @@ event XC_Init()
 					ReplaceFunction( AC, AC2, 'Validate', 'Validate'); //Securevalidate patch
 				}
 			}
+			if ( ConfigModule.bSpawnServerActor )
+				Spawn( class'XC_ServerActor');
 		}
 		RestoreFunction( class'GameInfo', 'PreLogin');
 		ReplaceFunction( class'XC_Engine_GameInfo', class'GameInfo', 'PreLogin_Org', 'PreLogin'); //Backup the function

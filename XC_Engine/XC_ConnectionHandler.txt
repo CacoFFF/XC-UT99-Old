@@ -1,0 +1,80 @@
+=================================
+XC_ConnectionHandler actor readme
+=================================
+
+This actor is automatically spawned on net servers running XC_GameEngine.
+It was made to operate independantly of XC_GameEngine so you can spawn it
+on a non XC_GameEngine server by simply adding it to the ServerActors list
+as follows:
+
+[Engine.GameEngine]
+...
+ServerActors=XC_Engine.XC_ConnectionHandler
+
+
+=== Features:
+Can timeout connections without channel data at much lower values.
+Timeout value can switch to a lower 'critical' timeout when connection count
+exceeds a user defined value as a way to aggresively enforce less resource
+usage on the server.
+
+Can query the TCPNetDriver object an extra amount of times per frame, this
+is done to mitigate a design flaw in the driver where a bad set of packets
+can delay the client's incoming data by a 'n' amount of frames causing
+said data to be discarded by the server due to artificially increased
+delay.
+By querying the TCPNetDriver an extra (user defined) times per frame, we
+ensure than the malicious packets causing artificial delay are gone from
+the socket at a much faster rate.
+
+The connection handler is best run using XC_IpDrv.XC_TcpNetDriver as main
+net driver, but said net driver hasn't been throughly tested and only works
+on Win32 platforms so use at own risk.
+
+=== Settings (On XC_Engine.ini):
+The default settings are as follow:
+
+[XC_Engine.XC_ConnectionHandler]
+DatalessTimeout=5.0
+CriticalTimeout=2.0
+CriticalConnCount=10
+ExtraTCPQueries=2
+
+DatalessTimeout: Timeout for dataless connections in normal conditions
+CriticalTimeout: Timeout for dataless connections in critical conditions
+CriticalConnCount: Amount of dataless connections needed to trigger critical mode
+ExtraTCPQueries: Extra TCPNetDriver queries per frame
+
+There are some restrictions:
+- DatalessTimeout may not be lower than 2.0
+- CriticalConnCount may not be lower than 2
+Lowering said values to anything below will reset those to their defaults.
+
+
+=== Notes on attacks:
+This is best run in conjunction with ServerCrashFix.
+As SCF handles exploits, this handles data overflow and a TCPNetDriver flaw.
+
+The values are completely arbitrary and depend on the volume of an attack.
+At extreme DDoS conditions these values had to be used:
+DatalessTimeout=3.0
+CriticalTimeout=0.0
+CriticalConnCount=6
+ExtraTCPQueries=50
+With some remote ports firewalled.
+
+Firewalling remote ports is important to prevent bandwidth amplification
+attacks from reaching UT.
+You can easily spot those amplification attacks as you notice thousands
+of different IP addresses, but very common remote ports where said data
+originates from.
+
+
+Example:
+SSDP reflected DoS attack.
+
+Consists of vulnerable routers returning 30x the attacker's bandwidth to
+the game server via spoofing, these connection attempts can be easily spotted:
+random.ip.address:1900 -> multiple times
+
+All you have to do is firewall all incoming connections with remote port 1900.

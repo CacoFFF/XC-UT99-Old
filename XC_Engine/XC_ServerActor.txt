@@ -1,0 +1,69 @@
+==================================
+XC_ServerActor server actor readme
+==================================
+
+As of XC_Engine version 21, XC_ServerActor can be automatically inserted
+onto servers if the following setting (XC_Engine.ini) is set:
+
+[GeneralConfig]
+bSpawnServerActor=True
+
+============
+Description:
+
+This AdminLoginHook actor will allow external handling of AdminLogin calls
+originating from PlayerPawn actors.
+This gives the server the ability to deny the GameInfo.AdminLogin call.
+
+In this case, the XC_ServerActor prevents players from brute forcing the AdminLogin.
+
+=====================
+Settings (On XC_Engine.ini):
+
+The default settings are as follow:
+[XC_Engine.XC_ServerActor]
+MaxBadLoginAttempts=100
+LoginTryAgainTime=4.000000
+bKickAfterMaxLogin=False
+
+A bad login attempt is a login that occurs quickly after another (defined by LoginTryAgainTime)
+Bad logins are automatically discarded and the player has to wait in order to be able to login again.
+These bad logins are counted, when a player reaches MaxBadLoginAttempts, either:
+- Block AdminLogin until player reconnects.
+- Kick player if bKickAfterMaxLogin=true.
+
+====================================
+AdminLogin hook Description for coders
+
+This is a PreLoginHook actor, it autoregisters itself to XC_GE's PreLoginHooks list and
+gains the ability to interfere with a player's PreLogin function.
+
+How does this happen?
+The following pseudocode explains it:
+
+exec function AdminLogin( string Password)
+{
+	if ( XCGE_Allow(self) )
+		Level.Game.AdminLogin( self, Password);
+}
+
+
+This allows every hooked actor to alter the Error and FailCode values with simple unrealscript code.
+The only requirements are to register the actor with the following console command:
+
+event PostBeginPlay()
+{
+	ConsoleCommand( "AdminLoginHook "$Name);
+	//Warning: SaveConfig() is called on this actor by XC_GameEngine before map switch.
+}
+
+
+And to implement this function as you see it right here (register will fail otherwise):
+
+event bool AdminLoginHook( PlayerPawn P)
+{
+	... //Your code here
+	return true; //If you want the call to pass
+	return false; //If you want to interrupt the player from reaching GameInfo.AdminLogin
+}
+

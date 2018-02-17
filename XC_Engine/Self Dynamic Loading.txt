@@ -1,0 +1,35 @@
+Letting a package have control over it's presence in the UPackageMap object without
+requiring it to be in 'ServerPackages' list.
+
+WARNINGS:
+This method crashes servers not running XC_Engine if not coded the following way.
+This method only works before the first Tick, so do it while mutators are initializing.
+Make sure this method isn't called on clients, may crash windows clients.
+
+The function needs to be declared on the class about to use it, the compiler won't
+complain about it and you'll be able to call it without problems if the opcode (1718)
+is defined.
+
+In order to prevent a call when said opcode isn't defined (Win32 client, no XC_Engine)
+We simply perform a sanity check and make the mod not depend on XC_Engine at all!
+
+AddToPackageMap works in two different ways:
+- PkgName specified: attempts to load said package and add to Send list.
+- PkgName unspecified: adds the actor's own package to Send list.
+Adding a package to the UPackageMap object will automatically add all of it's
+dependancies as well, so if you have a master package that (statically) loads others,
+simply add that one package and the others will be inserted as well.
+
+This method cannot force packages marked as ServerSide-Only to be sent.
+
+====================
+class MyMutator expands Mutator;
+
+native(1718) final function bool AddToPackageMap( optional string PkgName);
+
+event PostBeginPlay()
+{
+	if ( int(ConsoleCommand("XC_Version")) >= 11 )
+		AddToPackageMap();
+}
+====================

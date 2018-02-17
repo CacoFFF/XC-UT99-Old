@@ -1,0 +1,62 @@
+==============================
+NexgenXCGE server actor readme
+==============================
+
+=============
+Installation:
+
+Requires XC_GameEngine.
+On the Server/Game main ini:
+
+[XC_Engine.XC_GameEngine]
+ServerActors=NexgenXCGE_01.NexgenXCGE_PreLogin
+
+If you don't have a XC_GameEngine entry, copy it from GameEngine instead of making a new one or ugly things happen.
+
+
+===========
+Description
+
+This PreLoginHook actor will allow the IP component of Nexgen bans to reject players
+before they even get to load the map, just like default ip bans.
+The ban reason is also displayed on the client's Log.
+
+In theory, all versions of Nexgen and NexgenABM should be supported.
+
+This is extremely useful for saving server resources and keeping those
+able to bypass NexgenABM bans out.
+
+
+====================================
+PreLogin hook Description for coders
+
+This is a PreLoginHook actor, it autoregisters itself to XC_GE's PreLoginHooks list and
+gains the ability to interfere with a player's PreLogin function.
+
+How does this happen?
+
+event PreLogin( string Options, string Address, out string Error, out string FailCode)
+{
+	//default code here
+	...
+	//what the hook does after the default code
+	int i=0;
+	while ( i < XC_GameEngine->PreLoginHooks.Num()
+		XC_GameEngine->PreLoginHooks(i)->PreLoginHook( Options, Address, Error, FailCode);
+}
+
+This allows every hooked actor to alter the Error and FailCode values with simple unrealscript code.
+The only requirements are to register the actor with the following console command:
+
+event PostBeginPlay()
+{
+	ConsoleCommand("PreLoginHook "$GetItemName( string(self) ) );
+}
+
+And to implement this function as you see it right here (register will fail otherwise):
+
+event PreLoginHook( string Options, string Address, out string Error, out string FailCode)
+{
+	... //Your code here
+}
+

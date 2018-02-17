@@ -1,0 +1,63 @@
+====================================
+Actor replication and relevancy loop
+====================================
+
+For use with the new relevancy system, requires XC_GameEngine.bUseNewRelevancy=True
+The new relevancy system is a full rewrite of the actor prioritizator and visibility check system
+used to determine how and when actors are relevant to other clients over net play.
+It also affects in some cases how actor updates are done.
+
+
+================
+Global features:
+
+USERFLAG saturation addressed, players don't get more than 20 messages per second.
+
+Visibility checks:
+- Go through translucent surfaces and are SSE optimized (they may go through whole solid BSP!!!)
+- Are performed to a random point in the actor's box instead of it's center point. (no more pesky CTF-Face invisible snipers)
+
+Actor channel handling:
+- Active discarding of less relevant actors in case of channel saturation.
+- Bandwidth saturation detection, artificially reduces relevancy framerate to half for non-owned actors.
+** Spectators are always in saturation mode, allows servers to hold more spectators.
+
+Actor prioritization:
+- Prevents servers from being inaccesible and allows players to see their inventory and nearby enemies.
+- Owned actor bursting, clients receive actors they own earlier and with higher priority.
+- Benefits replication of owned actors and low frequency info holders.
+
+Bandwidth saving in pawn replication:
+- Tries to calculate whether a client should receive a position update using velocity.
+- Also prevents sending unnecessary rotation, velocity updates caused by tiny changes.
+** When compressing a small update, the old and new datas may be identical, therefore unnecessary to send.
+
+
+=====================
+Extended actor flags:
+
+Actors now have additional replication variables that allow the relevancy loop to modify
+the behaviour of the relevancy checks on them, increasing capabilities and reducing workload.
+These flags are unaccessible to compiled unrealscript code, in order to enable these flags
+on one or more actors the coder must either:
+- Apply a global 'SET' command.
+- Individually call SetPropertyText on said actor.
+
+* bNotRelevantToOwner *
+This actor is not sent to the player that owns the connection.
+Extremely useful on lag compensators that uses separate client/server effects.
+
+* bRelevantIfOwnerIs *
+This actor becomes synchronized with it's owner when it comes to being relevant
+to other clients, this means that if the owner is relevant to a client, so is this actor.
+This is applied by default on ShieldBelt effects.
+
+* bRelevantToTeam *
+This actor becomes relevant to an entire team (best used with bAlwaysRelevant for backwards compatibility)
+The actor must have a 'byte' variable named 'Team' in order for this condition to work.
+
+* bSuperClassRelevancy *
+If this actor isn't on the network communication map and therefore cannot be replicated, then the
+relevancy loop will attempt to replicate a superclass version of this actor that can be replicated.
+Useful for small weapon/monster AI modifications without expanding the network package list.
+WARNING: DO NOT HOTSWITCH BETWEEN NEW/OLD RELEVANCY CODE IF YOU HAVE bSuperClassRelevancy ACTORS IN THE LEVEL
