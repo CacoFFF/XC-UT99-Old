@@ -590,14 +590,14 @@ public:
 //
 // Array operator news.
 //
-template <class T> void* operator new( size_t Size, TArray<T>& Array )
+template <class T> inline void* operator new( size_t Size, TArray<T>& Array )
 {
 	guardSlow(TArray::operator new);
 	INT Index = Array.FArray::Add(1,sizeof(T));
 	return &Array(Index);
 	unguardSlow;
 }
-template <class T> void* operator new( size_t Size, TArray<T>& Array, INT Index )
+template <class T> inline void* operator new( size_t Size, TArray<T>& Array, INT Index )
 {
 	guardSlow(TArray::operator new);
 	Array.FArray::Insert(Index,1,sizeof(T));
@@ -776,14 +776,14 @@ private:
 //
 // Transactional array operator news.
 //
-template <class T> void* operator new( size_t Size, TTransArray<T>& Array )
+template <class T> inline void* operator new( size_t Size, TTransArray<T>& Array )
 {
 	guardSlow(TArray::operator new);
 	INT Index = Array.Add();
 	return &Array(Index);
 	unguardSlow;
 }
-template <class T> void* operator new( size_t Size, TTransArray<T>& Array, INT Index )
+template <class T> inline void* operator new( size_t Size, TTransArray<T>& Array, INT Index )
 {
 	guardSlow(TArray::operator new);
 	Array.Insert(Index);
