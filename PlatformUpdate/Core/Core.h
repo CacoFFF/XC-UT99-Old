@@ -396,6 +396,11 @@ inline void operator delete( void* Ptr, size_t)
 	unguardSlow;
 }
 
+inline void operator delete[]( void* Ptr, size_t)
+{
+	appFree( Ptr );
+}
+
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/

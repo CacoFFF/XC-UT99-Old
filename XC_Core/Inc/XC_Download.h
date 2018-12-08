@@ -5,7 +5,6 @@
 #ifndef _INC_XC_DL
 #define _INC_XC_DL
 
-#include "FThread.h"
 
 class XC_CORE_API UXC_Download : public UDownload
 {

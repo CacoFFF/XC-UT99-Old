@@ -4,7 +4,10 @@
 
 #include "XC_Core.h"
 #include "XC_LZMA.h"
+#include "API_FunctionLoader.h"
 
+#include "Cacus/Atomics.h"
+#include "Cacus/CacusString.h"
 
 
 //Archive hack for Linux
@@ -28,8 +31,8 @@ typedef int (STDCALL *XCFN_LZMA_Compress)(unsigned char *dest, size_t *destLen, 
   );
 
 //Dictionary size changed from 16mb to 4mb to easy memory usage, besides we're only compressing small files
-static INT lzma_treads = 1;
-#define DEFAULT_LZMA_PARMS 5, (1<<22), 3, 0, 2, 32, lzma_treads
+static INT lzma_threads = 1;
+#define DEFAULT_LZMA_PARMS 5, (1<<22), 3, 0, 2, 32, lzma_threads
   
 typedef int (STDCALL *XCFN_LZMA_Uncompress) (unsigned char *dest, size_t *destLen, const unsigned char *src, SizeT *srcLen,
   const unsigned char *props, size_t propsSize);
@@ -43,37 +46,26 @@ typedef int (STDCALL *XCFN_LZMA_Uncompress) (unsigned char *dest, size_t *destLe
 static XCFN_LZMA_Compress LzmaCompressFunc = 0;
 static XCFN_LZMA_Uncompress LzmaDecompressFunc = 0;
 
-#include "API_FunctionLoader.h"
 
 //Load LZMA
 static UBOOL GetHandles()
 {
-#ifdef _MSC_VER
 	if ( !hLZMA )
+	{
+#ifdef _MSC_VER
 		hLZMA = LoadLibrary(TEXT("LZMA.dll"));
 #elif __LINUX_X86__
-	if ( !hLZMA )
 		hLZMA = dlopen( TEXT("LZMA.so"), RTLD_NOW|RTLD_LOCAL);
 #endif
-	if ( hLZMA && (!LzmaCompressFunc || !LzmaDecompressFunc) ) //Load the functions
-	{
-		Get(LzmaCompressFunc,hLZMA,"LzmaCompress");
-		Get(LzmaDecompressFunc,hLZMA,"LzmaUncompress");
+		if ( hLZMA )
+		{
+			Get(LzmaCompressFunc,hLZMA,"LzmaCompress");
+			Get(LzmaDecompressFunc,hLZMA,"LzmaUncompress");
+		}
 	}
 	return hLZMA && LzmaCompressFunc && LzmaDecompressFunc;
 }
-/*
-static void FreeHandles()
-{
-#ifdef _MSC_VER
-	if ( hLZMA )
-	{
-		if ( FreeLibrary(hLZMA) )
-			hLZMA = 0;
-	}
-#endif
-}
-*/
+
 
 /*-----------------------------------------------------------------------------
 	ULZMACompressCommandlet.
@@ -85,9 +77,9 @@ INT ULZMACompressCommandlet::Main( const TCHAR* Parms )
 	if( !ParseToken(Parms,Wildcard,0) )
 		appErrorf(TEXT("Source file(s) not specified"));
 #ifdef _MSC_VER
-	lzma_treads = 2;
+	lzma_threads = 2;
 #endif
-	FixFilename( Parms);
+	Parms = OSpath(Parms);
 	do
 	{
         // skip "-nohomedir", etc... --ryan.
@@ -95,17 +87,17 @@ INT ULZMACompressCommandlet::Main( const TCHAR* Parms )
             continue;
 
 		FString Dir;
-		INT i = Wildcard.InStr( PATH_SEPARATOR, 1 );
+		INT i = Max( Wildcard.InStr( TEXT("\\"), 1), Wildcard.InStr( TEXT("/"), 1));
 		if( i != -1 )
-			Dir = Wildcard.Left( i+1 );
-		TArray<FString> Files = GFileManager->FindFiles( *Wildcard, 1, 0 );
+			Dir = Wildcard.Left( i+1);
+		TArray<FString> Files = GFileManager->FindFiles( OSpath(*Wildcard), 1, 0 );
 		if( !Files.Num() )
 			appErrorf(TEXT("Source %s not found"), *Wildcard);
 		for( INT j=0;j<Files.Num();j++)
 		{
 			FString Src = Dir + Files(j);
 			FString End = Src + COMPRESSED_EXTENSION;
-			FTime StartTime = appSeconds();
+			double StartTime = appSeconds();
 			LzmaCompress( *Src, *End, Error);
 			
 			if ( Error[0] )
@@ -138,8 +130,7 @@ INT ULZMADecompressCommandlet::Main( const TCHAR* Parms )
 	else
 		appErrorf(TEXT("Compressed files must end in %s"), COMPRESSED_EXTENSION);
 
-	FixFilename( *Src);
-	if ( LzmaDecompress( *Src, *Dest, Error) )
+	if ( LzmaDecompress( OSpath(*Src), OSpath(*Dest), Error) )
 		warnf(TEXT("Decompressed %s -> %s"), *Src, *Dest);
 	else
 		appErrorf( Error );
@@ -181,54 +172,39 @@ XC_CORE_API UBOOL LzmaCompress( const TCHAR* Src, const TCHAR* Dest, TCHAR* Erro
 		
 	//Check that file exists
 	FArchive_Proxy* SrcFile = (FArchive_Proxy*) GFileManager->CreateFileReader( Src, 0);
-	if ( !SrcFile )
+	if ( !SrcFile || (SrcFile->TotalSize() <= 0) )
 		lzPrintErrorD( TEXT("LzmaCompress: Unable to load file %s."), Src );
 	
 	//Allocate memory and fill it with the source file's contents
-	INT SrcSize = SrcFile->TotalSize();
-	BYTE* SrcData = SrcSize ? (BYTE*)appMalloc( SrcSize, TEXT("") ) : NULL;
-
-	//Copy to memory and close source file
-	if ( SrcData )
-		SrcFile->Serialize( SrcData, SrcSize );
+	TArray<BYTE> SrcData( SrcFile->TotalSize() );
+	SrcFile->Serialize( &SrcData(0), SrcData.Num() );
 	SrcFile->Close();
 	ARCHIVE_DELETE(SrcFile);
-	if ( !SrcData )
-		lzPrintErrorD( TEXT("LzmaCompress: Out of memory (%i kbytes requested for source file)."), SrcSize / 1024 );
 	
 	//Allocate destination memory, reserve extra space to avoid nasty surprises
-	INT RequestedData = SrcSize + SrcSize / 64 + 1024;
-	BYTE* DestData = (BYTE*)appMalloc( RequestedData, TEXT("") );
-	if ( !DestData )
-		lzPrintErrorD( TEXT("LzmaCompress: Out of memory (%i kbytes requested for compression template)."), RequestedData / 1024 );
+	INT RequestedData = SrcData.Num() + SrcData.Num() / 128 + 1024;
+	TArray<BYTE> DestData(RequestedData);
 	
 	//Compress and free source data
 	BYTE Header[LZMA_PROPS_SIZE + 8];
 	INT OutPropSize = LZMA_PROPS_SIZE;
-	INT CmpRet = (*LzmaCompressFunc)( DestData, (unsigned int*)&RequestedData, SrcData, SrcSize, Header, (unsigned int*)&OutPropSize, DEFAULT_LZMA_PARMS);
-	appFree( SrcData);
+	INT CmpRet = (*LzmaCompressFunc)( &DestData(0), (unsigned int*)&RequestedData, &SrcData(0), SrcData.Num(), Header, (unsigned int*)&OutPropSize, DEFAULT_LZMA_PARMS);
 	
 	TCHAR* ErrorT = TranslateLzmaError( CmpRet);
 	if ( ErrorT ) //Got error
-	{
-		appFree(DestData);
 		lzPrintErrorD( TEXT("LzmaCompress: %s."), ErrorT);
-	}
 
 	//No compression error, write header (13 bytes) and encoded data
 	FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, 0);
 	if ( !DestFile )
-	{
-		appFree( DestData);
 		lzPrintErrorD( TEXT("LzmaCompress: Unable to create destination file %s."), Dest);
-	}
+
 	for ( INT i=0; i<8; i++)
-		Header[OutPropSize++] = (BYTE)((QWORD)SrcSize >> (8 * i));
+		Header[OutPropSize++] = (BYTE)((QWORD)SrcData.Num() >> (8 * i));
 	DestFile->Serialize( Header, OutPropSize);
-	DestFile->Serialize( DestData, RequestedData);
+	DestFile->Serialize( &DestData(0), RequestedData);
 	DestFile->Close();
 	ARCHIVE_DELETE(DestFile);
-	appFree( DestData);
 	return 1;
 }
 
@@ -250,55 +226,46 @@ XC_CORE_API UBOOL LzmaDecompress( FArchive* _SrcFile, const TCHAR* Dest, TCHAR* 
 {
 	try
 	{
-	//Validate
-	Error[0] = 0;
-	if ( !_SrcFile )
-		lzPrintError( TEXT("LzmaDecompress: No source file specified") );
-	FArchive_Proxy* SrcFile = (FArchive_Proxy*)_SrcFile; //Moot in win32
-	if ( !GetHandles() )
-		lzPrintError( TEXT("LzmaDecompress: Unable to load LZMA library.") );
+		//Validate
+		Error[0] = 0;
+		if ( !_SrcFile )
+			lzPrintError( TEXT("LzmaDecompress: No source file specified") );
+		FArchive_Proxy* SrcFile = (FArchive_Proxy*)_SrcFile; //Moot in win32
+		if ( !GetHandles() )
+			lzPrintError( TEXT("LzmaDecompress: Unable to load LZMA library.") );
 
-	BYTE header[ LZMA_PROPS_SIZE + 8];
-	SrcFile->Serialize( &header, LZMA_PROPS_SIZE + 8);
-	QWORD unpackSize = *(QWORD*) &header[LZMA_PROPS_SIZE];
+		BYTE header[ LZMA_PROPS_SIZE + 8];
+		SrcFile->Serialize( &header, LZMA_PROPS_SIZE + 8);
+		QWORD unpackSize = *(QWORD*) &header[LZMA_PROPS_SIZE];
 
-	//Allocate memory and fill it with the source file's contents
-	INT SrcSize = SrcFile->TotalSize() - SrcFile->Tell();
-	BYTE* SrcData = (SrcSize>0) ? (BYTE*)appMalloc( SrcSize, TEXT("") ) : NULL;
-	if ( !SrcData )
-		lzPrintErrorD( TEXT("LzmaDecompress: Out of memory (%i kbytes requested for source file)."), SrcSize / 1024 );
-	SrcFile->Serialize( SrcData, SrcSize);
+		//Allocate memory and fill it with the source file's contents
+		INT SrcSize = SrcFile->TotalSize() - SrcFile->Tell();
+		TArray<BYTE> SrcData( SrcSize);
+		SrcFile->Serialize( &SrcData(0), SrcSize);
 	
-	//Allocate destination memory, reserve extra space to avoid nasty surprises
-	INT DestSize = (INT)unpackSize;
-	BYTE* DestData = (BYTE*)appMalloc( DestSize, TEXT(""));
-	if ( !DestData )
-	{
-		appFree( SrcData);
-		lzPrintErrorD( TEXT("LzmaDecompress: Out of memory (%i kbytes requested for decompressed stream)."), DestSize / 1024 );
-	}
-
-	INT DcmpRet = LzmaDecompressFunc( DestData, (unsigned int*)&DestSize, SrcData, (unsigned int*)&SrcSize, header, LZMA_PROPS_SIZE);
-	appFree( SrcData);
+		//Allocate destination memory, reserve extra space to avoid nasty surprises
+		INT DestSize = (INT)unpackSize;
+		if ( DestSize <= 0 )
+			return 0;
+		TArray<BYTE> DestData( DestSize);
+		INT DcmpRet = LzmaDecompressFunc( &DestData(0), (unsigned int*)&DestSize, &SrcData(0), (unsigned int*)&SrcSize, header, LZMA_PROPS_SIZE);
+		SrcData.Empty();
 	
-	TCHAR* ErrorT = TranslateLzmaError( DcmpRet);
-	if ( ErrorT ) //Got error
-	{
-		appFree(DestData);
-		lzPrintErrorD( TEXT("LzmaDecompress: %s."), ErrorT);
-	}
+		TCHAR* ErrorT = TranslateLzmaError( DcmpRet);
+		if ( ErrorT ) //Got error
+			lzPrintErrorD( TEXT("LzmaDecompress: %s."), ErrorT);
 	
-	//No decompression error, write data stream into file
-	FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, FILEWRITE_EvenIfReadOnly);
-	if ( !DestFile )
-	{
-		appFree( DestData);
-		lzPrintErrorD( TEXT("LzmaDecompress: Unable to create destination file %s."), Dest);
+		//No decompression error, write data stream into file
+		FArchive_Proxy* DestFile = (FArchive_Proxy*) GFileManager->CreateFileWriter( Dest, FILEWRITE_EvenIfReadOnly);
+		if ( !DestFile )
+			lzPrintErrorD( TEXT("LzmaDecompress: Unable to create destination file %s."), Dest);
+		DestFile->Serialize( &DestData(0), DestSize);
+		DestFile->Close();
+		ARCHIVE_DELETE(DestFile);
+		return 1;
 	}
-	DestFile->Serialize( DestData, DestSize);
-	DestFile->Close();
-	ARCHIVE_DELETE(DestFile);
-	appFree( DestData);
-	return 1;
-	}catch(...) {}
+	catch(...)
+	{
+		return 0;
+	}
 }

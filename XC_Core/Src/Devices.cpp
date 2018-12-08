@@ -11,116 +11,60 @@
 XC_CORE_API extern UBOOL b440Net;
 #include "UnXC_Arc.h"
 
-#include "Atomics.h"
 #include "Devices.h"
+#include "Cacus/Atomics.h"
+#include "Cacus/CacusOutputDevice.h"
 
+#ifdef __LINUX_X86__
+	#include "Cacus/CacusGlobals.h"
+#endif
+
+#ifdef _WINDOWS
+	UBOOL GLogUnlimitedLength = 0;
+#else
+	UBOOL GLogUnlimitedLength = 1;
+#endif
 
 //*************************************************
 // Updated file output device
 //*************************************************
 
 FOutputDeviceFileXC::FOutputDeviceFileXC( const TCHAR* InFilename  )
-:	LogAr( NULL ),
-	Opened( 0 ),
-	Dead( 0 )
 {
-	if( InFilename )
-		appStrcpy( Filename, InFilename);
-	else
-		Filename[0]	= 0;
+	CacusOut = (COutputDeviceFile*)ConstructOutputDevice( COUT_File_UTF8);
+	SetFilename( InFilename);
+	CacusOut->AutoFlush = 0;
 }
 
 FOutputDeviceFileXC::~FOutputDeviceFileXC()
 {
-	TearDown();
+	DestructOutputDevice( CacusOut);
+	CacusOut = NULL;
 }
 
-void FOutputDeviceFileXC::SetFilename(const TCHAR* InFilename)
+void FOutputDeviceFileXC::SetFilename( const TCHAR* NewFilename)
 {
-	// Close any existing file.
-	TearDown();
-	appStrcpy( Filename, InFilename);
-}
-
-void FOutputDeviceFileXC::TearDown()
-{
-	if( LogAr )
+	if ( CacusOut )
 	{
-		Logf( TEXT("Log file closed, %s"), appTimestamp() );
-		Flush();
-		ARCHIVE_DELETE(LogAr);
-	}
-}
-
-void FOutputDeviceFileXC::Flush()
-{
-	if( LogAr )
-		((FArchive_Proxy*)LogAr)->Flush();
-}
-
-FArchive* FOutputDeviceFileXC::CreateArchive( DWORD MaxAttempts)
-{
-	DWORD WriteFlags = FILEWRITE_AllowRead | (Opened ? FILEWRITE_Append : 0);
-
-	FString FilenamePart = FString( appBaseDir() );
-	FString ExtensionPart = FString( TEXT(".log") );
-	if ( Filename[0] )
-	{
-		FilenamePart += Filename;
-		INT ExtIdx = FilenamePart.InStr( TEXT("."), true);
-		if ( (ExtIdx >= 0) && (FilenamePart.Len() - ExtIdx > 1) ) //Extract extension
-		{
-			ExtensionPart = FilenamePart.Mid( ExtIdx);
-			FilenamePart = FilenamePart.Left( ExtIdx);
-		}
-	}
-	else
-		FilenamePart += appPackage();
-
-	FArchive* Result = GFileManager->CreateFileWriter( *(FilenamePart+ExtensionPart), WriteFlags);
-	if ( !Result) //Add _2 if necessary
-	{
-		FString FinalFilename;
-		DWORD FileIndex = 2;
-		do
-		{
-			FinalFilename = FString::Printf( TEXT("%s_%i%s"), *FilenamePart, FileIndex++, *ExtensionPart);
-			Result = GFileManager->CreateFileWriter( *FinalFilename, WriteFlags);
-		} while ( !Result && FileIndex < MaxAttempts );
-	}
-
-	return Result;
-}
-
-void FOutputDeviceFileXC::Write( const TCHAR* Data)
-{
-#if UNICODE
-	INT CR = appStrlen(Data);
-	INT CS = 0;
-	BYTE Buffer[256];
-	while ( CS < CR  )
-	{
-		INT CW = Min(CR-CS,256);
-		for ( INT i=0 ; i<CW ; i++ )
-			Buffer[i] = (BYTE)Data[CS+i];
-		((FArchive_Proxy*)LogAr)->Serialize( Buffer, CW);
-		CS += CW;
-	}
-#else
-	LogAr->Serialize( (void*)Data, appStrlen(Data) );
+		TCharBuffer<1024,char> Buf;
+#ifdef __LINUX_X86__
+        if ( !ParseParam(appCmdLine(),TEXT("nohomedir")))
+			Buf = CUserDir();
 #endif
+		Buf += TCHAR_TO_ANSI(NewFilename);
+		CacusOut->SetFilename( *Buf);
+	}
 }
 
 void FOutputDeviceFileXC::WriteDataToArchive(const TCHAR* Data, EName Event)
 {
 	if ( Event != NAME_None )
 	{
-		Write( FName::SafeString(Event));
-		Write( TEXT(": "));
+		CacusOut->Serialize( FName::SafeString(Event));
+		CacusOut->Serialize( ": ");
 	}
-	Write( Data);
-	ANSICHAR WindowsTerminator[] = { '\r', '\n' };
-	((FArchive_Proxy*)LogAr)->Serialize(WindowsTerminator, sizeof(WindowsTerminator));
+	CacusOut->Serialize( Data);
+	CacusOut->Serialize( "\r\n");
 }
 
 void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
@@ -128,22 +72,15 @@ void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
 	static UBOOL Entry = 0;
 	if( !GIsCriticalError || Entry )
 	{
-		if( !LogAr && !Dead )
+		if( !CacusOut->Opened && !CacusOut->Dead )
 		{
-			// Open log file.
-			LogAr = CreateArchive();
-			if( LogAr )
-			{
-				Opened = 1;
-				TCHAR Msg[256];
-				appSprintf( Msg, TEXT("Init: Log file open, %s"), appTimestamp() );
-				WriteDataToArchive( Msg, NAME_None );
-			}
-			else 
-				Dead = true;
+			// This will be the first line
+			TCHAR Msg[256];
+			appSprintf( Msg, TEXT("Init: Log file open, %s"), appTimestamp() );
+			WriteDataToArchive( Msg, NAME_None );
 		}
 
-		if( LogAr && (Event != NAME_Title) )
+		if( Event != NAME_Title )
 		{
 			WriteDataToArchive(Data, Event);
 
@@ -155,7 +92,7 @@ void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
 				GForceLogFlush = ParseParam( appCmdLine(), TEXT("FORCELOGFLUSH")) || ParseParam( appCmdLine(), TEXT("LOGFLUSH"));
 			}
 			if( GForceLogFlush )
-				Flush();
+					CacusOut->Flush();
 		}
 		if( GLogHook )
 			GLogHook->Serialize( Data, Event );
@@ -197,14 +134,14 @@ FMallocThreadedProxy::FMallocThreadedProxy( FMalloc* InMalloc )
 
 void* FMallocThreadedProxy::Malloc( DWORD Count, const TCHAR* Tag)
 {
-	FSpinLock Lock( &Lock);
+	CSpinLock Lock( &Lock);
 	void* Result = MainMalloc->Malloc( Count, Tag);
 	return Result;
 }
 
 void* FMallocThreadedProxy::Realloc( void* Original, DWORD Count, const TCHAR* Tag )
 {
-	FSpinLock Lock( &Lock);
+	CSpinLock Lock( &Lock);
 	void* Result = NULL;
 	if ( !Count )
 		MainMalloc->Free( Original);
@@ -215,20 +152,20 @@ void* FMallocThreadedProxy::Realloc( void* Original, DWORD Count, const TCHAR* T
 
 void FMallocThreadedProxy::Free( void* Original )
 {
-	FSpinLock Lock( &Lock);
+	CSpinLock Lock( &Lock);
 	if ( Original )
 		MainMalloc->Free( Original);
 }
 
 void FMallocThreadedProxy::DumpAllocs()
 {
-	FSpinLock Lock( &Lock);
+	CSpinLock Lock( &Lock);
 	MainMalloc->DumpAllocs();
 }
 
 void FMallocThreadedProxy::HeapCheck()
 {
-	FSpinLock Lock( &Lock);
+	CSpinLock Lock( &Lock);
 	MainMalloc->HeapCheck();
 }
 
@@ -291,9 +228,32 @@ UBOOL FMallocThreadedProxy::IsAttached()
 // Thread-safe Log proxy
 //*************************************************
 
+bool FLogLine::operator==( const FLogLine& O)
+{
+	return (O.Event == Event)
+		&& (O.Msg.Len() == Msg.Len())
+		&& !appStrcmp(*O.Msg,*Msg);
+}
+
+FLogLine::FLogLine()
+	: Event(NAME_Log)
+{}
+
+FLogLine::FLogLine( EName InEvent, const TCHAR* InData)
+	: Event( InEvent)
+	, Msg( InData)
+{
+	if ( !GLogUnlimitedLength )
+	{
+		INT SafeSize = 1014-appStrlen(FName::SafeString(Event));
+		if ( Msg.Len() >= SafeSize ) //Ugly, but makes both string comparers and serializers stop
+			Msg.GetCharArray()(SafeSize) = '\0'; //This shouldn't break the C++ optimizer
+	}
+}
+
 FOutputDeviceInterceptor::FOutputDeviceInterceptor( FOutputDevice* InNext)
 	:	Next( InNext )
-	,	LogCritical(NULL)
+	,	CriticalOut(NULL)
 	,	SerializeLock(0)
 	,	Repeater(NAME_Log)
 	,	CriticalSet(0)
@@ -304,8 +264,11 @@ FOutputDeviceInterceptor::FOutputDeviceInterceptor( FOutputDevice* InNext)
 FOutputDeviceInterceptor::~FOutputDeviceInterceptor()
 {
 	CriticalSet = true;
-	if ( LogCritical )
-		ARCHIVE_DELETE(LogCritical);
+	if ( CriticalOut )
+	{
+		DestructOutputDevice( CriticalOut);
+		CriticalOut = NULL;
+	}
 	if ( Next )
 		delete Next;
 }
@@ -319,42 +282,40 @@ void FOutputDeviceInterceptor::SetRepeaterText( TCHAR* Text)
 void FOutputDeviceInterceptor::Serialize( const TCHAR* Msg, EName Event )
 {
 	guard(FOutputDeviceInterceptor::Serialize)
+	if ( ProcessLock ) //Fugly hack to prevent deadlock
+		return;
 	if ( Msg && Msg[0] ) //No empty output or infinite loop
 	{
-		FLogLine Line;
-		Line.Event = Event;
-		Line.Len = Min( appStrlen( Msg), 1014-appStrlen(FName::SafeString(Event)) );
-		appMemcpy( Line.Msg, Msg, Line.Len * sizeof(TCHAR) );
-		Line.Msg[Line.Len] = 0;
-		FSpinLock Lock(&SerializeLock);
+		FLogLine Line( Event, Msg);
 		ProcessMessage( Line);
 	}
 	unguard;
 }
 
-void FOutputDeviceInterceptor::ProcessMessage( const FLogLine& Line)
+void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 {
+	CSpinLock Lock(&ProcessLock);
+	UBOOL bDoLog = true;
 	if ( GIsCriticalError && !CriticalSet ) //Flush all saved lines if we're printing a crash log
 	{
 		FlushRepeater();
 		CriticalSet = true;
 	}
 
-	UBOOL bDoLog = true;
 	if ( Line.Event == NAME_Critical )
 	{
-		if ( !LogCritical )
+		if ( !CriticalOut )
 		{
-			TCHAR FileName[128] = {0};
 			INT Year, Month, DayOfWeek, Day, Hour, Min, Sec, MSec;
 			appSystemTime( Year, Month, DayOfWeek, Day, Hour, Min, Sec, MSec );
-			appSprintf( FileName, TEXT("Crash__%i-%02d-%02d__%02d-%02d.log"), Year, Month, Day, Hour, Min);
-			LogCritical = (FArchive_Proxy*)GFileManager->CreateFileWriter( FileName);
+			CriticalOut = (COutputDeviceFile*)ConstructOutputDevice( COUT_File_UTF8);
+			CriticalOut->SetFilename( CSprintf("Crash__%i-%02d-%02d__%02d-%02d.log", Year, Month, Day, Hour, Min) );
+			CriticalOut->AutoFlush = 1;
 		}
-		LogCritical->Serialize( (void*)TEXT("Critical: "), 10 * sizeof(TCHAR) );
-		LogCritical->Serialize( (void*)Line.Msg, Line.Len * sizeof(TCHAR) );
-		LogCritical->Serialize( (void*)LINE_TERMINATOR, appStrlen(LINE_TERMINATOR) * sizeof(TCHAR) );
-		LogCritical->Flush();
+		CriticalOut->Serialize( FName::SafeString(NAME_Critical) );
+		CriticalOut->Serialize( ": " );
+		CriticalOut->Serialize( *Line.Msg);
+		CriticalOut->Serialize( "\r\n");
 	}
 	else if ( Line.Event != NAME_Title )
 	{
@@ -363,7 +324,7 @@ void FOutputDeviceInterceptor::ProcessMessage( const FLogLine& Line)
 			for ( INT i=0 ; i<OLD_LINES ; i++ )
 			{
 				DWORD Idx = (CurCmp-i) % OLD_LINES;
-				if ( MessageBuffer[Idx].Matches(Line) )
+				if ( MessageBuffer[Idx] == Line )
 				{
 					bDoLog = false;
 					StartCmp = Idx;
@@ -375,7 +336,7 @@ void FOutputDeviceInterceptor::ProcessMessage( const FLogLine& Line)
 		}
 		else //Repeater already up
 		{
-			if ( MessageBuffer[LastCmp].Matches(Line) )
+			if ( MessageBuffer[LastCmp] == Line )
 			{
 				bDoLog = false;
 				if ( LastCmp == CurCmp )
@@ -394,8 +355,9 @@ void FOutputDeviceInterceptor::ProcessMessage( const FLogLine& Line)
 	if ( bDoLog )
 	{
 		CurCmp = (CurCmp + 1) % OLD_LINES;
-		appMemcpy( &MessageBuffer[CurCmp], &Line, sizeof(INT)*2 + sizeof(TCHAR)*(Line.Len+1));
-		Next->Serialize( Line.Msg, Line.Event);
+		SerializeNext( *Line.Msg, Line.Event);
+		appMemswap( &MessageBuffer[CurCmp], &Line, sizeof(FLogLine)); //Destroy old message and keep 'line' in buffer
+//		MessageBuffer[CurCmp] = Line;
 	}
 }
 
@@ -410,12 +372,12 @@ void FOutputDeviceInterceptor::FlushRepeater()
 			appSprintf( Ch, TEXT("=== Last line repeats %i times."), RepeatCount);
 		else
 			appSprintf( Ch, TEXT("=== Last %i lines repeat %i times."), (CurCmp-StartCmp)%OLD_LINES + 1, RepeatCount);
-		Next->Serialize( Ch, Repeater);
+		SerializeNext( Ch, Repeater);
 	
 		if ( StartCmp != CurCmp ) //Multi-line, there may be lines that didn't fully complete a repetition cycle, post them
 			while ( LastCmp != StartCmp )
 			{
-				Next->Serialize( MessageBuffer[LastCmp].Msg, MessageBuffer[LastCmp].Event);
+				SerializeNext( *MessageBuffer[LastCmp].Msg, MessageBuffer[LastCmp].Event);
 				LastCmp = (LastCmp - 1) % OLD_LINES;
 			}
 	}
@@ -425,9 +387,15 @@ void FOutputDeviceInterceptor::FlushRepeater()
 void FOutputDeviceInterceptor::ClearRepeater()
 {
 	for ( DWORD i=0 ; i<OLD_LINES ; i++ )
-		MessageBuffer[i].Len = 0; //Prevents matches
+		MessageBuffer[i].Msg.Empty(); //Should use safe-empty
 	RepeatCount = 0;
 	StartCmp = 0;
 	LastCmp = 0;
 	CurCmp = 0;
+}
+
+void FOutputDeviceInterceptor::SerializeNext( const TCHAR* Text, EName Event)
+{
+	CSpinLock Lock(&SerializeLock);
+	Next->Serialize( Text, Event);
 }

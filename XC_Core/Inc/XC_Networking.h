@@ -69,6 +69,8 @@ public:
 	{
 		Init();
 	};
+
+
 	
 	//Data accessors
 	FArchiveHeader* Archive();
@@ -77,6 +79,9 @@ public:
 	void Exit();
 	
 private:
+#ifndef DISABLE_CPP11
+	FOutBunch_Hack( FOutBunch_Hack&& Other);
+#endif
 	void Init();
 };
 

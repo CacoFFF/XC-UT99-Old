@@ -12,6 +12,8 @@
 #include "UnXC_Arc.h"
 #include "FCodec_XC.h"
 
+#include "Cacus/CacusThread.h"
+#include "Cacus/AppTime.h"
 
 XC_CORE_API UBOOL b440Net = 0;
 
@@ -69,15 +71,13 @@ INT UXC_ServerCommandlet::Main( const TCHAR* Parms)
 	if( GConfig->GetString( TEXT("Engine.Engine"), TEXT("Language"), Temp, ARRAY_COUNT(Temp) ) )
 	UObject::SetLanguage( Temp );
 
-    XC_InitTiming();
-
 	UClass* EngineClass = UObject::StaticLoadClass( UEngine::StaticClass(), NULL, TEXT("ini:Engine.Engine.GameEngine"), NULL, LOAD_NoFail, NULL );
 	UEngine* Engine = ConstructObject<UEngine>( EngineClass );
 	Engine->Init();
 
 	// Main loop.
 	GIsRunning = 1;
-	DOUBLE OldTime = appSecondsXC();
+	DOUBLE OldTime = FPlatformTime::InitTiming();
 	DOUBLE SecondStartTime = OldTime;
 	INT TickCount = 0;
 
@@ -85,7 +85,7 @@ INT UXC_ServerCommandlet::Main( const TCHAR* Parms)
 	{
 		// Update the world.
 		guard(UpdateWorld);
-		DOUBLE NewTime = appSecondsXC();
+		DOUBLE NewTime = FPlatformTime::Seconds();
 		FLOAT DeltaTime = NewTime - OldTime;
 		Engine->Tick( DeltaTime );
 		OldTime = NewTime;
@@ -105,11 +105,11 @@ INT UXC_ServerCommandlet::Main( const TCHAR* Parms)
 		if( MaxTickRate>0.f )
 		{
 			FLOAT IdealDelta = 1.0f / MaxTickRate;
-			FLOAT Delta = IdealDelta - (appSecondsXC()-OldTime);
+			FLOAT Delta = IdealDelta - (FPlatformTime::Seconds()-OldTime);
 			appSleep( Max(0.f,Delta - 0.0005f) ); //This can reduce sleep timing by 1ms
 
 			//Attempt to approach the ideal time sleep-by-sleep
-			while ( ((IdealDelta - (appSecondsXC()-OldTime)) - 0.000005f) > 0.f )
+			while ( ((IdealDelta - (FPlatformTime::Seconds()-OldTime)) - 0.000005f) > 0.f )
 				appSleep( 0.f );
 		}
 		unguard;
@@ -125,16 +125,14 @@ IMPLEMENT_CLASS(UXC_ServerCommandlet)
 XC_Core extended download protocols
 =============================================================================*/
 
-struct FThreadDecompressor : public FThread
+struct FThreadDecompressor : public CThread
 {
-	volatile UBOOL bClosedByMain;
 	UXC_Download* Download;
 	TCHAR* TempFilename;
 	TCHAR* Error;
 	
 	FThreadDecompressor( UXC_Download* DL)
-	: FThread()
-	, bClosedByMain(0)
+	: CThread()
 	, Download(DL)
 	, TempFilename(DL->TempFilename)
 	, Error(DL->Error)	{}
@@ -190,7 +188,6 @@ void UXC_Download::ReceiveData( BYTE* Data, INT Count )
 		// Open temporary file initially.
 		debugf( NAME_DevNet, TEXT("Receiving package '%s'"), Info->Parent->GetName() );
 		appCreateTempFilename( *GSys->CachePath, TempFilename );
-		FixFilename( TempFilename);
 		GFileManager->MakeDirectory( *GSys->CachePath, 0 );
 		RecvFileAr = GFileManager->CreateFileWriter( TempFilename );
 		if ( Count >= 13 )
@@ -245,7 +242,6 @@ void UXC_Download::DownloadDone()
 	
 	if ( Decompressor ) //Prevent XC_IpDrv reentrancy
 		return;	
-	FixFilename( TempFilename);
 	if( RecvFileAr )
 	{
 		guard( DeleteFile );
@@ -322,7 +318,6 @@ void UXC_Download::DownloadDone()
 			if( UFileAr )
 				ARCHIVE_DELETE( UFileAr);*/
 		}
-		FixFilename( TempFilename);
 		if( !Error[0] && !IsCompressed && GFileManager->FileSize(TempFilename)!=Info->FileSize ) //Compression screws up filesize, ignore
 			DownloadError( LocalizeError(TEXT("NetSize"),TEXT("Engine")) );
 		TCHAR Dest[256];
@@ -353,7 +348,7 @@ void UXC_Download::DownloadDone()
 
 
 
-THREAD_ENTRY(LZMADecompress,arg)
+DWORD LZMADecompress( void* arg)
 {
 	//Setup environment
 	FThreadDecompressor* TInfo = (FThreadDecompressor*)arg;
@@ -364,27 +359,17 @@ THREAD_ENTRY(LZMADecompress,arg)
 	TInfo->Download->DestFilename( Dest);
 	LzmaDecompress( TInfo->TempFilename, Dest, Error);
 
-	//Check that environment is still active (download could have been cancelled)
-	if ( !TInfo->bClosedByMain )
+	if ( Error[0] )
 	{
-		if ( Error[0] )
-		{
-			appStrcpy( TInfo->Error, Error);
-			if ( GFileManager->FileSize( Dest) )
-				GFileManager->Delete( Dest);
-		}
-		TInfo->Download->IsDecompressing = 0;
-		TInfo->ThreadEnded();
+		appStrcpy( TInfo->Error, Error);
+		if ( GFileManager->FileSize( Dest) )
+			GFileManager->Delete( Dest);
 	}
-	else
-	{
-		TInfo->ThreadEnded();
-		delete TInfo;
-	}
-	return 0;
+	TInfo->Download->IsDecompressing = 0;
+	return THREAD_END_OK;
 }
 
-THREAD_ENTRY(UZDecompress,arg)
+DWORD UZDecompress( void* arg)
 {
 	//Setup environment
 	FThreadDecompressor* TInfo = (FThreadDecompressor*)arg;
@@ -434,17 +419,8 @@ THREAD_ENTRY(UZDecompress,arg)
 		TInfo->Download->DownloadError( LocalizeError(TEXT("NetOpen"),TEXT("Engine")) );
 	
 	//Check that environment is still active (download could have been cancelled)
-	if ( !TInfo->bClosedByMain )
-	{
-		TInfo->Download->IsDecompressing = 0;
-		TInfo->ThreadEnded();
-	}
-	else
-	{
-		TInfo->ThreadEnded();
-		delete TInfo;
-	}
-	return 0;
+	TInfo->Download->IsDecompressing = 0;
+	return THREAD_END_OK;
 }
 
 void UXC_Download::StartDecompressor()
@@ -454,9 +430,9 @@ void UXC_Download::StartDecompressor()
 	IsDecompressing = 1;
 	Decompressor = new( TEXT("Decompressor Thread")) FThreadDecompressor(this);
 	if ( IsLZMA )
-		Decompressor->RunThread( &LZMADecompress, Decompressor);
+		Decompressor->Run( &LZMADecompress, Decompressor);
 	else
-		Decompressor->RunThread( &UZDecompress, Decompressor);
+		Decompressor->Run( &UZDecompress, Decompressor);
 
 	TCHAR Prg[128];
 	appStrcpy( Prg, TEXT("%s: %iK > %iK"));
@@ -472,7 +448,6 @@ void UXC_Download::DestFilename( TCHAR* T)
 	appStrcat( T, PATH_SEPARATOR);
 	appStrcat( T, Info->Guid.String());
 	appStrcat( T, *(GSys->CacheExt));
-	FixFilename( T);
 }
 IMPLEMENT_CLASS(UXC_Download)
 
@@ -488,7 +463,7 @@ void UXC_ChannelDownload::StaticConstructor()
 void UXC_Download::Destroy()
 {
 	if ( Decompressor )
-		Decompressor->bClosedByMain = true;
+		delete Decompressor; //Blocking operation
 	Super::Destroy();
 }
 
@@ -610,7 +585,6 @@ void UXC_FileChannel::ReceivedBunch( FInBunch& Bunch )
 					FPackageInfo& Info = Connection->PackageMap->List(i);
 					if( Info.Guid==Guid && Info.URL!=TEXT("") )
 					{
-						FixFilename( *Info.URL );
 						if( Connection->Driver->MaxDownloadSize>0 && GFileManager->FileSize(*Info.URL) > Connection->Driver->MaxDownloadSize )
 							break;							
 						appStrncpy( SrcFilename, *Info.URL, ARRAY_COUNT(SrcFilename) );
@@ -652,6 +626,7 @@ void UXC_FileChannel::ReceivedBunch( FInBunch& Bunch )
 	unguard;
 }
 
+static UBOOL LanPlay = -1; //Prevent static init inside function, newer compilers try to do it thread-safe when not necessary
 void UXC_FileChannel::Tick()
 {
 	UChannel::Tick();
@@ -660,7 +635,8 @@ void UXC_FileChannel::Tick()
 
 	//TIM: IsNetReady(1) causes the client's bandwidth to be saturated. Good for clients, very bad
 	// for bandwidth-limited servers. IsNetReady(0) caps the clients bandwidth.
-	static UBOOL LanPlay = ParseParam(appCmdLine(),TEXT("lanplay"));
+	if ( LanPlay == -1 )
+		LanPlay = ParseParam(appCmdLine(),TEXT("lanplay"));
 	while( !OpenedLocally && SendFileAr && IsNetReady(LanPlay) && (Size=MaxSendBytes())!=0 )
 	{
 		// Sending.
@@ -671,17 +647,16 @@ void UXC_FileChannel::Tick()
 			return;
 		FOutBunch_Hack Bunch( this, Size>=Remaining );
 
-		//Serialize directly INTO the bunch // BROKEN?
-//		SendFileAr->Serialize( Bunch.GetData(), Size);
-		
-		BYTE* Buffer = (BYTE*)appAlloca( Size );
-		((FArchive_Proxy*)SendFileAr)->Serialize( Buffer, Size ); //Linux v440 net crashfix
+		//Slow method, otherwise we depend on Alloca
+		TArray<BYTE> Buffer(Size);
+//		BYTE* Buffer = (BYTE*)appAlloca( Size );
+		((FArchive_Proxy*)SendFileAr)->Serialize( Buffer.GetData(), Size ); //Linux v440 net crashfix
 		if( SendFileAr->IsError() )
 		{
 			//HANDLE THIS!!
 		}
 		SentData += Size;
-		Bunch.Serialize( Buffer, Size );
+		Bunch.Serialize( Buffer.GetData(), Size );
 		Bunch.Bunch()->bReliable = 1;
 		check(!Bunch.IsError());
 		SendBunch( &Bunch, 0 );

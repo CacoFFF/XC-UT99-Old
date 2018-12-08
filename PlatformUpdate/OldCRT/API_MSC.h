@@ -15,6 +15,7 @@
 
 #pragma comment (lib, "..\\PlatformUpdate\\OldCRT\\MSVCRT.LIB")
 #pragma comment (linker, "/NODEFAULTLIB:msvcrt.lib")
+#pragma comment (linker, "/merge:.CRT=.rdata")
 
 /*extern "C" int __cdecl _purecall()
 {

@@ -1,15 +1,13 @@
 
 // XC_Core generics
 
-#ifdef __LINUX_X86__
-	#include <pthread.h>
+#if _WINDOWS
+	#include "../OldCRT/API_MSC.h"
 #endif
-
 
 #include "XC_Core.h"
 #include "XC_CoreObj.h"
 #include "XC_CoreGlobals.h"
-#include "FThread.h"
 
 
 UBOOL FGenericSystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
@@ -115,54 +113,3 @@ void FClassPropertyCache::GrabProperties( FMemStack& Mem)
 	}
 }
 
-
-//*************************************************
-// Thread abstractor
-//*************************************************
-
-UBOOL FThread::RunThread( ENTRY_DECL(ThreadEntry), void* Arg)
-{
-	tId = 1;
-	if ( !Arg )
-		Arg = this;
-#if _WINDOWS
-	Handle = CreateThread( NULL, 0, ThreadEntry, this, 0, (DWORD*)&tId );
-	if ( !Handle )
-		return tId = 0;
-	CloseHandle( Handle);
-#else
-	pthread_attr_t ThreadAttributes;
-	pthread_attr_init( &ThreadAttributes );
-	pthread_attr_setdetachstate( &ThreadAttributes, PTHREAD_CREATE_DETACHED );
-	if ( pthread_create( &Handle, &ThreadAttributes, ThreadEntry, Arg ) )
-		return tId = 0;
-#endif
-	return 1;
-}
-
-void FThread::ThreadEnded()
-{
-#if __UNIX__
-	pthread_exit( NULL );
-#elif _WINDOWS
-	if ( Handle )
-		::CloseHandle( Handle );
-	Handle = NULL;
-#endif
-	tId = 0;
-}
-
-UBOOL FThread::ThreadWaitFinish( FLOAT MaxWait)
-{
-	//Don't want joinable mumbo-jumbo
-	//Sleep 1 ms at a time instead
-	XC_InitTiming();
-	DOUBLE StartTime = appSecondsXC();
-	while ( FPlatformAtomics::InterlockedCompareExchange((volatile INT*)&tId,0,0) )
-	{
-		appSleep(0.001f);
-		if ( appSecondsXC()-StartTime >= MaxWait )
-			break;
-	}
-	return tId == 0;
-}

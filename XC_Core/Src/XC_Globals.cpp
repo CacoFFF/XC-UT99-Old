@@ -10,24 +10,6 @@ XC_CORE_API extern UBOOL b440Net;
 #include "FPackageFileSummary.h"
 //#include "FThread.h"
 
-XC_CORE_API FMemStack GXCMem;
-
-//*************************************************
-// Pathing in both platforms
-//*************************************************
-XC_CORE_API void FixFilename( const TCHAR* Filename )
-{
-	TCHAR* Cur;
-	for( Cur = (TCHAR*)Filename; *Cur != '\0'; Cur++ )
-#ifdef __LINUX_X86__
-		if( *Cur == '\\' )
-			*Cur = '/';
-#else
-		if( *Cur == '/' )
-			*Cur = '\\';
-#endif
-}
-
 
 //*************************************************
 // Name case fixing
@@ -45,61 +27,6 @@ XC_CORE_API UBOOL FixNameCase( const TCHAR* NameToFix)
 	}
 	return AName != NAME_None;
 }
-
-
-//*************************************************
-// Globals initialization
-// DeInit must be called always after init
-// This helps running the globals in commandlets
-// and other objects that aren't controlled by a 
-// main engine like XC_Engine
-//*************************************************
-
-XC_CORE_API void InitXCGlobals()
-{
-	guard( XC_Core::InitXCGlobals);
-	
-	guard( InitMem )
-	GXCMem.Init( 65536 );
-	unguard;
-
-	unguard;
-}
-
-XC_CORE_API void DeInitXCGlobals()
-{
-	guard( XC_Core::DeInitXCGlobals);
-	
-	guard( DeInitMem )
-	GXCMem.Exit();
-	unguard;
-
-	unguard;
-}
-
-
-//*************************************************
-// High resolution timers stuff
-//*************************************************
-XC_CORE_API DOUBLE GXStartTime = 0;
-XC_CORE_API DOUBLE GXSecondsPerCycle = 0;
-static UBOOL GXTimeInitialized = 0;
-
-XC_CORE_API void XC_InitTiming(void)
-{
-	if ( GXTimeInitialized++ != 0)
-		return;
-#ifdef __LINUX_X86__
-	GXSecondsPerCycle = 1.0 / 1000000.0;
-#elif _MSC_VER
-	LARGE_INTEGER Frequency;
-	check( QueryPerformanceFrequency(&Frequency) );
-	GXSecondsPerCycle = 1.0 / Frequency.QuadPart;
-#endif
-	GXStartTime = appSecondsXC();
-	debugf( TEXT("XC_InitTiming called: %f"), 1.0 / GXSecondsPerCycle);
-}
-
 
 
 //*************************************************

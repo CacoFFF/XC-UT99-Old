@@ -16,6 +16,11 @@ XC_CORE_API extern UBOOL b440Net;
 
 #include "XC_Commandlets.h"
 
+#include "Cacus/CacusString.h"
+#include "Cacus/AppTime.h"
+#ifdef __LINUX_X86__
+	#include "Cacus/CacusGlobals.h"
+#endif
 
 inline void CompilerCheck()
 {
@@ -40,7 +45,7 @@ inline void CompilerCheck()
 #undef AUTOGENERATE_FUNCTION
 #undef AUTOGENERATE_NAME
 #undef NAMES_ONLY
-void RegisterNames()
+static void RegisterNames()
 {
 	static INT Registered=0;
 	if(!Registered++)
@@ -204,15 +209,22 @@ XC_CORE_API void XCCNatives( UBOOL bEnable)
 -----------------------------------------------------------------------------*/
 
 
+static double StartTime = 0;
 void UXC_CoreStatics::StaticConstructor()
 {
 	UClass* TheClass = GetClass();
 	UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*) &TheClass->Defaults(0);
 
 	//Init timing
-	if ( GXSecondsPerCycle == 0 )
-		XC_InitTiming();
-	
+	FPlatformTime::InitTiming();
+	StartTime = FPlatformTime::Seconds();
+
+#ifdef __LINUX_X86__
+	appStrcat( (char*)CUserDir(), ".loki/ut/System/");
+#endif
+
+	CStringBufferInit( 16 * 1024); //Only initialize a 16kb buffer
+
 	//Hardcode, just in case
 	DefaultObject->XC_Core_Version = 8;
 	RegisterNames();
@@ -247,12 +259,12 @@ void UXC_CoreStatics::execHNormal( FFrame &Stack, RESULT_DECL)
 
 void UXC_CoreStatics::execUnClock( FFrame &Stack, RESULT_DECL)
 {
-	SQWORD Temp = appCyclesSqXC();
+	QWORD Temp = FPlatformTime::Cycles64();
 	Stack.Step( Stack.Object, NULL); //Do not paste result
 //	P_GET_FLOAT_REF( C);
 	P_FINISH;
-	*(FLOAT*)Result = (Temp - *((SQWORD*)GPropAddr)) * GXSecondsPerCycle;
-	*((SQWORD*)GPropAddr) = Temp;
+	*(FLOAT*)Result = (FLOAT)FPlatformTime::ToSeconds(Temp - *((QWORD*)GPropAddr));
+	*((QWORD*)GPropAddr) = Temp;
 }
 
 void UXC_CoreStatics::execClock( FFrame &Stack, RESULT_DECL)
@@ -261,7 +273,7 @@ void UXC_CoreStatics::execClock( FFrame &Stack, RESULT_DECL)
 	Stack.Step( Stack.Object, NULL); //Do not paste result
 //	P_GET_FLOAT_REF( C);
 	P_FINISH;
-	*((SQWORD*)GPropAddr) = appCyclesSqXC();
+	*((QWORD*)GPropAddr) = FPlatformTime::Cycles64();
 }
 IMPLEMENT_RENAMED_FUNCTION(UXC_CoreStatics,-1,execClock,execclock);
 
@@ -357,13 +369,13 @@ void UXC_CoreStatics::execConnectedDests(FFrame &Stack, RESULT_DECL)
 void UXC_CoreStatics::execAppSeconds( FFrame& Stack, RESULT_DECL )
 {
 	P_FINISH;
-	*(FLOAT*)Result = (FLOAT) (appSecondsXC() - GXStartTime);
+	*(FLOAT*)Result = (FLOAT) (FPlatformTime::Seconds() - StartTime);
 }
 
 void UXC_CoreStatics::execAppCycles( FFrame& Stack, RESULT_DECL )
 {
 	P_FINISH;
-	*(DWORD*)Result = appCyclesXC();
+	*(DWORD*)Result = FPlatformTime::Cycles();
 }
 
 void UXC_CoreStatics::execGetParentClass( FFrame& Stack, RESULT_DECL )
@@ -536,8 +548,7 @@ void UBinarySerializer::execOpenFileWrite(FFrame &Stack, RESULT_DECL)
 		ABORT_IF( FailCount >= 2, 0, TEXT("Failed OpenFileWrite, forbidden directory access") );
 	}
 
-	FixFilename(*SrcFile);
-	Archive = (FArchive_Proxy*) GFileManager->CreateFileWriter( *SrcFile, FILEWRITE_EvenIfReadOnly );
+	Archive = (FArchive_Proxy*) GFileManager->CreateFileWriter( OSpath(*SrcFile), FILEWRITE_EvenIfReadOnly );
 	if ( Archive )
 	{
 		*(UBOOL*)Result = true;
@@ -555,8 +566,7 @@ void UBinarySerializer::execOpenFileRead(FFrame &Stack, RESULT_DECL)
 	P_FINISH;
 
 	ABORT_IF( Archive, 0, TEXT("Failed OpenFileRead, there's already an open file, close it first"));
-	FixFilename( *SrcFile);
-	Archive = (FArchive_Proxy*) GFileManager->CreateFileReader( *SrcFile );
+	Archive = (FArchive_Proxy*) GFileManager->CreateFileReader( OSpath(*SrcFile) );
 	*(UBOOL*)Result = (Archive != NULL);
 	unguard;
 }

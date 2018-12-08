@@ -43,9 +43,9 @@ private:
 public:
 	UBOOL Encode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
-		TArray<BYTE> CompressBufferArray(MAX_BUFFER_SIZE);
+		TArray<char> CompressBufferArray(MAX_BUFFER_SIZE);
 		TArray<INT>  CompressPosition   (MAX_BUFFER_SIZE+1);
-		CompressBuffer = &CompressBufferArray(0);
+		CompressBuffer = (BYTE*)&CompressBufferArray(0);
 		INT i, First=0, Last=0;
 		while( !In->AtEnd() )
 		{
@@ -67,8 +67,9 @@ public:
 	}
 	UBOOL Decode( FArchive_Proxy* In, FArchive_Proxy* Out )
 	{
-		TArray<BYTE> DecompressBuffer(MAX_BUFFER_SIZE+1);
+		TArray<char> DecompressBufferArray(MAX_BUFFER_SIZE+1);
 		TArray<INT>  Temp(MAX_BUFFER_SIZE+1);
+		BYTE* DecompressBuffer = (BYTE*)&DecompressBufferArray(0);
 		INT DecompressLength, DecompressCount[256+1], RunningTotal[256+1], i, j;
 		while( !In->AtEnd() )
 		{
@@ -76,11 +77,11 @@ public:
 			(*In) << DecompressLength << First << Last;
 			check(DecompressLength<=MAX_BUFFER_SIZE+1);
 			check(DecompressLength<=In->TotalSize()-In->Tell());
-			In->Serialize( &DecompressBuffer(0), ++DecompressLength );
+			In->Serialize( DecompressBuffer, ++DecompressLength );
 			for( i=0; i<257; i++ )
 				DecompressCount[ i ]=0;
 			for( i=0; i<DecompressLength; i++ )
-				DecompressCount[ i!=Last ? DecompressBuffer(i) : 256 ]++;
+				DecompressCount[ i!=Last ? DecompressBuffer[i] : 256 ]++;
 			INT Sum = 0;
 			for( i=0; i<257; i++ )
 			{
@@ -90,11 +91,11 @@ public:
 			}
 			for( i=0; i<DecompressLength; i++ )
 			{
-				INT Index = i!=Last ? DecompressBuffer(i) : 256;
+				INT Index = i!=Last ? DecompressBuffer[i] : 256;
 				Temp(RunningTotal[Index] + DecompressCount[Index]++) = i;
 			}
 			for( i=First,j=0 ; j<DecompressLength-1; i=Temp(i),j++ )
-				(*Out) << DecompressBuffer(i);
+				(*Out) << DecompressBuffer[i];
 		}
 		return 1;
 	}
@@ -285,15 +286,16 @@ public:
 	{
 		INT Total;
 		(*In) << Total;
-		TArray<BYTE> InArray( In->TotalSize()-In->Tell() );
+		TArray<char> InArray( In->TotalSize()-In->Tell() );
 		In->Serialize( &InArray(0), InArray.Num() );
-		FBitReader Reader( &InArray(0), InArray.Num()*8 );
+		FBitReader Reader( (BYTE*)&InArray(0), InArray.Num()*8 );
 		FHuffman Root(-1);
 		Root.ReadTable( Reader );
 		while( Total-- > 0 )
 		{
 			check(!Reader.AtEnd());
-			for( FHuffman* Node=&Root; Node->Ch==-1; Node=Node->Child(Reader.ReadBit()) );
+			FHuffman* Node;
+			for( Node=&Root; Node->Ch==-1; Node=Node->Child(Reader.ReadBit()) );
 			BYTE B = Node->Ch;
 			(*Out) << B;
 		}
@@ -368,7 +370,8 @@ private:
 			(Codecs(First + Step*i)->*Func)( (i ? ((FArchive_Proxy*)&Reader) : In), (i<Codecs.Num()-1 ? ((FArchive_Proxy*)&Writer) : Out) );
 			if( i<Codecs.Num()-1 )
 			{
-				InData = OutData;
+				ExchangeArray( InData, OutData);
+//				InData = OutData; //OPTIMIZE OUT A DEALLOC+MALLOC CALL
 				OutData.Empty();
 			}
 		}

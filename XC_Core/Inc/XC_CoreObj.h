@@ -6,7 +6,7 @@
 #ifndef _INC_XC_COREOBJ
 #define _INC_XC_COREOBJ
 
-#include "Atomics.h"
+//#include "Cacus/Atomics.h"
 
 //==============================================
 // Generic systems
