@@ -3,8 +3,14 @@
 	By Higor, feel free to use this code on your project.
 =============================================================================*/
 
-#include "XC_Engine.h"
+#ifdef _MSC_VER
+	#include "../OldCRT/API_MSC.h"
+#endif
 
+#include "XC_Engine.h"
+#include "XC_Networking.h"
+
+//**********************************************************
 // Level watcher, performs various tasks on the loaded level
 #include "UnXC_LevelWatcher.h"
 FXC_LevelWatcher::FXC_LevelWatcher() {}
@@ -104,6 +110,7 @@ UBOOL FXC_LevelWatcher::IsTyped( const TCHAR* Type)
 
 
 
+//**********************************************************
 // Halfassed time manager, used to correct game tick.
 #include "UnXC_TimeManager.h"
 
@@ -208,4 +215,46 @@ UBOOL FXC_TimeManager::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		return 0;
 	return 1;
 	unguard;
+}
+
+//**********************************************************
+// Server Processor, used to tweak connections and setup brush tracker
+#include "UnXC_ServerProc.h"
+FXC_ServerProc::FXC_ServerProc()
+{}
+
+UBOOL FXC_ServerProc::IsTyped( const TCHAR* Type)
+{
+	return appStricmp( Type, TEXT("ServerProc")) == 0;
+}
+
+INT FXC_ServerProc::Tick( FLOAT DeltaSeconds)
+{
+	// This is a net server
+	if (  Engine->Level() 
+	  &&  Engine->Level()->NetDriver
+	  && !Engine->Level()->NetDriver->ServerConnection )
+	{
+		// Process faster upload feature
+		if ( Engine->bFasterUpload )
+		{
+			UNetDriver* NetDriver = Engine->Level()->NetDriver;
+			for ( int i=0 ; i<NetDriver->ClientConnections.Num() ; i++ )
+			{
+				UNetConnection* C = NetDriver->ClientConnections(i);
+				//This player is joining
+				if ( !C->Actor )
+				{
+					if ( C->CurrentNetSpeed != 1000001 ) //v440 requires ConfiguredInternetSpeed to be set on server
+						C->ConfiguredInternetSpeed = C->CurrentNetSpeed;
+					C->CurrentNetSpeed = 1000001;
+				}
+				//Player has joined, restore original netspeed
+				else if ( C->CurrentNetSpeed == 1000001 )
+					C->CurrentNetSpeed = Min(C->ConfiguredInternetSpeed, NetDriver->MaxClientRate);
+			}
+		}
+		return 1;
+	}
+	return 0;
 }

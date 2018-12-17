@@ -22,13 +22,17 @@ var array<LoginInfo> LInfos;
 native(640) static final function int Array_Length_LI( out array<LoginInfo> Ar, optional int SetSize);
 native(641) static final function bool Array_Insert_LI( out array<LoginInfo> Ar, int Offset, optional int Count );
 native(642) static final function bool Array_Remove_LI( out array<LoginInfo> Ar, int Offset, optional int Count );
+native(1718) final function bool AddToPackageMap( optional string PkgName);
+native(1719) final function bool IsInPackageMap( optional string PkgName, optional bool bServerPackagesOnly); //Second parameter doesn't exist in 227!
 native(3553) final iterator function DynamicActors( class<actor> BaseClass, out actor Actor, optional name MatchTag );
 
 
 //Prevent duplicates
-event PostBeginPlay()
+event PreBeginPlay()
 {
 	local XC_ServerActor Other;
+	
+	//Prevent double run
 	ForEach DynamicActors( class'XC_ServerActor', Other)
 		if ( Other != self )
 		{
@@ -36,7 +40,6 @@ event PostBeginPlay()
 			return;
 		}
 }
-
 
 auto state Init
 {

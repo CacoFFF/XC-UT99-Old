@@ -43,10 +43,10 @@ UBOOL FXC_TravelManager::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	guard(FXC_TravelManager::Exec);
 	if ( ParseCommand(&Cmd,TEXT("TRAVELINFO")) )
 	{
-		TArray<FStrPair>* Map = (TArray<FStrPair>*) (DWORD) &GetActiveLevel(Engine)->TravelInfo;
-		debugf(NAME_XC_Engine, TEXT("Map has %i entries"), Map->Num() );
-		for ( int i=0 ; i<Map->Num() ; i++ )
-			debugf(NAME_XC_Engine, TEXT("Travel %s > %s"), *((*Map)(i).Key), *((*Map)(i).Value) );
+		TArray<FStrPair>& Map = *(TArray<FStrPair>*) &Engine->Level()->TravelInfo;
+		debugf(NAME_XC_Engine, TEXT("Map has %i entries"), Map.Num() );
+		for ( int i=0 ; i<Map.Num() ; i++ )
+			debugf(NAME_XC_Engine, TEXT("Travel %s > %s"), *(Map(i).Key), *(Map(i).Value) );
 	}
 	else if ( ParseCommand(&Cmd,TEXT("TRAVELUPDATE")) )
 		Poll( 0.f, true);
@@ -77,7 +77,7 @@ void FXC_TravelManager::Poll( FLOAT DeltaTime, UBOOL bForceUpdate)
 	if ( Engine )
 		bAutoMode = Engine->bAutoTravelManager;
 
-	ULevel* Lev = GetActiveLevel( Engine);
+	ULevel* Lev = Engine->Level();
 
 	FMemMark Mark(GMem);
 	FIteratorPList* BaseL = NULL;
@@ -129,9 +129,9 @@ void FXC_TravelManager::FixUpPlayerId( APlayerPawn* P)
 							P->PlayerReplicationInfo->PlayerName = PlayerMap(j).PlayerName; //Revert name
 							return;
 						}
-					GetActiveLevel( Engine)->TravelInfo.Remove( *PlayerMap(i).PlayerName );
+					Engine->Level()->TravelInfo.Remove( *PlayerMap(i).PlayerName );
 					PlayerMap(i).PlayerName = P->PlayerReplicationInfo->PlayerName;
-					GetActiveLevel( Engine)->TravelInfo.Set( *PlayerMap(i).PlayerName, *PlayerMap(i).TravelList);
+					Engine->Level()->TravelInfo.Set( *PlayerMap(i).PlayerName, *PlayerMap(i).TravelList);
 				}
 				return;
 			}
@@ -151,13 +151,15 @@ void FXC_TravelManager::FixUpPlayerId( APlayerPawn* P)
 	unguard;
 }
 
+#define CRLF TEXT("\r\n")
 void FXC_TravelManager::GenerateTravelInfo( APlayerPawn* P)
 {
 	guard(FXC_TravelManager::GenerateTravelInfo);
-	FString STR = FString();
-	FString NewLine = FString::Chr(0x0D) + FString::Chr(0x0A);
-	TCHAR Temp[256] = TEXT("");
-	for ( AActor* A = P ; A ; A = A->Inventory )
+	if ( !P || P->bDeleteMe )
+		return;
+	FString STR;
+	TCHAR Temp[512] = TEXT("");
+	for ( AActor* A=P ; A ; A=A->Inventory )
 	{
 		if ( A->bTravel )
 		{
@@ -169,7 +171,7 @@ void FXC_TravelManager::GenerateTravelInfo( APlayerPawn* P)
 				Cached = TravelCache;
 				check( Cached->Class == A->GetClass() );
 			}
-			STR += FString::Printf(TEXT("Class=%s Name=%s%s{%s"), A->GetClass()->GetPathName(), A->GetName(), *NewLine, *NewLine );
+			STR += FString::Printf(TEXT("Class=%s Name=%s") CRLF TEXT("{") CRLF, A->GetClass()->GetPathName(), A->GetName() );
 			for ( ; Cached ; Cached=Cached->Parent )
 			{
 				for ( FPropertyCache* PCached=Cached->Properties ; PCached ; PCached=PCached->Next )
@@ -184,14 +186,15 @@ void FXC_TravelManager::GenerateTravelInfo( APlayerPawn* P)
 					unguard;
 					if ( Prop->IsA( UObjectProperty::StaticClass() ) && !Prop->Matches( A, 0, 0) )
 					{
-						UObject** TestObj = (UObject**)  ( DWORD(A) + Prop->Offset );
-						STR += FString::Printf( TEXT("%s=%s%s%s%s"), Prop->GetName(), (*TestObj)->GetName(), *NewLine, Temp, *NewLine);
+						UObject* TestObj = *(UObject**)( DWORD(A) + Prop->Offset );
+						STR += FString::Printf( TEXT("%s=%s") CRLF TEXT("%s"), Prop->GetName(), TestObj->GetName(), Temp);
 					}
 					else
-						STR += FString::Printf(  TEXT("%s=%s%s"), Prop->GetName(), Temp, *NewLine);
+						STR += FString::Printf(  TEXT("%s=%s"), Prop->GetName(), Temp);
+					STR += CRLF;
 				}
 			}
-			STR += FString::Printf( TEXT("}%s"), *NewLine);
+			STR += TEXT("}") CRLF;
 		}
 	}
 
@@ -202,7 +205,7 @@ void FXC_TravelManager::GenerateTravelInfo( APlayerPawn* P)
 			PlayerMap(i).TravelList = STR;
 			break;
 		}
-	GetActiveLevel( Engine)->TravelInfo.Set( *P->PlayerReplicationInfo->PlayerName, *STR);
+	Engine->Level()->TravelInfo.Set( *P->PlayerReplicationInfo->PlayerName, *STR);
 	unguard;
 }
 

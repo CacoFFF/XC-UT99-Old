@@ -9,6 +9,7 @@ var() config bool bSpectatorHitsTeleporters;
 var() config bool bListenServerPlayerRelevant;
 var() config bool bPatchUdpServerQuery;
 var() config bool bSpawnServerActor;
+var() config bool bFixMoverTimeMP; //Fix mover times in multiplayer
 
 native(640) static final function int Array_Length_Str( out array<string> Ar, optional int SetSize);
 native(641) static final function bool Array_Insert_Str( out array<string> Ar, int Offset, optional int Count );
@@ -56,4 +57,5 @@ defaultproperties
 	bListenServerPlayerRelevant=True
 	bPatchUdpServerQuery=True
 	bSpawnServerActor=True
+	bFixMoverTimeMP=True
 }

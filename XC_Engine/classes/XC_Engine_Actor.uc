@@ -27,7 +27,7 @@ struct ReachSpec
 	var() int ReachFlags;
 	var() byte bPruned;
 };
-
+var() ReachSpec DummyReachSpec;
 
 var() const editconst XC_Engine_Actor PreLoginHooks[12]; //PreLoginHooks can be any type of actor, but we use this to compile the PreLoginHook call
 var() editconst XC_Engine_Actor_CFG ConfigModule;
@@ -236,6 +236,11 @@ event XC_Init()
 			if ( ConfigModule.bSpawnServerActor )
 				Spawn( class'XC_ServerActor');
 		}
+		if ( ConfigModule.bFixMoverTimeMP )
+		{
+			ReplaceFunction( class'XC_Engine_Mover', class'Mover', 'InterpolateTo_Org', 'InterpolateTo'); //Backup the function
+			ReplaceFunction( class'Mover', class'XC_Engine_Mover', 'InterpolateTo', 'InterpolateTo_MPFix'); //Apply the fix
+		}
 		RestoreFunction( class'GameInfo', 'PreLogin');
 		ReplaceFunction( class'XC_Engine_GameInfo', class'GameInfo', 'PreLogin_Org', 'PreLogin'); //Backup the function
 		ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'PreLogin', 'PreLogin');
@@ -273,6 +278,7 @@ event XC_Init()
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerTick', 'PlayerTick_FD', 'FeigningDeath'); //Multiguning fix
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'AnimEnd', 'AnimEnd_FD', 'FeigningDeath');
 	ReplaceFunction( class'Pawn', class'XC_Engine_PlayerPawn', 'FindInventoryType', 'FindInventoryType_Fast');
+	ReplaceFunction( class'Pawn', class'XC_Engine_PlayerPawn', 'TraceShot', 'TraceShot_Safe');
 	if ( Level.Game != None )
 		ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewPlayerNum', 'ViewPlayerNum_Fast'); //Lag+crash exploit fix
 	ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'Killed', 'Killed');

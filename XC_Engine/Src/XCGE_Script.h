@@ -701,7 +701,8 @@ void AXC_Engine_Actor::execCompactPathList( FFrame& Stack, RESULT_DECL)
 		for ( i=0 ; i<16 ; i++ )
 			if ( (Paths[i] >= 0) && (Paths[i] < TotalRS) && (!Specs[Paths[i]].Start || !Specs[Paths[i]].End) )
 				Paths[i] = -1;
-		for ( INT iEmpty=0; iEmpty<16 ; iEmpty++ )
+		INT iEmpty;
+		for ( iEmpty=0; iEmpty<16 ; iEmpty++ )
 			if ( Paths[iEmpty] == -1 )
 				break;
 		for ( i=iEmpty+1 ; i<16 ; i++ )

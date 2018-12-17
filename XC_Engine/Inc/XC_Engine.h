@@ -66,21 +66,28 @@
 #define NAME_XC_Engine (EName)XC_ENGINE_XC_Engine.GetIndex()
 #undef clock
 #undef unclock
-#define clock(Timer) { Timer -= appCyclesXC(); }
-#define unclock(Timer) { Timer += appCyclesXC(); }
+#define clock(Timer) { Timer -= FPlatformTime::Cycles(); }
+#define unclock(Timer) { Timer += FPlatformTime::Cycles(); }
+
+//Cacus
+#include "Cacus/CacusPlatform.h"
 
 //XC_Core
 #include "UnXC_Math.h"
 #include "MEMCPY_AMD.h" //Should be better than the default appMemcpy
 
 //Classes here
-#include "UnXC_Game.h"		// Game Engine edited
+#include "UnXC_Game.h"		// Engine Engine edited
 #include "XC_Inlines.h"
 
 #ifdef __LINUX_X86__
 	#undef CPP_PROPERTY
 	#define CPP_PROPERTY(name) \
 		EC_CppProperty, (BYTE*)&((ThisClass*)1)->name - (BYTE*)1
+#endif
+
+#ifdef _WINDOWS
+	void LoadViewportHack( UXC_GameEngine* InEngine);
 #endif
 
 #endif

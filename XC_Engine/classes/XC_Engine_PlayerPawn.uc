@@ -502,7 +502,30 @@ function Inventory FindInventoryType_Fast( class<Inventory> DesiredClass ) //Com
 	if ( ClassIsChildOf( DesiredClass, class'Inventory') ) //Here we do check that it's a class<Inventory> being passed
 		ForEach InventoryActors( DesiredClass, Inv) //Native class check occurs here, so Inv matches what we're looking for
 			return Inv;
-} 
+}
+
+
+//==============
+//Single trace mode, prevents dangerous recursions
+function Actor TraceShot_Safe( out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
+{
+	local Actor A, Other;
+	
+	ForEach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace)
+	{
+		if ( Pawn(A) != None )
+		{
+			if ( (A != self) && Pawn(A).AdjustHitLocation( HitLocation, EndTrace - StartTrace) )
+				Other = A;
+		}
+		else if ( (A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors) )
+			Other = A;
+
+		if ( Other != None )
+			break;
+	}
+	return Other;
+}
 
 
 //==============

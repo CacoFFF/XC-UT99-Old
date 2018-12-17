@@ -21,7 +21,10 @@ class FSurfaceFacet;
 #include "UnXC_Lev.h"
 #include "UnXC_Travel.h"
 #include "XC_LZMA.h"
-#include "FThread.h"
+#include "Cacus/CacusThread.h"
+#include "Cacus/Atomics.h"
+#include "Cacus/CacusString.h"
+#include "Cacus/AppTime.h"
 
 //CANNOT INCLUDE!
 XC_CORE_API UBOOL FindPackageFile( const TCHAR* In, const FGuid* Guid, TCHAR* Out );
@@ -565,18 +568,20 @@ inline UBOOL OwnedByAPlayer( const AActor* Test)
 MS_ALIGN(16) struct LineCheckHelper
 {
 	FBspNode* Nodes;
+	FBspSurf* Surfs;
 	INT Depth; //Cutoff at 63 depth, avoid stack overflows
-	INT Pad[2];
+	INT Pad;
 	FVector4 V[63]; //0=End
 
-	LineCheckHelper( FBspNode* InNodes)
+	LineCheckHelper( FBspNode* InNodes, FBspSurf* InSurfs)
 		: Nodes(InNodes)
+		, Surfs(InSurfs)
 		, Depth(1)
 	{
 		ST_Traces++;
 	}
 
-	BYTE CheckTrans( INT iNode, FVector4* End, FVector4* Start, BYTE Outside )
+/*	BYTE CheckTrans( INT iNode, FVector4* End, FVector4* Start, BYTE Outside )
 	{
 		if ( Depth >= 63 )
 			return 0;
@@ -609,6 +614,39 @@ MS_ALIGN(16) struct LineCheckHelper
 		}
 		Depth--;
 		return Outside;
+	}*/
+
+	BYTE CheckTransAlt( INT iNode, FVector4* End, FVector4* Start, BYTE Outside )
+	{
+		if ( Depth >= 63 )
+			return 0;
+		FVector4 *Middle = &V[Depth++];
+		while( iNode != INDEX_NONE )
+		{
+			const FBspNode&	Node = (const FBspNode&)Nodes[iNode];
+			FLOAT Dist[2];
+			DoublePlaneDotU( &Node.Plane, Start, End, Dist);
+			BYTE  NotCsg = (Node.NodeFlags & NF_NotCsg);
+			INT   G1 = *(INT*)&Dist[0] >= 0;
+			INT   G2 = *(INT*)&Dist[1] >= 0;
+			if( G1!=G2 )
+			{
+				*Middle = FLinePlaneIntersectDist( Start, End, Dist); //GCC may crash here
+				if ( !CheckTransAlt(Node.iChild[G2],Middle,End,G2^((G2^Outside) & NotCsg)) )
+				{
+					Depth--;
+					return 0;
+				}
+				End = Middle;
+			}
+			Outside = G1^((G1^Outside)&NotCsg);
+			//Collision against non occluding surf
+			if ( !Outside && (Node.iSurf != INDEX_NONE) && (Surfs[Node.iSurf].PolyFlags & PF_NoOcclude) )
+				Outside = 1;
+			iNode = Node.iChild[G1];
+		}
+		Depth--;
+		return Outside;
 	}
 
 } GCC_ALIGN(16);
@@ -634,14 +672,15 @@ static UBOOL ActorIsRelevant( AActor* Actor, APlayerPawn* Player, AActor* Viewer
 		return Viewer->XLevel->Model->RootOutside;
 
 	BYTE Buffer[sizeof(LineCheckHelper)+16];
-	LineCheckHelper* Helper = new( (void*)((((DWORD)&Buffer)+15)&0xFFFFFFF0), E_Place) LineCheckHelper(&Viewer->XLevel->Model->Nodes(0));
+	LineCheckHelper* Helper = new( (void*)((((DWORD)&Buffer)+15)&0xFFFFFFF0), E_Place) 
+		LineCheckHelper(&Viewer->XLevel->Model->Nodes(0),&Viewer->XLevel->Model->Surfs(0));
 	*(DWORD*)&ViewPos->W = 0xBF800000; //-1.f, no FPU
 	Helper->V[0].X = Actor->Location.X + EndOffset.X * Actor->CollisionRadius;
 	Helper->V[0].Y = Actor->Location.Y + EndOffset.Y * Actor->CollisionRadius;
 	Helper->V[0].Z = Actor->Location.Z + EndOffset.Z * Actor->CollisionHeight;
 	*(DWORD*)&Helper->V[0].W = 0xBF800000; //-1.f, no FPU
 
-	return Helper->CheckTrans( 0, ViewPos, Helper->V, Viewer->XLevel->Model->RootOutside);
+	return Helper->CheckTransAlt( 0, ViewPos, Helper->V, Viewer->XLevel->Model->RootOutside);
 }
 
 //BROWSE IS CALLED TOWARDS LOCALMAPURL DURING INIT, WHICH THEN CALLS LOADMAP!
@@ -669,7 +708,7 @@ UBOOL UXC_GameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo,
 	{
 		for ( INT i=URL.Op.Num()-1 ; i>=0 ; i-- )
 		{
-			if( appStrnicmp( *URL.Op(i), TEXT("Game="), 5 )==0 )
+			if( appStrnicmp( *URL.Op(i), TEXT("Engine="), 5 )==0 )
 				URL.Op.Remove(i);
 			else if( appStrnicmp( *URL.Op(i), TEXT("Mutator="), 8 )==0 )
 				URL.Op.Remove(i);
@@ -685,7 +724,7 @@ UBOOL UXC_GameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo,
 	if ( (&GPendingLevel)[b451Setup] )
 		NetworkNotifyPL.SetPending( (UPendingLevelMirror*) (&GPendingLevel)[b451Setup] );
 	
-	if ( bDisconnected || !GetActiveLevel(this) )
+	if ( bDisconnected || !Level() )
 	{
 		HookNatives( true); //Full GNative hooks
 		HookEngine( NULL ); //Forces limited hook of standard stuff
@@ -700,7 +739,7 @@ UBOOL UXC_GameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo,
 /////////////////////
 // Compressor thread
 /////////////////////
-struct FAutoCompressorThread : public FThread
+struct FAutoCompressorThread : public CThread
 {
 public:
 	// Variables.
@@ -714,9 +753,38 @@ public:
 };
 
 
+static UBOOL IsDefaultPackage( const TCHAR* Pkg)
+{
+	//Get rid of paths...
+	const TCHAR* Filename;
+	for ( Filename=Pkg ; *Pkg ; Pkg++ )
+		if ( *Pkg == '\\' || *Pkg == '/' )
+			Filename = Pkg + 1;
+	
+	//Save as ANSI text
+	static const TCHAR* DefaultList[] = 
+		{	TEXT("Botpack.u")
+		,	TEXT("Engine.u")
+		,	TEXT("Core.u")
+		,	TEXT("Unreali.u")
+		,	TEXT("UnrealShare.u")
+		,	TEXT("Editor.u")
+		,	TEXT("Fire.u")
+		,	TEXT("Credits.utx")
+		,	TEXT("LadderFonts.utx")
+		,	TEXT("LadrStatic.utx")
+		,	TEXT("LadrArrow.utx")	};
+
+	// Compare
+	const int max = ARRAY_COUNT( DefaultList);
+	for ( int i=0 ; i<max ; i++ )
+		if ( !appStricmp( Filename, DefaultList[i]) )
+			return 1;
+	return 0;
+}
 
 // Priority thread entrypoint.
-THREAD_ENTRY(AutoCompressorThreadEntry,Arg)
+static DWORD AutoCompressorThreadEntry( void* Arg)
 {
 	appSleep( 0.1f);
 	FAutoCompressorThread* ACT = (FAutoCompressorThread*)Arg;
@@ -728,11 +796,11 @@ THREAD_ENTRY(AutoCompressorThreadEntry,Arg)
 	while ( !bLeave )
 	{
 		appSleep( 0.001f);
-		if ( GIsRequestingExit) //Game about to exit
+		if ( GIsRequestingExit) //Engine about to exit
 			return 0;
-		if ( FPlatformAtomics::InterlockedCompareExchange(&GMapLoadCount, 0, 0) != ACT->MapCount) //New map has loaded
+		if ( GMapLoadCount != ACT->MapCount) //New map has loaded
 			break;
-		if ( FPlatformAtomics::InterlockedCompareExchange(&GIsLoadingMap, 0, 0) != 0) //Map is loading!!
+		if ( GIsLoadingMap != 0) //Map is loading!!
 		{
 			appSleep( 0.1f);
 			continue;
@@ -746,7 +814,7 @@ THREAD_ENTRY(AutoCompressorThreadEntry,Arg)
 		{
 			ULinker* LNKh = (ULinker*)ACT->PackageMap->List(i).Linker;
 			INT Len = LNKh->Filename.Len();
-			if ( Len < 250 - LenExt ) //Avoid string formatting crash
+			if ( (Len < 250 - LenExt) && !IsDefaultPackage(*LNKh->Filename) ) //Avoid string formatting crash
 			{
 				TCHAR FileName_Base[256];
 				appStrcpy( FileName_Base, *LNKh->Filename);
@@ -761,7 +829,16 @@ THREAD_ENTRY(AutoCompressorThreadEntry,Arg)
 					TCHAR FileName_Temp[256];
 					appStrcpy( FileName_Temp, FileName_LZMA);
 					FileName_Temp[Len + LenExt - 1] = 't'; //TEMP INDICATOR
-					debugf( NAME_Log, TEXT("AutoCompressing %s to %s"), FileName_Base, FileName_LZMA);
+//					TCHAR Msg[512];
+//					appSprintf( Msg, TEXT("AutoCompressing %s to %s"), FileName_Base, FileName_LZMA);
+//					debugf( NAME_Log, Msg);
+					TCHAR* Msg;
+#ifdef UNICODE
+					Msg = (TCHAR*)CWSprintf( TEXT("AutoCompressing %s to %s"), FileName_Base, FileName_LZMA);
+#else
+					Msg = CSprintf( "AutoCompressing %s to %s", FileName_Base, FileName_LZMA);
+#endif
+					GLog->Log( Msg);
 					LzmaCompress( FileName_Base, FileName_Temp, Error);
 					CompressCount++;
 					GFileManager->Move( FileName_LZMA, FileName_Temp);
@@ -776,23 +853,22 @@ THREAD_ENTRY(AutoCompressorThreadEntry,Arg)
 	if ( CompressCount )
 		debugf( NAME_Log, TEXT("LZMA Compressor ended (%i files)"), CompressCount);
 
-	
+	ACT->Detach(); //UGLY TODO
 	delete ACT;
-	return 0;
+	return THREAD_END_OK;
 }
 
 FAutoCompressorThread::FAutoCompressorThread(UPackageMap* InPackageMap, INT InMapCount)
-	:	FThread()
+	:	CThread()
 	,	PackageMap(InPackageMap)
 	,	MapCount(InMapCount)
 {
 	guard(FAutoCompressorThread);
 
 	appSprintf( CompressedExt, COMPRESSED_EXTENSION);
-	FixFilename( CompressedExt); //Init safe File Manager if necessary
 	debugf(NAME_Log, TEXT("Starting LZMA compressor...") );
-	if ( RunThread( AutoCompressorThreadEntry, (void*)this) )
-		debugf(NAME_XC_Engine, TEXT("Thread ID: %i"), tId);
+	if ( Run( &AutoCompressorThreadEntry, (void*)this) )
+		debugf(NAME_XC_Engine, TEXT("Thread ID: %i"), ThreadId());
 	unguard;
 }
 
@@ -1157,9 +1233,9 @@ void UXC_Level::TickNetServer( FLOAT DeltaSeconds )
 						FPS_Str,
 						TickRate,
 						NetDriver->ClientConnections.Num(),
-						GSecondsPerCycle * 1000 * ActorTickCycles,
+						GSecondsPerCycle*1000*ActorTickCycles,
 						NumActors,
-						GXSecondsPerCycle * 1000 * NetTickCycles,
+						FPlatformTime::ToMilliseconds( NetTickCycles),
 						NumPV/NetDriver->ClientConnections.Num(),
 						NumReps/NetDriver->ClientConnections.Num(),
 						ST_Traces/(NetDriver->ClientConnections.Num() * SkipCount)
@@ -1236,34 +1312,40 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		INT RepFlags = 0;
 		FVector ModifyLocation;
 		*(INT*)&ModifyLocation = 0; //Kill a warning by setting bogus loc
-		//0x01 = Location
-		//0x02 = Rotation
-		//0x04 = Velocity
+		//0x01 = Location (skip)
+		//0x02 = Location (force higher Z)
+		APawn* NewPawn = (APawn*)Channel->Actor;
 		if ( Channel->Recent.Num() )
 		{
 			APawn* OldPawn = (APawn*)Channel->Recent.GetData();
-			APawn* NewPawn = (APawn*)Channel->Actor;
-			if ( NewPawn->Physics == PHYS_None || NewPawn->Physics == PHYS_Rotating )
+			FLOAT Delta = Connection->Driver->Time - Channel->LastUpdateTime;
+
+			//Pawn walked up, likely stairs
+			if ( (NewPawn->Physics == PHYS_Walking) && (NewPawn->Location.Z - OldPawn->Location.Z > 7.f) )
+				OldPawn->ColLocation.X = 0.1;
+
+			//If walked up, burst location updates for 0.1 second
+			if ( OldPawn->ColLocation.X > 0 )
+			{
+				RepFlags |= 0x02;
+				OldPawn->ColLocation.X -= Delta;
+			}
+			else if ( NewPawn->Physics == PHYS_None || NewPawn->Physics == PHYS_Rotating )
 			{}
 			else if ( (OldPawn->Velocity.SizeSquared() < KINDA_SMALL_NUMBER) && ((OldPawn->Location-NewPawn->Location).SizeSquared() > 0.1f) )
 			{}
 			else
 			{
-				FLOAT Delta = Connection->Driver->Time - Channel->LastUpdateTime;
 				ModifyLocation = OldPawn->Location + OldPawn->Velocity * Delta;
+				FVector ModifyDelta = NewPawn->Location - ModifyLocation;
+				//Pawn is running
 				if ( NewPawn->Physics == PHYS_Walking )
 				{
-					if ( (NewPawn->Location-OldPawn->Location).SizeSquared2D() < 4.0f )
+					//Consider skipping location update
+					if ( (ModifyDelta.SizeSquared2D() < 4.0f) && (ModifyDelta.Z < 7.f) && (ModifyDelta.Z > -15.f) )
 					{
-						FLOAT diff[3] = { (NewPawn->Location.Z-OldPawn->Location.Z)
-										,(OldPawn->Location.Z-OldPawn->ColLocation.Z)
-										,(OldPawn->ColLocation.Z-OldPawn->OldLocation.Z) };
-						FLOAT avg = (diff[0]+diff[1]+diff[2]) * 0.33333f;
-						if ( Square(diff[0]-avg)+Square(diff[1]-avg)+Square(diff[2]-avg) < 1.0f )
-						{
-							RepFlags |= 0x01;
-							OldPawn->Location = NewPawn->Location;
-						}
+						RepFlags |= 0x01;
+						OldPawn->Location = NewPawn->Location; //Do not update
 					}
 				}
 				else if ( ((ModifyLocation - NewPawn->Location) * FVector(1.0f,1.0f,0.2f)).SizeSquared() < 4.0f)
@@ -1276,16 +1358,14 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 					&& (appRound(NewPawn->Velocity.Y) == appRound(OldPawn->Velocity.Y))
 					&& (appRound(NewPawn->Velocity.Z) == appRound(OldPawn->Velocity.Z)) )
 				{
-					RepFlags |= 0x04;
 					OldPawn->Velocity = NewPawn->Velocity;
 				}
 			}
-			
+
 			if ( ((OldPawn->Rotation.Pitch & 0xFF00) == (NewPawn->Rotation.Pitch & 0xFF00))
 				&& ((OldPawn->Rotation.Yaw & 0xFF00) == (NewPawn->Rotation.Yaw & 0xFF00))
 				&& ((OldPawn->Rotation.Roll & 0xFF00) == (NewPawn->Rotation.Roll & 0xFF00)) )
 			{
-					RepFlags |= 0x02;
 					OldPawn->Rotation = NewPawn->Rotation;
 			}
 			
@@ -1293,7 +1373,14 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 			OldPawn->ColLocation.Z = OldPawn->Location.Z;
 		}
 
+		float ZTransform = 0.0f;
+		if ( RepFlags & 0x02 ) //Forcing an update
+			ZTransform += 1.5f;
+		if ( !(RepFlags & 0x01) && NewPawn->Physics == PHYS_Walking )
+			ZTransform += 1.0f;
+		NewPawn->Location.Z += ZTransform;
 		ReplicateActor( Channel);
+		NewPawn->Location.Z -= ZTransform;
 		if ( RepFlags & 0x01 )
 			((APawn*)Channel->Recent.GetData())->Location = ModifyLocation;
 		
@@ -1727,10 +1814,11 @@ INT UXC_Level::ServerTickClients( FLOAT DeltaSeconds )
 	if( Actors(0) && (Actors(0)->RemoteRole!=ROLE_None) )
 	{
 		FLOAT OldTime = UpdateNetTag( Actors(0), DeltaSeconds);
-		if ( appRound( OldTime*Actors(0)->NetUpdateFrequency) != appRound( *((FLOAT*)&Actors(0)->NetTag)*Actors(0)->NetUpdateFrequency) )
+		FLOAT& ActorTime = *(FLOAT*)&Actors(0)->NetTag;
+		if ( appRound( OldTime*Actors(0)->NetUpdateFrequency) != appRound( ActorTime*Actors(0)->NetUpdateFrequency) )
 		{
 			Actors(0)->bAlwaysRelevant = true; //Important to enforce this
-			*(FLOAT*) &Actors(0)->NetTag += appFrand() * 0.05; //Randomizer
+			ActorTime += appFrand() * 0.05; //Randomizer
 			ConsiderList[ConsiderListSize++] = Actors(0);
 		}
 	}
@@ -1754,10 +1842,11 @@ INT UXC_Level::ServerTickClients( FLOAT DeltaSeconds )
 			}
 			else if ( Actor->bAlwaysRelevant )
 			{
+				FLOAT& ActorTime = *(FLOAT*)&Actor->NetTag;
 				//bAlwaysRelevant actors are checked at the same time
-				if ( appRound( (OldTime+ArOffset)*Actor->NetUpdateFrequency) != appRound( (*((FLOAT*)&Actor->NetTag)+ArOffset)*Actor->NetUpdateFrequency) )
-				{
-					*(FLOAT*) &Actor->NetTag += appFrand() * 0.05; //Randomizer (is it necessary?)
+				if ( appRound( (OldTime+ArOffset)*Actor->NetUpdateFrequency*2) != appRound( (ActorTime+ArOffset)*Actor->NetUpdateFrequency*2) )
+				{ //HACK: NETUPDATEFREQUENCY X 2 DUE TO SOME OBSCURE BUG
+					ActorTime += appFrand() * 0.05; //Randomizer (is it necessary?)
 					ArOffset += 0.023f;
 					bPass = 1;
 				}
@@ -1831,26 +1920,25 @@ INT UXC_Level::ServerTickClients( FLOAT DeltaSeconds )
 	unguard;
 }
 
-//This doesn't appear to be working, dammit
 //Prevents heavy log spamming
-//TODO: Figure out a way to allow a client to rebroadcast a game?
+static       FTime LastNAC = 0;
 EAcceptConnection UXC_Level::NotifyAcceptingConnection()
 {
 	check(NetDriver);
-	static FTime LastNAC = 0.f; //Don't initialize a static variable using appSeconds(), just in case
-	FTime CurTime = TimeSeconds;
+	if ( LastNAC > TimeSeconds ) //Level was switched, reset
+		LastNAC = 0;
 	if( NetDriver->ServerConnection )
 	{
 		// We are a client and we don't welcome incoming connections.
 		// Don't fill a client's log
-		if ( CurTime - LastNAC > 1.f )
+		if ( TimeSeconds - LastNAC > 1.f )
 		{
-			LastNAC = CurTime;
+			LastNAC = TimeSeconds;
 			debugf( NAME_DevNet, TEXT("NotifyAcceptingConnection: Client refused") );
 		}
 		return ACCEPTC_Reject;
 	}
-	else if( GetLevelInfo()->NextURL!=TEXT("") )
+	else if( GetLevelInfo()->NextURL != TEXT("") )
 	{
 		// Server is switching levels.
 		// 100% useless, populated v436 servers suffer a lot from this
@@ -1862,9 +1950,9 @@ EAcceptConnection UXC_Level::NotifyAcceptingConnection()
 		// Server is up and running.
 		// Log everything during the first second of the level
 		// Otherwise add a 0.25s interval to avoid DDoS's from filling log
-		if ( (NetDriver->Time.GetFloat() < 1.f) || (CurTime - LastNAC > 0.25f) )
+		if ( (NetDriver->Time < FTime(1)) || (TimeSeconds - LastNAC > 0.25f) )
 		{
-			LastNAC = CurTime;
+			LastNAC = TimeSeconds;
 			debugf( NAME_DevNet, TEXT("NotifyAcceptingConnection: Server %s accept"), GetName() );
 		}
 		return ACCEPTC_Accept;

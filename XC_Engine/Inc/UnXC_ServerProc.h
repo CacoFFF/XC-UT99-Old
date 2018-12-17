@@ -1,25 +1,18 @@
 /*=============================================================================
-	Prevents a level from creating too many actor names
+	Additional processing for a net server
 =============================================================================*/
 
-#ifndef _INC_XC_LEVELWATCHER
-#define _INC_XC_LEVELWATCHER
+#ifndef _INC_XC_SERVERPROC
+#define _INC_XC_SERVERPROC
 
-#include "XC_CoreObj.h"
-
-class FXC_LevelWatcher : public FGenericSystem
+class FXC_ServerProc : public FGenericSystem
 {
 public:
 	UXC_GameEngine* Engine;
-	ULevel* Level;
-	INT OldACUnique;
-	INT CurActorNameIdx;
-	DWORD TickCount;
-	
-	FXC_LevelWatcher();
+
+	FXC_ServerProc();
 
 	//FGenericSystem interface
-	UBOOL Init();
 	INT Tick( FLOAT DeltaSeconds);
 	UBOOL IsTyped( const TCHAR* Type);
 };
