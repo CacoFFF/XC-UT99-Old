@@ -24,6 +24,7 @@ XC_CORE_API extern UBOOL b440Net;
 #else
 	UBOOL GLogUnlimitedLength = 1;
 #endif
+UBOOL GMallocThreadSafe = 0;
 
 //*************************************************
 // Updated file output device
@@ -110,118 +111,6 @@ void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
 		{}
 		Entry = 0;
 	}
-}
-
-//*************************************************
-// Thread-safe Malloc proxy
-//*************************************************
-
-FMallocThreadedProxy::FMallocThreadedProxy()
-	:	Signature( 1337)
-	,	MainMalloc( NULL )
-	,	NoAttachOperations(0)
-	,	Lock(0)
-{}
-
-
-FMallocThreadedProxy::FMallocThreadedProxy( FMalloc* InMalloc )
-	:	Signature( 1337 )
-	,	MainMalloc( InMalloc )
-	,	NoAttachOperations(0)
-	,	Lock(0)
-{}
-
-
-void* FMallocThreadedProxy::Malloc( DWORD Count, const TCHAR* Tag)
-{
-	CSpinLock Lock( &Lock);
-	void* Result = MainMalloc->Malloc( Count, Tag);
-	return Result;
-}
-
-void* FMallocThreadedProxy::Realloc( void* Original, DWORD Count, const TCHAR* Tag )
-{
-	CSpinLock Lock( &Lock);
-	void* Result = NULL;
-	if ( !Count )
-		MainMalloc->Free( Original);
-	else
-		Result = MainMalloc->Realloc( Original, Count, Tag);
-	return Result;
-}
-
-void FMallocThreadedProxy::Free( void* Original )
-{
-	CSpinLock Lock( &Lock);
-	if ( Original )
-		MainMalloc->Free( Original);
-}
-
-void FMallocThreadedProxy::DumpAllocs()
-{
-	CSpinLock Lock( &Lock);
-	MainMalloc->DumpAllocs();
-}
-
-void FMallocThreadedProxy::HeapCheck()
-{
-	CSpinLock Lock( &Lock);
-	MainMalloc->HeapCheck();
-}
-
-void FMallocThreadedProxy::Init()
-{
-	if ( MainMalloc )
-		MainMalloc->Init();
-}
-void FMallocThreadedProxy::Exit()
-{
-	if ( MainMalloc )
-		MainMalloc->Exit();
-}
-
-FMallocThreadedProxy* FMallocThreadedProxy::Singleton = NULL;
-FMallocThreadedProxy* FMallocThreadedProxy::GetInstance()
-{
-	if ( !FMallocThreadedProxy::Singleton )
-		FMallocThreadedProxy::Singleton = new FMallocThreadedProxy();
-	return Singleton;
-}
-
-void FMallocThreadedProxy::SetSingleton( FMallocThreadedProxy* NewSingleton)
-{
-	Singleton = NewSingleton;
-}
-
-void FMallocThreadedProxy::Attach()
-{
-	if ( NoAttachOperations )
-		return;
-	if ( IsAttached() )
-		appErrorf( TEXT("FMallocThreadedProxy::Attach -> proxy already in attached state") );
-	else if ( GMalloc != this )
-	{
-		MainMalloc = GMalloc;
-		GMalloc = this;
-	}
-}
-
-void FMallocThreadedProxy::Detach()
-{
-	if ( NoAttachOperations )
-		return;
-	if ( !IsAttached() )
-		appErrorf( TEXT("FMallocThreadedProxy::Detach -> proxy already in detached state") );
-	else if ( GMalloc == this )
-	{
-		GMalloc = MainMalloc;
-		MainMalloc = NULL;
-	}
-}
-
-UBOOL FMallocThreadedProxy::IsAttached()
-{
-	return !NoAttachOperations && MainMalloc != NULL;
 }
 
 //*************************************************

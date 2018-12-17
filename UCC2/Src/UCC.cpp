@@ -8,6 +8,7 @@ Revision history:
 
 
 #if WIN32
+	#define _NO_CRT_STDIO_INLINE
 	#include <windows.h>
 #else
 	#include <errno.h>
@@ -15,6 +16,11 @@ Revision history:
 #endif
 #include <malloc.h>
 #include <stdio.h>
+
+#if WIN32
+	#include "..\OldCRT\API_MSC.h"
+#endif
+
 
 // Core and Engine
 #include "Engine.h"
@@ -62,6 +68,7 @@ extern "C" {TCHAR GPackage[64]=TEXT("UCC");}
 
 
 // XC_Core devices
+#include "Cacus/Atomics.h"
 #include "Devices.h"
 
 // Log
@@ -96,7 +103,9 @@ FFeedbackContextAnsi_XC Warn;
 	FFileManagerAnsi FileManager;
 #endif
 
-FMallocThreadedProxy ThMalloc( &Malloc );
+// Malloc Proxy
+#include "FMallocThreadedProxy.h"
+FMallocThreadedProxy MallocProxy( &Malloc );
 
 // Config.
 #include "FConfigCacheIni.h"
@@ -122,7 +131,7 @@ void ShowBanner( FOutputDevice& Warn )
 	Warn.Logf( TEXT("=======================================") );
 	Warn.Logf( TEXT("ucc.exe: UnrealOS execution environment") );
 	Warn.Logf( TEXT("Copyright 1999 Epic Games Inc") );
-	Warn.Logf( TEXT("Modified by Higor (UCC2 version 3)") );
+	Warn.Logf( TEXT("Modified by Higor (UCC2 version 4)") );
 	Warn.Logf( TEXT("=======================================") );
 	Warn.Logf( TEXT("") );
 }
@@ -221,12 +230,11 @@ int main( int argc, char* argv[] )
 		#endif
 
 		// Finish initializing XC interfaces
-		FMallocThreadedProxy::SetSingleton( &ThMalloc);
-		ThMalloc.SetUndetachable( true);
+		GMallocThreadSafe = 1;
 		Log.SetFilename( MakeLogFilename(CmdLine));
 
 		// Init engine core.
-		appInit( TEXT("UnrealTournament"), CmdLine, &ThMalloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
+		appInit( TEXT("UnrealTournament"), CmdLine, &MallocProxy, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
 
 		// Init static classes.
 		#if __STATIC_LINK
@@ -305,7 +313,8 @@ int main( int argc, char* argv[] )
 				Class = UObject::StaticLoadClass( UCommandlet::StaticClass(), NULL, *(Token+TEXT("Commandlet")), NULL, LoadFlags, NULL );
 			if( !Class )
 			{
-				for( INT i=0; i<List.Num(); i++ )
+				INT i;
+				for( i=0; i<List.Num(); i++ )
 				{
 					FString Str = List(i).Object;
 					while( Str.InStr(TEXT("."))>=0 )

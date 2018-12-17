@@ -17,21 +17,34 @@
 #pragma comment (linker, "/NODEFAULTLIB:msvcrt.lib")
 #pragma comment (linker, "/merge:.CRT=.rdata")
 
-/*extern "C" int __cdecl _purecall()
+extern "C"
+{
+
+/*int __cdecl _purecall()
 {
 	return 0;
 }*/
 
-extern "C" void __declspec(dllimport) *__CxxFrameHandler;
 
-extern "C" void  __declspec(naked) __CxxFrameHandler3(void)
+void __declspec(dllimport) *__CxxFrameHandler;
+void  __declspec(naked) __CxxFrameHandler3(void)
 {
 	// Jump indirect: Jumps to __CxxFrameHandler
 	_asm jmp __CxxFrameHandler ; Trampoline bounce
 }
 
+#if defined(_INC_STDIO) && defined(_NO_CRT_STDIO_INLINE)
+	#undef stdin
+	#undef stdout
+	#undef stderr
+	extern FILE *_imp___iob;
+	#define stdin  (&_imp___iob[0])
+	#define stdout (&_imp___iob[1])
+	#define stderr (&_imp___iob[2]) 
+#endif
+
 //Conversion of double to int64 >> hardcoded by compiler
-extern "C" void __declspec(naked) _ftol2_sse()
+void __declspec(naked) _ftol2_sse()
 {
 	__asm
 	{
@@ -46,27 +59,14 @@ extern "C" void __declspec(naked) _ftol2_sse()
 	}
 }
 
-extern "C" void __declspec(naked) _ftol2()
+void __declspec(naked) _ftol2()
 {
 	__asm jmp _ftol2_sse ; //Bounce
 }
 
-/*
-.text:100085C9
-.text:100085C9 var_8           = qword ptr -8
-.text:100085C9
-.text:100085C9                 push    ebp
-.text:100085CA                 mov     ebp, esp
-.text:100085CC                 sub     esp, 8
-.text:100085CF                 and     esp, 0FFFFFFF8h
-.text:100085D2                 fstp    [esp+8+var_8]
-.text:100085D5                 cvttsd2si eax, [esp+8+var_8]
-.text:100085DA                 leave
-.text:100085DB                 retn
-*/
 
 /*
-extern "C" double __declspec(naked) _ltod3( __int64 v)
+double __declspec(naked) _ltod3( __int64 v)
 {
 	__asm
 	{
@@ -82,3 +82,5 @@ extern "C" double __declspec(naked) _ltod3( __int64 v)
 	}
 }
 */
+
+}

@@ -85,15 +85,13 @@ class XC_ENGINE_API FXC_BrushTrackerFixer : public FGenericSystem
 {
 public:
 	TArray<AMover*> StaticMovers;
-	UXC_GameEngine* Game;
+	UXC_GameEngine* Engine;
 	ULevel* Level;
+
 	//FExec interface
 //	UBOOL Exec( const TCHAR* Cmd, FOutputDevice& Ar );
 
-	FXC_BrushTrackerFixer()
-	:	StaticMovers(0)
-	,	Level(NULL)
-	{};
+	FXC_BrushTrackerFixer( UXC_GameEngine* InEngine);
 
 	//FGenericSystem interface
 	UBOOL Init();

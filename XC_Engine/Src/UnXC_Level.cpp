@@ -2388,29 +2388,42 @@ FCheckResult* UXC_Level::MultiLineCheck
 
 #ifndef DISABLE_ADDONS
 
+FXC_BrushTrackerFixer::FXC_BrushTrackerFixer( UXC_GameEngine* InEngine)
+	:	StaticMovers(0)
+	,	Engine(InEngine)
+	,	Level(InEngine->Level())
+{};
+
 UBOOL FXC_BrushTrackerFixer::Init()
 {
 	guard( FXC_BrushTrackerFixer::Init);
-	check( Level);
+	Engine->bHackingTracker = 0;
 
-	if ( Level->BrushTracker || !Level->Actors(0) )
+	// Brush tracker was created outside of here, so we don't need to maintain
+	if ( !Level || Level->BrushTracker )
 		return false;
 
-	debugf( NAME_XC_Engine, TEXT("Checking for Moving Brush Tracker insertion..."));
-	for( INT i=0; i<Level->Actors.Num(); i++ )
+	// The engine doesn't want to create a brush tracker
+	if ( Engine->bDisableBrushTracker )
+		return false;
+	{for ( INT i=0; i<Engine->NoBrushTrackerFix.Num() ; i++ )
+		if ( !appStricmp( Level->GetOuter()->GetName(), *Engine->NoBrushTrackerFix(i)) )
+			return false;}
+
+	// Count 'static' movers.
+	{for ( INT i=0; i<Level->Actors.Num(); i++ )
 	{
-		guard(MoverCheck);
-		if( StaticMover( Level->Actors(i)) ) //Static mover
-		{
-			if ( !Level->BrushTracker )
-				Level->BrushTracker = GNewBrushTracker( Level );
-			StaticMovers.AddItem( (AMover*) Level->Actors(i) );
-		}
-		unguard;
-	}
+		AMover* Mover = Cast<AMover>(Level->Actors(i));
+		if ( Mover && Mover->Brush && (Mover->bNoDelete || Mover->bStatic) )
+			StaticMovers.AddItem( Mover);
+	}}
 	if ( !StaticMovers.Num() )
 		return false;
+
+	// Finish up
+	Level->BrushTracker = GNewBrushTracker( Level);
 	StaticMovers.Shrink();
+	Engine->bHackingTracker = 1;
 	return true;
 
 	unguard;

@@ -8,8 +8,9 @@
 #ifndef XC_DEVICES
 #define XC_DEVICES
 
-//This game/launcher supports unlimited length logging
+//Some indicators to let XC_Engine (and devices) know that performing some operations is safe
 extern XC_CORE_API UBOOL GLogUnlimitedLength;
+extern XC_CORE_API UBOOL GMallocThreadSafe;
 
 class XC_CORE_API FOutputDeviceFileXC : public FOutputDevice
 {
@@ -25,10 +26,6 @@ private:
 
 	void WriteDataToArchive(const TCHAR* Data, EName Event);
 };
-
-
-
-
 
 #define OLD_LINES 16
 class XC_CORE_API FLogLine
@@ -69,64 +66,5 @@ public:
 	void ClearRepeater();
 	void SerializeNext( const TCHAR* Text, EName Event );
 };
-
-
-/** 
-	If a launcher wishes to implement it's own singleton
-	it should define DO_NOT_IMPORT_MALLOC and then implement
-	the code in it's own source.
-*/
-
-#ifdef CUSTOM_MALLOC_SINGLETON
-	#define MALLOC_IMPORT 
-	#define MALLOC_SET_SINGLETON XC_CORE_API
-#else
-	#define MALLOC_IMPORT XC_CORE_API
-	#define MALLOC_SET_SINGLETON 
-#endif
-
-class MALLOC_IMPORT FMallocThreadedProxy : public FMalloc
-{
-	INT Signature; //Stuff
-	FMalloc* MainMalloc;
-	UBOOL NoAttachOperations; //This malloc is fixed
-	volatile INT Lock;
-
-	#ifndef CUSTOM_MALLOC_SINGLETON
-		static FMallocThreadedProxy* Singleton;
-	#endif
-	#ifndef DISABLE_CPP11
-		FMallocThreadedProxy( FMallocThreadedProxy&& Other);
-	#endif
-public:
-	FMallocThreadedProxy();
-	FMallocThreadedProxy( FMalloc* InMalloc );
-
-	
-	// FMalloc interface.
-	void* Malloc( DWORD Count, const TCHAR* Tag );
-	void* Realloc( void* Original, DWORD Count, const TCHAR* Tag );
-	void Free( void* Original );
-	void DumpAllocs();
-	void HeapCheck();
-	void Init();
-	void Exit();
-
-	#ifndef CUSTOM_MALLOC_SINGLETON
-		//Automated singleton operations
-		void Attach();
-		void Detach();
-		UBOOL IsAttached();
-	#endif
-
-	inline void SetUndetachable( UBOOL bEnable)
-	{
-		NoAttachOperations = bEnable;
-	}
-
-	static MALLOC_SET_SINGLETON FMallocThreadedProxy* GetInstance();
-	static MALLOC_SET_SINGLETON void SetSingleton( FMallocThreadedProxy* NewSingleton);
-};
-
 
 #endif
