@@ -10,7 +10,8 @@ Revision history:
 #pragma DISABLE_OPTIMIZATION /* Avoid VC++ code generation bug */
 
 #define XC_CORE_API DLL_IMPORT
-#include "XC_CoreGlobals.h"
+
+#include "Cacus/AppTime.h"
 
 /*-----------------------------------------------------------------------------
 	Splash screen.
@@ -33,7 +34,7 @@ INT     BitmapX    = 0;
 INT     BitmapY    = 0;
 DWORD   ThreadId   = 0;
 HANDLE  hThread    = 0;
-DWORD WINAPI ThreadProc( VOID* Parm )
+DWORD WINAPI ThreadProc( void* Parm )
 {
 	hWndSplash = TCHAR_CALL_OS(CreateDialogW(hInstance,MAKEINTRESOURCEW(IDDIALOG_Splash), NULL, SplashDialogProc),CreateDialogA(hInstance, MAKEINTRESOURCEA(IDDIALOG_Splash), NULL, SplashDialogProc) );
 	if( hWndSplash )
@@ -624,13 +625,15 @@ public:
 // Initialize.
 //
 #ifndef _EDITOR_
+static FExecHook GLocalHook;
+
 static UEngine* InitEngine()
 {
 	guard(InitEngine);
-	XC_InitTiming(); //GXStartTime set!
+	double StartTime = FPlatformTime::InitTiming();
 
 	// Set exec hook.
-	static FExecHook GLocalHook;
+//	static FExecHook GLocalHook; //AVOID LINKER ERRORS IN VS2015
 	GExec = &GLocalHook;
 
 	// Create mutex so installer knows we're running.
@@ -743,7 +746,7 @@ static UEngine* InitEngine()
 	}
 	UEngine* Engine = ConstructObject<UEngine>( EngineClass );
 	Engine->Init();
-	debugf( TEXT("Startup time: %f seconds"), appSecondsXC()-GXStartTime );
+	debugf( TEXT("Startup time: %f seconds"), FPlatformTime::Seconds()-StartTime );
 
 	return Engine;
 	unguard;
@@ -771,7 +774,7 @@ static INT MainLoop( UEngine* Engine )
 	GIsRunning = 1;
 //	DWORD ThreadId = GetCurrentThreadId();
 //	HANDLE hThread = GetCurrentThread();
-	DOUBLE OldTime = appSecondsXC();
+	DOUBLE OldTime = FPlatformTime::Seconds();
 	DOUBLE SecondStartTime = OldTime;
 
 	INT TickCount = 0;
@@ -779,7 +782,7 @@ static INT MainLoop( UEngine* Engine )
 	{
 		// Update the world.
 		guard(UpdateWorld);
-		DOUBLE NewTime   = appSecondsXC();
+		DOUBLE NewTime = FPlatformTime::Seconds();
 		FLOAT DeltaTime = NewTime - OldTime;
 		Engine->Tick( DeltaTime );
 		if( GWindowManager )
@@ -800,7 +803,7 @@ static INT MainLoop( UEngine* Engine )
 		DOUBLE IdealDelta = (MaxTickRate > 0.f) ? (1.0 / MaxTickRate) : (1.0/200.0);
 		while ( true )
 		{
-			DOUBLE Delta = IdealDelta - (appSecondsXC()-OldTime);
+			DOUBLE Delta = IdealDelta - (FPlatformTime::Seconds()-OldTime);
 			if ( Delta - 0.000005 < 0.f )
 				break;
 			appSleep( Clamp<FLOAT>( Delta-0.0005, 0.f, IdealDelta) ); //This can reduce sleep timing by 1ms

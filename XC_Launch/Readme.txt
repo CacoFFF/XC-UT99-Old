@@ -13,9 +13,9 @@ XC_Core interfaces:
 
 == FMallocThreadedProxy:
 Uses spinlocks to prevent multiple threads from using the game's allocator.
-Implemented in XC_Launch without importing from XC_Core.dll
 
 == FOutputDeviceFileXC:
+UTF-8 format.
 Improved log output device for launchers and UCC apps.
 Safe to log lines of any char length.
 Uses Windows \r\n newline characters regardless of platform.

@@ -8,6 +8,9 @@ Revision history:
 =============================================================================*/
 
 
+#ifdef _MSC_VER
+	#include "..\PlatformUpdate\OldCRT\API_MSC.h"
+#endif
 
 #include "LaunchPrivate.h"
 #include "UnXC_EngineWin.h"
@@ -24,7 +27,7 @@ extern "C" {TCHAR GPackage[64]=TEXT("XC_Launch");}
 #define XC_CORE_API DLL_IMPORT
 #define CUSTOM_MALLOC_SINGLETON 1
 #include "Devices.h"
-#include "Atomics.h"
+#include "Cacus/Atomics.h"
 #include "WLog2.h"
 
 // Memory allocator.
@@ -37,8 +40,11 @@ extern "C" {TCHAR GPackage[64]=TEXT("XC_Launch");}
 #endif
 
 // Log file.
-FOutputDeviceFileXC Log;
-FMallocThreadedProxy ThMalloc(&Malloc);
+//FOutputDeviceFileXC Log;
+
+// Malloc proxy
+#include "FMallocThreadedProxy.h"
+FMallocThreadedProxy MallocProxy(&Malloc);
 
 // Error handler.
 #include "FOutputDeviceWindowsError.h"
@@ -88,7 +94,8 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 	if ( !appStricmp( GPackage, TEXT("XC_Launch")) )
 		appStrcpy( GPackage, TEXT("UnrealTournament"));
 
-	Log.SetFilename( MakeLogFilename(CmdLine));
+	FOutputDeviceFileXC Log( MakeLogFilename(CmdLine) );
+//	Log.SetFilename( MakeLogFilename(CmdLine));
 
 	// See if this should be passed to another instances.
 	if
@@ -129,7 +136,8 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 #endif
 		// Init core.
 		GIsClient = GIsGuarded = 1;
-		appInit( GPackage, CmdLine, &ThMalloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
+		GMallocThreadSafe = 1;
+		appInit( GPackage, CmdLine, &MallocProxy, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
 
 		// Init mode.
 		GIsServer     = 1;
@@ -138,7 +146,6 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 		GIsScriptable = 1;
 		GLazyLoad     = !GIsClient || ParseParam(appCmdLine(),TEXT("LAZY"));
 
-		FMallocThreadedProxy::SetSingleton(&ThMalloc);
 
 		// Figure out whether to show log or splash screen.
 		UBOOL ShowLog = ParseParam(CmdLine,TEXT("LOG"));
@@ -272,75 +279,6 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 	GLogHook = NULL;
 	return ErrorLevel;
 }
-
-//*************************************************
-// Thread-safe Malloc proxy
-//*************************************************
-
-FMallocThreadedProxy::FMallocThreadedProxy()
-	:	Signature( 1337)
-	,	MainMalloc( NULL )
-	,	NoAttachOperations(1)
-	,	Lock(0)
-{}
-
-
-FMallocThreadedProxy::FMallocThreadedProxy( FMalloc* InMalloc )
-	:	Signature( 1337 )
-	,	MainMalloc( InMalloc )
-	,	NoAttachOperations(1)
-	,	Lock(0)
-{}
-
-
-void* FMallocThreadedProxy::Malloc( DWORD Count, const TCHAR* Tag)
-{
-	FSpinLock Lock( &Lock);
-	void* Result = MainMalloc->Malloc( Count, Tag);
-	return Result;
-}
-
-void* FMallocThreadedProxy::Realloc( void* Original, DWORD Count, const TCHAR* Tag )
-{
-	FSpinLock Lock( &Lock);
-	void* Result = NULL;
-	if ( !Count )
-		MainMalloc->Free( Original);
-	else
-		Result = MainMalloc->Realloc( Original, Count, Tag);
-	return Result;
-}
-
-void FMallocThreadedProxy::Free( void* Original )
-{
-	FSpinLock Lock( &Lock);
-	if ( Original )
-		MainMalloc->Free( Original);
-}
-
-void FMallocThreadedProxy::DumpAllocs()
-{
-	FSpinLock Lock( &Lock);
-	MainMalloc->DumpAllocs();
-}
-
-void FMallocThreadedProxy::HeapCheck()
-{
-	FSpinLock Lock( &Lock);
-	MainMalloc->HeapCheck();
-}
-
-void FMallocThreadedProxy::Init()
-{
-	if ( MainMalloc )
-		MainMalloc->Init();
-}
-void FMallocThreadedProxy::Exit()
-{
-	if ( MainMalloc )
-		MainMalloc->Exit();
-}
-
 
 /*-----------------------------------------------------------------------------
 	The End.

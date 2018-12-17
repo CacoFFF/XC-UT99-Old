@@ -1,5 +1,5 @@
 UCC2 rebuilt by Higor
-(build 3)
+(build 4)
 
 This is a small UCC modification that uses enhanced malloc and log interfaces.
 
@@ -9,6 +9,7 @@ XC_Core interfaces:
 Uses spinlocks to prevent multiple threads from using the game's allocator.
 
 == FOutputDeviceFileXC:
+UTF-8 format.
 Improved log output device for launchers and UCC apps.
 Safe to log lines of any char length.
 Uses Windows \r\n newline characters regardless of platform.

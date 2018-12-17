@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="Src\LaunchPrivate.h" />
+    <ClInclude Include="Src\Res\LaunchRes.h">
+      <Filter>Res</Filter>
+    </ClInclude>
+    <ClInclude Include="Src\FFeedbackContextAnsi_XC.h" />
+    <ClInclude Include="Src\WLog2.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Src\Res\Unreal.ico">
+      <Filter>Res</Filter>
+    </Image>
+    <Image Include="Src\Res\Logo.bmp">
+      <Filter>Res</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Src">
+      <UniqueIdentifier>{20ec429f-367b-4126-9126-c570cc1c0476}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Res">
+      <UniqueIdentifier>{4bddcc36-a8aa-430b-9758-aa14f38d300d}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Src\Launch.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Src\Res\LaunchRes.rc">
+      <Filter>Res</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>

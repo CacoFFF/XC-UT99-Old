@@ -4,7 +4,7 @@
 	Altering the behaviour of log window so it uses cache instead of file
 =============================================================================*/
 
-
+#include "Cacus/Atomics.h"
 
 class WLog2 : public WTerminal
 {
@@ -41,6 +41,7 @@ public:
 	void Serialize( const TCHAR* Data, EName MsgType )
 	{
 		guard(WTerminal::Serialize);
+		CSpinLock SL(&Lock);
 		if( MsgType==NAME_Title )
 		{
 			SetText( Data );
