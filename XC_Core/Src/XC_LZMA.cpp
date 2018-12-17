@@ -8,6 +8,7 @@
 
 #include "Cacus/Atomics.h"
 #include "Cacus/CacusString.h"
+#include "Cacus/AppTime.h"
 
 
 //Archive hack for Linux
@@ -97,7 +98,7 @@ INT ULZMACompressCommandlet::Main( const TCHAR* Parms )
 		{
 			FString Src = Dir + Files(j);
 			FString End = Src + COMPRESSED_EXTENSION;
-			double StartTime = appSeconds();
+			double StartTime = FPlatformTime::Seconds();
 			LzmaCompress( *Src, *End, Error);
 			
 			if ( Error[0] )
@@ -106,7 +107,7 @@ INT ULZMACompressCommandlet::Main( const TCHAR* Parms )
 			{
 				INT SrcSize = GFileManager->FileSize(*Src);
 				INT DstSize = GFileManager->FileSize(*(Src+COMPRESSED_EXTENSION));
-				warnf(TEXT("Compressed %s -> %s%s (%d%%). Time: %03.1f"), *Src, *Src, COMPRESSED_EXTENSION, 100*DstSize / SrcSize, appSeconds() - StartTime);
+				warnf(TEXT("Compressed %s -> %s%s (%d%%). Time: %03.1f"), *Src, *Src, COMPRESSED_EXTENSION, 100*DstSize / SrcSize, FPlatformTime::Seconds() - StartTime);
 			}
 		}
 	}

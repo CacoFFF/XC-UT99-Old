@@ -35,6 +35,7 @@ public:
 	FTime      ()               {v=0;}
 	FTime      (float f)        {v=(TIMETYP)(f*FIXTIME);}
 	FTime      (double d)       {v=(TIMETYP)(d*FIXTIME);}
+	FTime      (int s)          {v=((TIMETYP)s)<<32;}
 	float   GetFloat   ()               {return v/FIXTIME;}
 	FTime   operator+  (float f) const  {return FTime(v+(TIMETYP)(f*FIXTIME));}
 	float   operator-  (FTime t) const  {return (v-t.v)/FIXTIME;}
@@ -43,9 +44,10 @@ public:
 	FTime&  operator+= (float f)        {v=v+(TIMETYP)(f*FIXTIME); return *this;}
 	FTime&  operator*= (float f)        {v=(TIMETYP)(v*f); return *this;}
 	FTime&  operator/= (float f)        {v=(TIMETYP)(v/f); return *this;}
-	int     operator== (FTime t)        {return v==t.v;}
-	int     operator!= (FTime t)        {return v!=t.v;}
-	int     operator>  (FTime t)        {return v>t.v;}
+	int     operator== (FTime t) const       {return v==t.v;}
+	int     operator!= (FTime t) const       {return v!=t.v;}
+	int     operator>  (FTime t) const       {return v>t.v;}
+	int     operator<  (FTime t) const       {return v<t.v;}
 	FTime&  operator=  (const FTime& t) {v=t.v; return *this;}
 
 	//CacusOps

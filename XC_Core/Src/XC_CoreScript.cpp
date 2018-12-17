@@ -30,6 +30,7 @@ inline void CompilerCheck()
 /**			 -- Auto Error -- 
 		You must add these to UXC_CoreStatics:
 	void StaticConstructor();
+	void PostLoad();
   */
 }
 
@@ -116,6 +117,7 @@ INT DummyFixNames()
 		FixNameCase( TEXT("AllObjects") );
 		FixNameCase( TEXT("HasFunction") );
 		FixNameCase( TEXT("FixName") );
+		FixNameCase( TEXT("CleanupLevel") );
 	}
 	unguard;
 	return 1;
@@ -204,30 +206,73 @@ XC_CORE_API void XCCNatives( UBOOL bEnable)
 #define ABORT_IF(condition, returnvalue, text) \
 	if ( condition ) { debugf( NAME_Warning, text); *(INT*)Result = returnvalue; return; }
 
+
+/*-----------------------------------------------------------------------------
+	Make class post-loadable
+-----------------------------------------------------------------------------*/
+static UBOOL HackingClass = 0;
+class UClassHack : public UClass
+{
+public:
+	UClassHack()
+	{}
+
+	//Destruction occurs when native class is being (re)loaded from unrealscript
+	~UClassHack() 
+	{
+		if ( HackingClass )
+			UClass::StaticClass()->ClassConstructor = &UClassHack::InternalConstructor;
+	}
+
+	//So we temporarily replace the internal constructor
+	static void InternalConstructor( void* X ) 
+	{
+		if ( HackingClass )
+			UClass::StaticClass()->ClassConstructor = &UClass::InternalConstructor;
+		HackingClass = 0;
+		new( (EInternal*)X )UClassHack();
+	}
+
+	//So that the native class can override the unrealscript's empty default properties
+	virtual void SerializeTaggedProperties( FArchive& Ar, BYTE* Data, UClass* DefaultsClass )
+	{
+		UClass::SerializeTaggedProperties( Ar, Data, DefaultsClass);
+		if ( UXC_CoreStatics::StaticClass() == this )
+		{
+			//Restore and process
+			UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*)&Defaults(0);
+			((size_t*)this)[0] = ((size_t*)UObject::StaticClass())[0];
+			DefaultObject->XC_Core_Version = 9;
+		}
+	}
+
+};
+
+
 /*-----------------------------------------------------------------------------
 	UXC_CoreStatics
 -----------------------------------------------------------------------------*/
-
 
 static double StartTime = 0;
 void UXC_CoreStatics::StaticConstructor()
 {
 	UClass* TheClass = GetClass();
 	UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*) &TheClass->Defaults(0);
+	DefaultObject->XC_Core_Version = 9;
 
-	//Init timing
-	FPlatformTime::InitTiming();
-	StartTime = FPlatformTime::Seconds();
+	StartTime = FPlatformTime::InitTiming();
 
 #ifdef __LINUX_X86__
 	appStrcat( (char*)CUserDir(), ".loki/ut/System/");
 #endif
 
 	CStringBufferInit( 16 * 1024); //Only initialize a 16kb buffer
-
-	//Hardcode, just in case
-	DefaultObject->XC_Core_Version = 8;
 	RegisterNames();
+
+	INT Dummy = 0;
+	UClassHack::InternalConstructor( &Dummy);
+	HackingClass = 1;
+	((size_t*)TheClass)[0] = Dummy;
 }
 
 
@@ -511,8 +556,22 @@ void UXC_CoreStatics::execBrushToMesh( FFrame& Stack, RESULT_DECL )
 	}
 	*(UMesh**)Result = Mesh;
 }
-IMPLEMENT_CLASS(UXC_CoreStatics);
 
+#ifdef __LINUX_X86__
+//No editor support!
+FString CleanupLevel( class ULevel* Level)
+{
+	return FString();
+}
+#endif
+
+void UXC_CoreStatics::execCleanupLevel( FFrame& Stack, RESULT_DECL )
+{
+	P_GET_OBJECT( ULevel, Level);
+	P_FINISH;
+	*(FString*)Result = Level ? CleanupLevel(Level) : FString();
+}
+IMPLEMENT_CLASS(UXC_CoreStatics);
 
 
 /*-----------------------------------------------------------------------------

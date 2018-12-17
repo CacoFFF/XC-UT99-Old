@@ -64,8 +64,6 @@ FGenericSystem* FGenericSystemDispatcher::FindByType( const TCHAR* Type)
 FGenericSystemDispatcher::~FGenericSystemDispatcher()
 {
 	guard ( FGenericSystemDispatcher::Destructor );
-	for ( INT i=0 ; i<GenSystems.Num() ; i++ )
-		delete GenSystems(i);
 	GenSystems.Empty();
 	unguard;
 }

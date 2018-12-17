@@ -21,11 +21,11 @@ class XC_CoreStatics expands Object
 	native;
 
 #exec _cpptext void StaticConstructor();
-	
-var transient const editconst bool bGNatives; //True if commented out opcodes can be called directly
-var const editconst int XC_Core_Version;	//Hardcoded, set by DLL
-var const editconst int XC_Engine_Version; //Only set if XC_Engine is running
-var transient float iC[2]; //If you want to internally clock
+
+var() transient const editconst bool bGNatives; //True if commented out opcodes can be called directly
+var() transient const editconst int XC_Core_Version;
+var() transient const editconst int XC_Engine_Version; //Only set if XC_Engine is running
+var() transient float iC[2]; //If you want to internally clock
 
 //227 compatible opcodes
 native /* (192)*/ static final function Color MakeColor( byte R, byte G, byte B, optional byte A);
@@ -57,10 +57,12 @@ native /*(3571)*/ static final function float HSize( vector A);
 native /*(3572)*/ static final function float InvSqrt( float C);
 
 //Fixes
-native static final function object DynamicLoadObject_Fix( string ObjectName, class ObjectClass, optional bool MayFail );
+native static final function Object DynamicLoadObject_Fix( string ObjectName, class ObjectClass, optional bool MayFail );
 
 //Editor-only
 native static final function Mesh BrushToMesh( Actor Brush, name InPkg, name InName, optional int InFlags);
+native static final function string CleanupLevel( Level Level);
+
 
 static function TestClock()
 {
@@ -87,5 +89,4 @@ static function TestCycles()
 
 defaultproperties
 {
-	XC_Core_Version=8
 }

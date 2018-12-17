@@ -46,6 +46,11 @@ extern "C" void __declspec(naked) _ftol2_sse()
 	}
 }
 
+extern "C" void __declspec(naked) _ftol2()
+{
+	__asm jmp _ftol2_sse ; //Bounce
+}
+
 /*
 .text:100085C9
 .text:100085C9 var_8           = qword ptr -8

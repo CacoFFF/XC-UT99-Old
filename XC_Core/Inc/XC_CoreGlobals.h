@@ -8,9 +8,6 @@
 
 XC_CORE_API void XCCNatives( UBOOL bEnable); //Enables the commented out opcodes in XC_CoreStatics, careful when using this online
 
-XC_CORE_API void InitXCGlobals();
-XC_CORE_API void DeInitXCGlobals();
-
 XC_CORE_API UBOOL FixNameCase( const TCHAR* NameToFix); //Only if name is found
 
 XC_CORE_API UFunction* FindBaseFunction( UStruct* InStruct, const TCHAR* FuncName);
@@ -18,6 +15,8 @@ XC_CORE_API UProperty* FindScriptVariable( UStruct* InStruct, const TCHAR* PropN
 
 XC_CORE_API void SortStringsA( TArray<FString>* List);
 XC_CORE_API void SortStringsSA( FString* List, INT ArrayMax);
+
+XC_CORE_API FString CleanupLevel( class ULevel* Level);
 
 
 enum EBrushToMeshFlags
