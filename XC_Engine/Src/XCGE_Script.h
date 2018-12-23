@@ -54,13 +54,7 @@ void AXC_Engine_Actor::execReplaceFunction(FFrame &Stack, RESULT_DECL)
 	
 	*(UBOOL*)Result = 0;
 
-	if ( ThisXC_Engine )
-	{
-		FGameLevelHeader* GLH = (FGameLevelHeader*) (((BYTE*)&ThisXC_Engine->GLevel) + ThisXC_Engine->b451Setup * 4);
-		if ( !GLH->GLevel || !GLH->GLevel->IsServer() )
-			return;
-	}
-	else
+	if ( !ThisXC_Engine || !ThisXC_Engine->Level() || !ThisXC_Engine->Level()->IsServer() )
 		return;
 	
 	if ( !ReplaceClass || !WithClass || ReplaceFunction == NAME_None || WithFunction == NAME_None )

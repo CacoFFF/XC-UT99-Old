@@ -1,4 +1,4 @@
-class XC_EngineStatics expands Object
+class XC_EngineStatics expands XC_CoreStatics
 	abstract;
 	
 //API

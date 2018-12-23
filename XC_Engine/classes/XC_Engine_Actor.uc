@@ -100,6 +100,9 @@ function EzConnectNavigationPoints( NavigationPoint Start, NavigationPoint End, 
 	local int rIdx, pIdx;
 	local bool bConnected;
 	
+	if ( Start == End )
+		return;
+	
 	if ( Scale <= 0 )
 		Scale = 1;
 	ForEach ConnectedDests ( Start, A, rIdx, pIdx)
@@ -299,27 +302,8 @@ event XC_Init()
 	ConfigModule.Setup(self);
 	Log( "Conditional function replacements loaded ("$class'XC_CoreStatics'.static.UnClock(Time)$" second)",'XC_Engine');
 
-	// ServerCrashFix appears to be loaded, find the SCFActor and remove incompatible hooks
-	AC = class<Actor>( class'XC_CoreStatics'.static.FindObject( "SCFActor", class'Class'));
-	if ( AC != None )
-	{
-		ForEach AllActors ( AC, A)
-		{
-			A.SetPropertyText("bFixNetDriver","0");
-			A.SetPropertyText("bFixExec","0");
-			Str = "";
-			if ( ConsoleCommand("get ini:engine.engine.gameengine bInterceptMalloc") == GetPropertyText("bDirectional") )
-			{
-				A.SetPropertytext("bFixMalloc","0");
-				Str = ", bFixMalloc";
-			}
-			Log("Disabling bFixNetDriver, bFixExec"$Str$" in SCF", 'XC_Engine');
-			break;
-		}
-		Log( "SCF tweak done ("$class'XC_CoreStatics'.static.UnClock(Time)$" second)",'XC_Engine');
-	}
-
 	FixLiftCenters();
+	AttachMenu();
 }
 
 //This event is called right after global PostBeginPlay
@@ -377,6 +361,20 @@ function bool TaggedMover( name MTag)
 	local Mover M;
 	ForEach AllActors (class'Mover', M, MTag )
 		return true;
+}
+
+final function bool AttachMenu()
+{
+	local class<XC_CoreStatics> MenuStatics;
+
+	if ( Level.NetMode != NM_DedicatedServer )
+	{
+		// Even if menu hasn't been loaded, it's likely to be loaded in the future, so preload
+		MenuStatics = class<XC_CoreStatics>( DynamicLoadObject("XC_Engine_Menu.XC_MenuStatics", class'Class', true));
+		if ( MenuStatics != None )
+			return MenuStatics.static.StaticCall("OPTIONS") == "OK";
+	}
+	return false;
 }
 
 

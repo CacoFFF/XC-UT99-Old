@@ -693,9 +693,8 @@ UBOOL UXC_GameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo,
 	UBOOL bDisconnected = URL.HasOption( TEXT("failed")) || URL.HasOption( TEXT("entry"));
 	if ( bDisconnected )
 	{
-		ULevel* MyLevel = (&GLevel)[b451Setup];
-		if ( MyLevel )
-			MyLevel->SetActorCollision(0);
+		if ( Level() )
+			Level()->SetActorCollision(0);
 		UnHookEngine();
 	}
 
@@ -724,11 +723,21 @@ UBOOL UXC_GameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo,
 	if ( (&GPendingLevel)[b451Setup] )
 		NetworkNotifyPL.SetPending( (UPendingLevelMirror*) (&GPendingLevel)[b451Setup] );
 	
-	if ( bDisconnected || !Level() )
+	// Entry
+	if ( Level() == Entry() )
 	{
 		HookNatives( true); //Full GNative hooks
 		HookEngine( NULL ); //Forces limited hook of standard stuff
 		AdminLoginHook = NULL;
+		UClass* CL = StaticLoadClass( AActor::StaticClass(), NULL, TEXT("XC_Engine.XC_Engine_Actor"), NULL, LOAD_NoFail, NULL);
+		AActor* XCGEA = Entry()->SpawnActor(CL);
+		if ( XCGEA )
+		{
+			XCGEA->ProcessEvent( FindBaseFunction( XCGEA->GetClass(), TEXT("XC_Init") ) , NULL);
+			Entry()->DestroyActor( XCGEA);
+		}
+
+
 //		CollectGarbage(RF_Native); //EXPERIMENTAL
 	}
 
@@ -1177,6 +1186,7 @@ void UXC_Level::WelcomePlayer( UNetConnection* Connection, TCHAR* Optional )
 	unguard;
 }
 
+static int32 LastServerSecond = -1;
 void UXC_Level::TickNetServer( FLOAT DeltaSeconds )
 {
 	guard(UXC_Level::TickNetServer);
@@ -1188,8 +1198,16 @@ void UXC_Level::TickNetServer( FLOAT DeltaSeconds )
 	}
 
 	// Update window title
-	if( (INT)(TimeSeconds-DeltaSeconds)!=(INT)(TimeSeconds.GetFloat()) )
-		debugf( NAME_Title, LocalizeProgress(TEXT("RunningNet"),TEXT("Engine")), *GetLevelInfo()->Title, *URL.Map, NetDriver->ClientConnections.Num() );
+	{	//FTime's high 32 bits are seconds
+		int32 CurServerSecond = ((int32*)&TimeSeconds)[1];
+		if ( LastServerSecond != CurServerSecond )
+		{
+			debugf( NAME_Title, LocalizeProgress(TEXT("RunningNet"),TEXT("Engine")), *GetLevelInfo()->Title, *URL.Map, NetDriver->ClientConnections.Num() );
+			LastServerSecond = CurServerSecond;
+		}
+	}
+//	if( (INT)(TimeSeconds-DeltaSeconds)!=(INT)(TimeSeconds.GetFloat()) )
+//		debugf( NAME_Title, LocalizeProgress(TEXT("RunningNet"),TEXT("Engine")), *GetLevelInfo()->Title, *URL.Map, NetDriver->ClientConnections.Num() );
 	
 	clock(NetTickCycles);
 	INT Updated = ServerTickClients( DeltaSeconds);

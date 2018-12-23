@@ -93,6 +93,7 @@ private:
 class XC_CORE_API UXC_ServerCommandlet : public UCommandlet
 {
 	DECLARE_CLASS(UXC_ServerCommandlet,UCommandlet,CLASS_Transient,XC_Core);
+	NO_DEFAULT_CONSTRUCTOR(UXC_ServerCommandlet)
 	void StaticConstructor();
 	INT Main( const TCHAR* Parms );
 };

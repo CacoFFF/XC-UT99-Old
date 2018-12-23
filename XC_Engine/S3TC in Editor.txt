@@ -1,0 +1,75 @@
+===========================
+S3TC tools in Unreal Editor
+===========================
+
+Starting with version 22, XC_Engine attaches a few new commands to the texture properties window.
+These commands are present in the form of BOOL properties under Actions tab.
+
+
+=======================================
+A lesson in dual formatted UT textures:
+
+A texture has two image data 'slots', and they can be of any format (as long as it's supported by the engine).
+- P8   = 8bit pallete format (up to 256 colors)
+- DXT1 = S3TC format (no alpha transparency)
+
+Your standard UT texture has:
+- P8 image data as primary data.
+
+DieHard's textures have
+- DXT1 image data as primary data.
+
+UT CD2 textures have
+- P8 image data as primary data.
+- DXT1 image data as secondary data.
+
+S3TC capable renderers are able to load the secondary data if present, this feature was originally
+implemented for the MetalDrv renderer and is now present in updated D3D and OpenGL renderers as well.
+This means that these tools allows the user to manipulate individual textures and make them work
+in the same fashion as UT CD2 textures would.
+Due to format and rendering limitations, masked textures cannot be compressed.
+
+* An example on compression done right:
+Had a texture package with 96 textures of 512x512 (P8), size was around 32mb.
+I downscaled them to 128x128 and stored the 512x512 data as DXT1 (secondary data) onto the downscaled textures.
+The result was a UT CD2 styled package with size 19mb, no loss of quality.
+
+
+===============================================
+Short description of these properties/commands:
+
+* CompressDXT1
+Compress texture to DXT1 and store in secondary mip data.
+
+* HasCompMips
+Indicates if texture has secondary mip data.
+
+* RemoveCompMips
+Clears secondary mip data from texture.
+
+* UseMacroTexMips
+Copies secondary mip data from 'MacroTexture' into own secondary mip data, clears 'MacroTexture' var.
+
+NOTE: These are not available outside of Editor!
+
+====================================================
+Standard procedure to manipulating a single texture:
+
+When trying to create a dual-format textures, make sure both are imported in P8 format and that the
+high resolution version's (W,H) are 4 times are large as the low resolution one's.
+
+Import the low res version with the name you intend to use, and the high res one with a temporary name
+then compress the high res version using 'CompressDXT1'.
+
+Change the low res texture's 'MacroTexture' var to the high res one, then copy the Mip data from the
+high res one to the low res using 'UseMacroTexMips'.
+
+Proceed to delete the high res version.
+
+Example:
+>> EX: A.pcx (256x256), A_high.pcx (1024x1024)
+>> Import A, A_high
+>> A_high >> CompressDXT1
+>> A >> MacroTexture=A_high
+>> A >> UseMacroTexMips
+>> A_high >> Delete texture.

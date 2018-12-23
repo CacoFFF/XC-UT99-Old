@@ -12,7 +12,7 @@
 
 static TCHAR SpaceText[2] = { ' ', 0};
 
-//
+// TODO: REWRITE COMPLETELY, IMPLEMENT LOG TO STDOUT CLEANLY
 // Feedback context.
 //
 class FFeedbackContextAnsi_XC : public FFeedbackContext
@@ -104,10 +104,32 @@ public:
 		{
 			LocalPrint( TempStr );
 			LocalPrint( TEXT(" (Y/N): ") );
-			INT Ch = getchar();
-			return (Ch=='Y' || Ch=='y');
+
+			//AAAAAAAND THIS IS NO LONGER ANSI 
+			DWORD cc;
+			INPUT_RECORD irec;
+			HANDLE h = GetStdHandle( STD_INPUT_HANDLE );
+			TCHAR In[2] = { '\0', '\0'};
+			FlushConsoleInputBuffer(h);
+			for ( ; !In[0] ; )
+			{
+				appSleep( 0.1f);
+				ReadConsoleInputA( h, &irec, 1, &cc);
+				if( irec.EventType == KEY_EVENT && irec.Event.KeyEvent.bKeyDown	)//&& ! ((KEY_EVENT_RECORD&)irec.Event).wRepeatCount )
+				{
+					irec.Event.KeyEvent;
+					In[0] = (TCHAR)irec.Event.KeyEvent.uChar.AsciiChar;
+				}
+			}
+			LocalPrint( In);
+			LocalPrint( TEXT("\r\n"));
+			return (In[0]=='Y' || In[0]=='y');
+
+/*			INT Ch = getchar();
+			return (Ch=='Y' || Ch=='y');*/
 		}
-		else return 1;
+		else
+			return 1;
 		unguard;
 	}
 	void BeginSlowTask( const TCHAR* Task, UBOOL StatusWindow, UBOOL Cancelable )
@@ -142,6 +164,8 @@ public:
 		unguard;
 	}
 };
+
+
 
 /*-----------------------------------------------------------------------------
 	The End.

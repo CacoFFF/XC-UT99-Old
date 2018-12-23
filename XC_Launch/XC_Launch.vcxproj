@@ -160,8 +160,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\FFeedbackContextAnsi_XC.h" />
     <ClInclude Include="Src\LaunchPrivate.h" />
     <ClInclude Include="Src\Res\LaunchRes.h" />
+    <ClInclude Include="Src\WLog2.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Src\Res\LaunchRes.rc">

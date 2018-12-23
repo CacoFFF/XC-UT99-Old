@@ -11,7 +11,7 @@ XC_CORE_API void XCCNatives( UBOOL bEnable); //Enables the commented out opcodes
 XC_CORE_API UBOOL FixNameCase( const TCHAR* NameToFix); //Only if name is found
 
 XC_CORE_API UFunction* FindBaseFunction( UStruct* InStruct, const TCHAR* FuncName);
-XC_CORE_API UProperty* FindScriptVariable( UStruct* InStruct, const TCHAR* PropName, INT* Found);
+XC_CORE_API UProperty* FindScriptVariable( UStruct* InStruct, const TCHAR* PropName, INT* Found=NULL);
 
 XC_CORE_API void SortStringsA( TArray<FString>* List);
 XC_CORE_API void SortStringsSA( FString* List, INT ArrayMax);

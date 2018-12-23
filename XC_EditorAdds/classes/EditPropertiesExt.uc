@@ -1,5 +1,5 @@
 //====================================================
-// XC_Engine path rebuilder shortcut
+// Property Editor (includes None section)
 //====================================================
 class EditPropertiesExt expands BrushBuilder;
 

@@ -15,7 +15,6 @@ Revision history:
 	#include <sys/stat.h>
 #endif
 #include <malloc.h>
-#include <stdio.h>
 
 #if WIN32
 	#include "..\OldCRT\API_MSC.h"
@@ -74,13 +73,27 @@ extern "C" {TCHAR GPackage[64]=TEXT("UCC");}
 // Log
 FOutputDeviceFileXC Log;
 
-// Error.
-#include "FOutputDeviceAnsiError.h"
-FOutputDeviceAnsiError Error;
+#if WIN32
+	// Feedback
+	#include "FFeedbackContextCmd.h"
+	FFeedbackContextCmd Warn;
 
-// Feedback.
-#include "FFeedbackContextAnsi_XC.h"
-FFeedbackContextAnsi_XC Warn;
+	// Error
+	#include "FOutputDeviceCmdError.h"
+	FOutputDeviceCmdError Error;
+
+#else
+	#include <stdio.h>
+
+	// Feedback.
+	#include "FFeedbackContextAnsi_XC.h"
+	FFeedbackContextAnsi_XC Warn;
+
+	// Error
+	#include "FOutputDeviceAnsiError.h"
+	FOutputDeviceAnsiError Error;
+
+#endif
 
 // File manager.
 #if WIN32

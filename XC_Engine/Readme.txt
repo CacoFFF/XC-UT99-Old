@@ -4,7 +4,7 @@ XC_Engine - XC_GameEngine extension for UT99 by Higor.
 ===========
 Setting up:
 ===========
-** REQUIRES AT LEAST XC_CORE VERSION 8
+** REQUIRES AT LEAST XC_CORE VERSION 9
 Place XC_Engine files in your ~UT/System/ directory.
 
 /** Auto-installer scripts
@@ -74,6 +74,7 @@ Prevents servers from using 'Open' and 'ClientTravel' commands to open local fil
 Clients no longer send options 'Game' and 'Mutator' in their login string.
 In most cases of package mismatch when joining, clients will load/download from other sources instead of failing to connect.
 More info displayed during file download: amount of files, data pending installation.
+Raw mouse input support, see your Preferences window.
 
 
 =================
@@ -83,6 +84,7 @@ Enhanced Net Driver and file downloaders.
 Net Driver:
 - ICMP unreachable exploit patched.
 - Connection limit, kills dataless connections.
+- Better memory usage (and one less exploit from it).
 
 HTTP LZMA file downloader.
 - (Experimental) Can connect to redirects via proxy.

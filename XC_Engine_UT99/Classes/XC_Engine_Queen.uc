@@ -96,7 +96,7 @@ function QT_ChooseDestination()
 			if ( N.Region.Zone.DamagePerSec > 0 || N.Region.Zone != Enemy.Region.Zone )
 				continue;
 			newrating = HSize( N.Location - Enemy.Location);
-			if ( newrating < CollisionRadius - Enemy.CollisionRadius*3 )
+			if ( newrating < CollisionRadius * RandRange(1.25,2.5) + Enemy.CollisionRadius*3 )
 				continue;
 			if ( newrating > rating )
 			{

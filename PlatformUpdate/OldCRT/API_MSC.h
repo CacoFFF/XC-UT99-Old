@@ -41,6 +41,9 @@ void  __declspec(naked) __CxxFrameHandler3(void)
 	#define stdin  (&_imp___iob[0])
 	#define stdout (&_imp___iob[1])
 	#define stderr (&_imp___iob[2]) 
+
+
+
 #endif
 
 //Conversion of double to int64 >> hardcoded by compiler

@@ -47,9 +47,9 @@ function Tw_Destroyed()
 	local actor dropped, A;
 	local class<actor> tempClass;
 
-	if( (Pawn(Base) != None) && (Pawn(Base).CarriedDecoration == self) )
+	if ( (Pawn(Base) != None) && (Pawn(Base).CarriedDecoration == self) )
 		Pawn(Base).DropDecoration();
-	if( ( Contents != None ) && !Level.bStartup )
+	if ( (Contents != None) && !Level.bStartup )
 	{
 		tempClass = Contents;
 		if (Content2 != None && FRand()<0.3) tempClass = Content2;
@@ -60,8 +60,8 @@ function Tw_Destroyed()
 			dropped.RemoteRole = ROLE_DumbProxy;
 			dropped.SetPhysics(PHYS_Falling);
 			dropped.bCollideWorld = true;
-			if ( inventory(dropped) != None )
-				inventory(dropped).GotoState('Pickup', 'Dropped');
+			if ( Inventory(dropped) != None )
+				Inventory(dropped).GotoState('Pickup', 'Dropped');
 		}
 	}
 
@@ -70,7 +70,7 @@ function Tw_Destroyed()
 			A.Trigger( Self, None );
 
 	if ( bPushSoundPlaying )
-		PlaySound(EndPushSound, SLOT_Misc,0.0);
+		PlaySound( EndPushSound, SLOT_Misc, 0.0);
 
 	Super(Actor).Destroyed();
 }
@@ -78,58 +78,54 @@ function Tw_Destroyed()
 simulated function Tw_skinnedFrag(class<fragment> FragType, texture FragSkin, vector Momentum, float DSize, int NumFrags) 
 {
 	local int i;
-	local actor A, Toucher;
+	local Actor A;
 	local Fragment s;
 
-	if ( bOnlyTriggerable )
-		GoTo End; 
-	if (Event!='')
-		foreach AllActors( class 'Actor', A, Event )
-			A.Trigger( Toucher, pawn(Toucher) );
-	if ( Region.Zone.bDestructive )
+	if ( !bOnlyTriggerable )
 	{
-		Destroy();
-		Goto End;
-	}
-	for (i=0 ; i<NumFrags ; i++) 
-	{
-		s = Spawn( FragType, Owner);
-		if (s != None)
+		if ( Event != '' ) //Original code is flawed, this keeps the same effect but cleaned up
+			ForEach AllActors( class'Actor', A, Event )
+				A.Trigger( None, None);
+		if ( !Region.Zone.bDestructive )
 		{
-			s.CalcVelocity(Momentum/100,0);
-			s.Skin = FragSkin;
-			s.DrawScale = DSize*0.5+0.7*DSize*FRand();
+			For ( i=0 ; i<NumFrags ; i++ ) 
+			{
+				s = Spawn( FragType, Owner);
+				if ( s != None )
+				{
+					s.CalcVelocity(Momentum/100,0);
+					s.Skin = FragSkin;
+					s.DrawScale = DSize*0.5+0.7*DSize*FRand();
+				}
+			}
 		}
+		Destroy();
 	}
-	Destroy();
-End:
 }
 
 simulated function Tw_Frag(class<fragment> FragType, vector Momentum, float DSize, int NumFrags) 
 {
 	local int i;
-	local actor A, Toucher;
+	local actor A;
 	local Fragment s;
 
-	if ( bOnlyTriggerable )
-		GoTo End;
-	if (Event!='')
-		foreach AllActors( class 'Actor', A, Event )
-			A.Trigger( Toucher, pawn(Toucher) );
-	if ( Region.Zone.bDestructive )
+	if ( !bOnlyTriggerable )
 	{
-		Destroy();
-		GoTo End;
-	}
-	for (i=0 ; i<NumFrags ; i++) 
-	{
-		s = Spawn( FragType, Owner);
-		if (s != None)
+		if ( Event != '' ) //Original code is flawed, this keeps the same effect but cleaned up
+			foreach AllActors( class 'Actor', A, Event )
+				A.Trigger( None, None);
+		if ( !Region.Zone.bDestructive )
 		{
-			s.CalcVelocity(Momentum,0);
-			s.DrawScale = DSize*0.5+0.7*DSize*FRand();
+			For ( i=0 ; i<NumFrags ; i++ ) 
+			{
+				s = Spawn( FragType, Owner);
+				if ( s != None )
+				{
+					s.CalcVelocity(Momentum,0);
+					s.DrawScale = DSize*0.5+0.7*DSize*FRand();
+				}
+			}
 		}
+		Destroy();
 	}
-	Destroy();
-End:
 }

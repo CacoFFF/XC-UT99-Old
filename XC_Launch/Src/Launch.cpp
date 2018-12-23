@@ -40,7 +40,7 @@ extern "C" {TCHAR GPackage[64]=TEXT("XC_Launch");}
 #endif
 
 // Log file.
-//FOutputDeviceFileXC Log;
+FOutputDeviceFileXC Log;
 
 // Malloc proxy
 #include "FMallocThreadedProxy.h"
@@ -90,12 +90,12 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 	GIsStarted     = 1;
 	hInstance      = hInInstance;
 	const TCHAR* CmdLine = GetCommandLine();
-	appStrcpy( GPackage, appPackage() );
+	//Hack package
+	TCHAR* LauncherPackage = (TCHAR*)appPackage();
 	if ( !appStricmp( GPackage, TEXT("XC_Launch")) )
-		appStrcpy( GPackage, TEXT("UnrealTournament"));
-
-	FOutputDeviceFileXC Log( MakeLogFilename(CmdLine) );
-//	Log.SetFilename( MakeLogFilename(CmdLine));
+		appStrcpy( LauncherPackage, TEXT("UnrealTournament"));
+	appStrcpy( GPackage, LauncherPackage );
+	Log.SetFilename( MakeLogFilename(CmdLine));
 
 	// See if this should be passed to another instances.
 	if
@@ -137,6 +137,7 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 		// Init core.
 		GIsClient = GIsGuarded = 1;
 		GMallocThreadSafe = 1;
+		GLogUnlimitedLength = 1;
 		appInit( GPackage, CmdLine, &MallocProxy, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
 
 		// Init mode.
@@ -256,6 +257,7 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 		}
 
 		// Clean shutdown.
+		GMalloc = &Malloc;
 		GFileManager->Delete(TEXT("Running.ini"),0,0);
 		RemovePropX( *GLogWindow, TEXT("IsBrowser") );
 		GLogWindow->Log( NAME_Title, LocalizeGeneral("Exit") );
@@ -274,6 +276,7 @@ INT WINAPI WinMain( HINSTANCE hInInstance, HINSTANCE hPrevInstance, char*, INT n
 #endif
 
 	// Final shut down.
+	GMalloc = &Malloc;
 	appExit();
 	GIsStarted = 0;
 	GLogHook = NULL;

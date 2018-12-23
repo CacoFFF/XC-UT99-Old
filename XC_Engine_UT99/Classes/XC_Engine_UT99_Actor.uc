@@ -12,15 +12,15 @@ event XC_Init()
 	local class<Actor> AC, DGC;
 	local string MapFile;
 
-	ConsoleCommand("set UT_ShieldBeltEffect bRelevantIfOwnerIs 1");
-	ConsoleCommand("set ShieldBeltEffect bRelevantIfOwnerIs 1");
-	ConsoleCommand("set TournamentPlayer MaxTimeMargin 0.5");
-
 	class'XC_CoreStatics'.static.FixName( "ClearArray", true); //Fix FerBotz bind
 	
 	//Server-only fixes
 	if ( Level.NetMode == NM_ListenServer || Level.NetMode == NM_DedicatedServer )
 	{
+		ConsoleCommand("set UT_ShieldBeltEffect bRelevantIfOwnerIs 1");
+		ConsoleCommand("set ShieldBeltEffect bRelevantIfOwnerIs 1");
+		ConsoleCommand("set TournamentPlayer MaxTimeMargin 0.5");
+
 		//Ensure minimum memory usage by avoiding static linking of packages
 		AC = class<Actor>(class'XC_CoreStatics'.static.FindObject( "UnrealShare.DripGenerator", class'Class'));
 		if ( AC != None ) //DripGenerator has been lazy-loaded
@@ -39,14 +39,16 @@ event XC_Init()
 	
 	//**************
 	//Game tweaks
-	ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'EndSpree', 'EndSpree');
-	ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'ScoreKill', 'ScoreKill');
-	ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'FindPlayerStart', 'FindPlayerStart');
-	ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'ChangeName', 'ChangeName');
-	ReplaceFunction( class'TeamGamePlus', class'XC_Engine_TGP', 'FindPlayerStart', 'FindPlayerStart');
-//	ReplaceFunction( class'TeamGamePlus', class'XC_Engine_TGP', 'AddToTeam', 'AddToTeam'); LINUX CRASH, SEE FURTHER DETAILS IN THIS FUNCTION
+	if ( DeathMatchPlus(Level.Game) != None )
+	{
+		ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'EndSpree', 'EndSpree');
+		ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'ScoreKill', 'ScoreKill');
+		ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'FindPlayerStart', 'FindPlayerStart');
+		ReplaceFunction( class'DeathMatchPlus', class'XC_Engine_DMP', 'ChangeName', 'ChangeName');
+		ReplaceFunction( class'TeamGamePlus', class'XC_Engine_TGP', 'FindPlayerStart', 'FindPlayerStart');
+	//	ReplaceFunction( class'TeamGamePlus', class'XC_Engine_TGP', 'AddToTeam', 'AddToTeam'); LINUX CRASH, SEE FURTHER DETAILS IN THIS FUNCTION
+	}
 
-	
 	//****************
 	//TournamentPlayer
 	ReplaceFunction( class'TournamentPlayer', class'XC_Engine_TournamentPlayer', 'Summon', 'Summon');
@@ -117,6 +119,15 @@ event XC_Init()
 		FixAgony();
 	else if ( MapFile ~= "DM-ArcaneTemple" )
 		FixATemple();
+	else if ( MapFile ~= "DOM-Cidom" )
+		FixCidom();
+	else if ( MapFile ~= "DOM-Sesmar" )
+		FixSesmar();
+	else if ( MapFile ~= "DM-Barricade" )
+		FixBarricade();
+
+		
+	Destroy();
 }
 
 
@@ -381,27 +392,10 @@ function FixCinder()
 				if ( N.IsA('InventorySpot') )
 				{
 					if ( VSize(N.Location - PA.Location) < 270 )
-					{
-						R.Start = PA;
-						R.End = N;
-						R.CollisionHeight = 50;
-						R.CollisionRadius = 25;
-						R.ReachFlags = R_WALK | R_JUMP;
-						R.Distance = VSize(N.Location - PA.Location);
-						AddReachSpec( R, true); //Auto-append
-					}
+						EzConnectNavigationPoints( PA, N, 1, true);
 					continue;
 				}
-				R.Start = PA;
-				R.End = N;
-				R.CollisionHeight = 50;
-				R.CollisionRadius = 25;
-				R.ReachFlags = R_WALK | R_JUMP;
-				R.Distance = VSize(N.Location - PA.Location);
-				AddReachSpec( R, true); //Auto-append
-				R.Start = N;
-				R.End = PA;
-				AddReachSpec( R, true); //Auto-append
+				EzConnectNavigationPoints( PA, N);
 			}
 		break;
 	}
@@ -410,13 +404,7 @@ function FixCinder()
 	{
 		ForEach NavigationActors (class'InventorySpot', IS, 30, vect(-905,1576,117) )
 		{
-			R.Start = PA;
-			R.End = IS;
-			R.CollisionHeight = 50;
-			R.CollisionRadius = 25;
-			R.ReachFlags = R_WALK | R_JUMP;
-			R.Distance = VSize(IS.Location - PA.Location) * 0.9;
-			AddReachSpec( R, true); //Auto-append
+			EzConnectNavigationPoints( PA, IS);
 			break;
 		}
 		break;
@@ -428,17 +416,87 @@ function FixCinder()
 		ForEach NavigationActors (class'InventorySpot', IS, 30, vect(-808,-1041,-11) )
 		{
 			ForEach NavigationActors (class'NavigationPoint', N, 200, IS.Location)
+				EzConnectNavigationPoints( N, IS);
+			break;
+		}
+	}
+}
+
+function FixCidom()
+{
+	local NavigationPoint N;
+	local LiftExit LE, High, Low;
+	local TranslocDest TD;
+	local PathNode P;
+	
+	ForEach NavigationActors( class'TranslocDest', TD)
+	{
+		High = None;
+		Low = None;
+		ForEach NavigationActors( class'LiftExit', LE)
+			if ( LE.LiftTag == TD.LiftTag )
 			{
-				R.Start = N;
-				R.End = IS;
-				R.CollisionHeight = 50;
-				R.CollisionRadius = 25;
-				R.ReachFlags = R_WALK | R_JUMP;
-				R.Distance = VSize(N.Location - IS.Location) * 0.9;
-				AddReachSpec( R, true); //Auto-append
+				if ( High == None )
+					High = LE;
+				else if ( High.Location.Z < LE.Location.Z )
+				{
+					Low = High;
+					High = LE;
+				}
+				else
+					Low = LE;
+			}
+		EzConnectNavigationPoints( High, Low, 2, true);
+		ForEach NavigationActors( class'PathNode', P, 455, TD.Location, true)
+		{
+			EzConnectNavigationPoints( High, P, 1.2, true);
+			EzConnectNavigationPoints( P, TD, 1, true);
+		}
+	}
+}
+
+function FixSesmar()
+{
+	local ControlPoint CP;
+	local PathNode P;
+	
+	ForEach NavigationActors( class'ControlPoint', CP)
+	{
+		ForEach NavigationActors( class'PathNode', P, 500, CP.Location, true)
+			if ( (P.Location.Z > CP.Location.Z) && (P.Location.Z < CP.Location.Z + 100) )
+				EzConnectNavigationPoints( CP, P, 1.2);
+	}
+}
+
+function FixBarricade()
+{
+	local PathNode P, PP;
+	local InventorySpot IS, Redeemer;
+	local JumpSpot JS;
+
+	if ( Level.Game.PlayerJumpZScaling() >= 1.09 )
+	{
+		ForEach NavigationActors( class'InventorySpot', Redeemer, 15, vect(385,255,565))
+			break;
+		ForEach NavigationActors( class'PathNode', P)
+		{
+			if ( P.Location.Z > 1000 ) //Towers
+			{
+				ForEach NavigationActors( class'InventorySpot', IS, 130, P.Location) //Link items to node
+					EzConnectNavigationPoints( IS, P, 2, true);
+				ForEach NavigationActors( class'PathNode', PP, 700, P.Location, true) //Link to redeemer nodes
+					if ( PP != P )
+					{
+						EzConnectNavigationPoints( P, PP, 1, true);
+						EzConnectNavigationPoints( Redeemer, PP, 1.5, true);
+					}
 			}
 		}
 	}
+	
+	ForEach NavigationActors( class'InventorySpot', IS, 15, vect(-1430,300,373))
+		ForEach NavigationActors( class'JumpSpot', JS, 15, vect(-720,255,367))
+			EzConnectNavigationPoints( IS, JS, 1, true);
 }
 
 defaultproperties

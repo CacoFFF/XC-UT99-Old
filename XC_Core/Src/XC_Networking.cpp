@@ -348,7 +348,7 @@ void UXC_Download::DownloadDone()
 
 
 
-DWORD LZMADecompress( void* arg)
+static DWORD LZMADecompress( void* arg)
 {
 	//Setup environment
 	FThreadDecompressor* TInfo = (FThreadDecompressor*)arg;
@@ -369,7 +369,7 @@ DWORD LZMADecompress( void* arg)
 	return THREAD_END_OK;
 }
 
-DWORD UZDecompress( void* arg)
+static DWORD UZDecompress( void* arg)
 {
 	//Setup environment
 	FThreadDecompressor* TInfo = (FThreadDecompressor*)arg;
