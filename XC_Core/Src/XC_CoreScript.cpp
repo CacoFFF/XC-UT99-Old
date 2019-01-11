@@ -118,6 +118,7 @@ INT DummyFixNames()
 		FixNameCase( TEXT("HasFunction") );
 		FixNameCase( TEXT("FixName") );
 		FixNameCase( TEXT("CleanupLevel") );
+		FixNameCase( TEXT("PathsRebuild") );
 	}
 	unguard;
 	return 1;
@@ -557,19 +558,20 @@ void UXC_CoreStatics::execBrushToMesh( FFrame& Stack, RESULT_DECL )
 	*(UMesh**)Result = Mesh;
 }
 
-#ifdef __LINUX_X86__
-//No editor support!
-FString CleanupLevel( class ULevel* Level)
-{
-	return FString();
-}
-#endif
-
 void UXC_CoreStatics::execCleanupLevel( FFrame& Stack, RESULT_DECL )
 {
 	P_GET_OBJECT( ULevel, Level);
 	P_FINISH;
 	*(FString*)Result = Level ? CleanupLevel(Level) : FString();
+}
+
+void UXC_CoreStatics::execPathsRebuild( FFrame& Stack, RESULT_DECL )
+{
+	P_GET_OBJECT( ULevel, Level);
+	P_GET_PAWN_OPTX( ScoutReference, NULL);
+	P_GET_UBOOL_OPTX( bBuildAir, 0);
+	P_FINISH;
+	*(FString*)Result = Level ? PathsRebuild(Level,ScoutReference,bBuildAir) : FString();
 }
 IMPLEMENT_CLASS(UXC_CoreStatics);
 

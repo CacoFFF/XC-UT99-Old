@@ -75,6 +75,7 @@ public:
 	DECLARE_FUNCTION(execDynamicLoadObject_Fix);
 	DECLARE_FUNCTION(execBrushToMesh);
 	DECLARE_FUNCTION(execCleanupLevel);
+	DECLARE_FUNCTION(execPathsRebuild);
 
 
 	void StaticConstructor();
@@ -119,6 +120,7 @@ AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execFixName);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execDynamicLoadObject_Fix);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execBrushToMesh);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execCleanupLevel);
+AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execPathsRebuild);
 
 #ifndef NAMES_ONLY
 #undef AUTOGENERATE_NAME

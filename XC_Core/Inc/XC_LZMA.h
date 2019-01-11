@@ -12,12 +12,14 @@ XC_CORE_API UBOOL LzmaDecompress( FArchive* SrcFile, const TCHAR* Dest, TCHAR* E
 class XC_CORE_API ULZMACompressCommandlet : public UCommandlet
 {
 	DECLARE_CLASS(ULZMACompressCommandlet,UCommandlet,CLASS_Transient,XC_Core);
+	NO_DEFAULT_CONSTRUCTOR(ULZMACompressCommandlet)
 	INT Main( const TCHAR* Parms );
 };
 
 class XC_CORE_API ULZMADecompressCommandlet : public UCommandlet
 {
 	DECLARE_CLASS(ULZMADecompressCommandlet,UCommandlet,CLASS_Transient,XC_Core);
+	NO_DEFAULT_CONSTRUCTOR(ULZMADecompressCommandlet)
 	INT Main( const TCHAR* Parms );
 };
 

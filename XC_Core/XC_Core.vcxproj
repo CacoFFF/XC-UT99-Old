@@ -143,6 +143,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Src\Devices.cpp" />
+    <ClCompile Include="Src\EditorAdds.cpp" />
+    <ClCompile Include="Src\PathBuilder.cpp" />
     <ClCompile Include="Src\XC_CoreScript.cpp" />
     <ClCompile Include="Src\XC_Generic.cpp" />
     <ClCompile Include="Src\XC_Globals.cpp" />
@@ -153,6 +155,7 @@
   <ItemGroup>
     <ClInclude Include="Inc\API_FunctionLoader.h" />
     <ClInclude Include="Inc\Devices.h" />
+    <ClInclude Include="Inc\FMallocThreadedProxy.h" />
     <ClInclude Include="Inc\FPackageFileSummary.h" />
     <ClInclude Include="Inc\UnXC_Arc.h" />
     <ClInclude Include="Inc\UnXC_Math.h" />

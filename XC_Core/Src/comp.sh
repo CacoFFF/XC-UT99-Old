@@ -4,7 +4,6 @@ rm XC_Networking.o
 rm XC_CoreScript.o
 rm XC_Globals.o
 rm XC_Generic.o
-rm XC_Visuals.o
 rm Devices.o
 
 #You may need to put crti.o, crtn.o in this directory
@@ -37,11 +36,6 @@ gcc-2.95  -c -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pent
 # compile and output to this folder -> no linking yet!
 gcc-2.95  -c -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pentium -D_REENTRANT -fPIC -fsigned-char -pipe \
 -DGPackage=XC_Core -Werror -I../inc -I../../Core/Inc -I../../Engine/Inc -I../../XC_Core/Inc -I../../CacusLib -I/usr/include/i386-linux-gnu/ \
--o../../XC_Core/Src/XC_Visuals.o XC_Visuals.cpp
-
-# compile and output to this folder -> no linking yet!
-gcc-2.95  -c -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pentium -D_REENTRANT -fPIC -fsigned-char -pipe \
--DGPackage=XC_Core -Werror -I../inc -I../../Core/Inc -I../../Engine/Inc -I../../XC_Core/Inc -I../../CacusLib -I/usr/include/i386-linux-gnu/ \
 -o../../XC_Core/Src/Devices.o Devices.cpp
 
 # COMPAT OBJECT
@@ -56,7 +50,7 @@ gcc-2.95  -shared -o ../../System/XC_Core.so -Wl,-rpath,. \
 -Wl,--eh-frame-hdr \
 -Wl,--traditional-format \
 -Wl,-z,defs \
--lm -lc -ldl -lnsl -lpthread ./XC_CoreScript.o ./XC_Networking.o ./XC_LZMA.o ./XC_Globals.o ./XC_Generic.o ./XC_Visuals.o ./Devices.o ./CacusLibCompat.o \
+-lm -lc -ldl -lnsl -lpthread ./XC_CoreScript.o ./XC_Networking.o ./XC_LZMA.o ./XC_Globals.o ./XC_Generic.o ./Devices.o ./CacusLibCompat.o \
 ../../System/Core.so ../../System/Engine.so 
 
 strip --strip-all --discard-all ../../System/XC_Core.so

@@ -61,6 +61,8 @@ __asm__(".global Detach__7CThread\n" "Detach__7CThread:\n" "jmp *CThread_Detach"
 static void* CThread_WaitFinish = 0;
 __asm__(".global WaitFinish__7CThreadf\n" "WaitFinish__7CThreadf:\n" "jmp *CThread_WaitFinish");
 
+static void* COutputDeviceFile_Open = 0;
+__asm__(".global Open__17COutputDeviceFileUi\n" "Open__17COutputDeviceFileUi:\n" "jmp *COutputDeviceFile_Open");
 
 
 //TODO:
@@ -93,6 +95,7 @@ static void SetupCacus()
 	GetV( CThread_Dest, hCacus, "_ZN7CThreadD2Ev");
 	GetV( CThread_Detach, hCacus, "_ZN7CThread6DetachEv");
 	GetV( CThread_WaitFinish, hCacus, "_ZN7CThread10WaitFinishEf");
+	GetV( COutputDeviceFile_Open, hCacus, "_ZN17COutputDeviceFile4OpenEm");
 //	printf("%s FUG\n",CUserDir());
 }
 static void ShutdownCacus()

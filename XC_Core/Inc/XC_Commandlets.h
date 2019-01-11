@@ -35,6 +35,7 @@ static UBOOL InvalidCharacters( const TCHAR* Stream)
 class XC_CORE_API UStripSourceCommandlet : public UCommandlet
 {
 	DECLARE_CLASS(UStripSourceCommandlet,UCommandlet,CLASS_Transient,XC_Core);
+	NO_DEFAULT_CONSTRUCTOR(UStripSourceCommandlet)
 	void StaticConstructor();
 	INT Main( const TCHAR* Parms );
 };
@@ -42,6 +43,7 @@ class XC_CORE_API UStripSourceCommandlet : public UCommandlet
 class XC_CORE_API UDeobfuscateNamesCommandlet : public UCommandlet
 {
 	DECLARE_CLASS(UDeobfuscateNamesCommandlet,UCommandlet,CLASS_Transient,XC_Core);
+	NO_DEFAULT_CONSTRUCTOR(UDeobfuscateNamesCommandlet)
 	void StaticConstructor();
 	INT Main( const TCHAR* Parms );
 };

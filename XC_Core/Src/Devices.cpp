@@ -76,6 +76,7 @@ void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
 		if( !CacusOut->Opened && !CacusOut->Dead )
 		{
 			// This will be the first line
+			CacusOut->Open(32);
 			TCHAR Msg[256];
 			appSprintf( Msg, TEXT("Init: Log file open, %s"), appTimestamp() );
 			WriteDataToArchive( Msg, NAME_None );

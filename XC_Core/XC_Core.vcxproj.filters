@@ -22,6 +22,12 @@
     <ClCompile Include="Src\XC_Visuals.cpp">
       <Filter>Src</Filter>
     </ClCompile>
+    <ClCompile Include="Src\EditorAdds.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\PathBuilder.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Src">
@@ -69,6 +75,9 @@
       <Filter>Inc</Filter>
     </ClInclude>
     <ClInclude Include="Inc\XC_Networking.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\FMallocThreadedProxy.h">
       <Filter>Inc</Filter>
     </ClInclude>
   </ItemGroup>

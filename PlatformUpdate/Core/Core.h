@@ -8,7 +8,7 @@
 		* Created by Tim Sweeney
 =============================================================================*/
 
-#pragma once
+#ifndef _INC_CORE
 #define _INC_CORE
 
 /*----------------------------------------------------------------------------
@@ -17,7 +17,7 @@
 
 // API definition.
 #ifndef CORE_API
-#define CORE_API DLL_IMPORT
+	#define CORE_API DLL_IMPORT
 #endif
 
 
@@ -406,3 +406,5 @@ inline void operator delete[]( void* Ptr, size_t)
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/
+
+#endif
