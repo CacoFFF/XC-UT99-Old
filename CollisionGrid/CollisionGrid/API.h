@@ -4,7 +4,7 @@
 
 #define appMalloc(size)       GMalloc->Malloc(size,TEXT(""))
 #define appFree(ptr)          GMalloc->Free(ptr)
-#define debugf(t,...) (GLog->*Debugf)(t,__VA_ARGS__)
+#define debugf(...) (GLog->*Debugf)(__VA_ARGS__)
 #define debugf_ansi(t) (GLog->*Debugf)(TEXT(t))
 #define appFailAssert(a) (*AppFailAssert)(a,__FILE__,__LINE__)
 #define appUnwindf(a,...) (*AppUnwindf)(a,##__VA_ARGS__)
@@ -132,14 +132,14 @@ enum EStack { E_Stack = 0 };
 
 extern "C" void* memset ( void* ptr, int value, uint32 num );
 
-void* operator new( uint32 Size);
-void* operator new( uint32 Size, const TCHAR* Tag); //Allocate objects using UE1's allocator
-void* operator new( uint32 Size, ESize Units, uint32 RealSize); //Allocate objects using additional memory (alignment optional)
-void* operator new( uint32 Size, EAlign Tag );
-void* operator new( uint32 Size, EAlign Tag, ESize Units, uint32 RealSize);
+void* operator new( size_t Size);
+void* operator new( size_t Size, const TCHAR* Tag); //Allocate objects using UE1's allocator
+void* operator new( size_t Size, ESize Units, uint32 RealSize); //Allocate objects using additional memory (alignment optional)
+void* operator new( size_t Size, EAlign Tag );
+void* operator new( size_t Size, EAlign Tag, ESize Units, uint32 RealSize);
 
 //Placement new
-inline void* operator new( uint32 Size, void* Address, EStack Tag)
+inline void* operator new( size_t Size, void* Address, EStack Tag)
 {
 	return Address;
 }

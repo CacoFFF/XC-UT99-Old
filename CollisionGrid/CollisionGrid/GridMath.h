@@ -132,7 +132,7 @@ struct DE Integers
 };
 
 //
-// 16-aligned SSE vector
+// unaligned SSE vector
 //
 struct DE Vector
 {
@@ -152,8 +152,8 @@ struct DE Vector
 
 	Vector( const FVector& V, EUnsafe)
 	{
-		_mm_storeu_ps( &X, _mm_loadu_ps((float*)&V));
-		W = 0;
+		const Integers Mask( 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000);
+		_mm_storeu_ps( &X, _mm_and_ps(_mm_loadu_ps((float*)&V), Mask));
 	}
 
 	Vector( float U, EStatic3D)

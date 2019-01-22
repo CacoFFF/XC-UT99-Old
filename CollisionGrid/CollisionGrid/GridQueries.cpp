@@ -298,11 +298,11 @@ void PrecomputedRay::QueryContainer(ActorLinkContainer& Container, FCheckResult*
 		{
 			if ( (this->*Hits_CylActor)( AInfo, Link) ) //Time is distance, convert to Unreal time
 			{
-				Link->Time = Clamp((Link->Time - Length * 0.001f) / Length, 0.f, 1.f);
+				Link->Time = Clamp((Link->Time - Length * 0.001f) / Length, 0.f, 1.0f);
 				Link->Location = FVector( Org + (End-Org) * Link->Time);
 			}
 		}
-		else if ( IntersectsBox( AInfo->P.pBox) && AInfo->Actor->Brush )
+		else if ( IntersectsBox( AInfo->GridBox) && AInfo->Actor->Brush )
 		{
 			//Primitive->LineCheck
 			FCheckResult* LinkNew = new(G_Stack) FCheckResult(Link);
@@ -385,20 +385,22 @@ bool PrecomputedRay::IntersectsBox( const cg::Box& Box) const
 bool PrecomputedRay::Hits_VCylActor( ActorInfo* AInfo, FCheckResult*& Link) const
 {
 	//Opposite directions mean no hit
-	cg::Vector RelActor( AInfo->C.Location - Org);
+	cg::Vector RelActor( cg::Vector(AInfo->Actor->Location, E_Unsafe) - Org);
 	float DiffZ = End.Z - Org.Z;
-//	if ( (*(int32*)&(RelActor.Z) ^ *(int32*)&DiffZ) < 0) //Diff sign check
 	if ( RelActor.Z * DiffZ < 0.f) //Diff sign check
 		return false;
 
 	//Cylinder extent check
-	cg::Vector NetExtent( AInfo->C.Extent + Extent );
-	if ( !RelActor.InCylinder( NetExtent.X) ) 
+	if ( !RelActor.InCylinder( AInfo->Actor->CollisionRadius + Extent.X) ) 
 		return false;
 
-	float TouchDist = fabsf(RelActor.Z) - NetExtent.Z;
-	if ( TouchDist < 0 || TouchDist > fabsf(DiffZ) ) //Check that not sunk into cylinder, or cylinder not unreachable
-		return false;
+	float TouchDist = fabsf(RelActor.Z) - (AInfo->Actor->CollisionHeight + Extent.Z);
+	float MaxDist = fabsf(DiffZ);
+	if ( TouchDist < -1 || TouchDist > MaxDist + 1 ) //Check that not sunk into cylinder, or cylinder not unreachable
+		return false; //Using +0.5 for test purposes
+
+	if ( TouchDist > MaxDist ) //Normalize to MaxDist
+		TouchDist = MaxDist;
 
 	Link = new(G_Stack) FCheckResult(Link);
 	Link->Actor = AInfo->Actor;
@@ -413,24 +415,25 @@ bool PrecomputedRay::Hits_VCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 bool PrecomputedRay::Hits_HCylActor( ActorInfo* AInfo, FCheckResult*& Link) const
 {
 //	debugf_ansi("[CG] Hit horizontal");
-	cg::Vector NetExtent( AInfo->C.Extent + Extent );
-	cg::Vector RelActor( AInfo->C.Location - Org);
+	float NetRadius = AInfo->Actor->CollisionRadius + Extent.X;
+	float NetHeight = AInfo->Actor->CollisionHeight + Extent.Z;
+	cg::Vector RelActor( cg::Vector(AInfo->Actor->Location,E_Unsafe) - Org);
 
 	//Z reject (extent smaller-than difference)
-	if ( NetExtent.Z < fabsf(RelActor.Z) )
+	if ( Square(NetHeight) < Square(RelActor.Z) )
 		return false;
 
 	cg::Vector AdjustedActor = RelActor.TransformByXY( Dir);
-	if ( (AdjustedActor.X <= KINDA_SMALL_NUMBER) || (AdjustedActor.X > Length + NetExtent.X) ) //Filter by X-bounds
+	if ( (AdjustedActor.X <= KINDA_SMALL_NUMBER) || (AdjustedActor.X > Length + NetRadius) ) //Filter by X-bounds
 		return false;
 
 	//Check relative Y bounds, biggest reject chance (pawns are usually taller than wider)
-	float XDeltaSq = NetExtent.X*NetExtent.X - AdjustedActor.Y*AdjustedActor.Y;
+	float XDeltaSq = Square(NetRadius) - Square(AdjustedActor.Y);
 	if ( XDeltaSq < 0 )
 		return false;
 
 	//Refactored it looks like: (AdjX^2 + AdjY^ <= TS^2), this is a 'start inside actor' check
-	if ( AdjustedActor.X * AdjustedActor.X <= XDeltaSq )
+	if ( Square(AdjustedActor.X) <= XDeltaSq )
 	{
 		Link = new(G_Stack) FCheckResult(Link);
 		Link->Actor = AInfo->Actor;
@@ -448,7 +451,7 @@ bool PrecomputedRay::Hits_HCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 	Link->Actor = AInfo->Actor;
 	Link->Time = TargetX;
 	cg::Vector HitLocation = Org + Dir * Link->Time;
-	cg::Vector HitNormal = (HitLocation - AInfo->C.Location).NormalXY();
+	cg::Vector HitNormal = (HitLocation - cg::Vector(AInfo->Actor->Location,E_Unsafe)).NormalXY();
 	if ( !HitNormal.IsValid() ) //If two small actors collide, hardcode hit normal as opposite of trace dir
 		HitNormal = -Dir;
 	Link->Normal = HitNormal;
@@ -459,20 +462,21 @@ bool PrecomputedRay::Hits_HCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 //Generic trace (non H, non V)
 bool PrecomputedRay::Hits_GCylActor( ActorInfo* AInfo, FCheckResult*& Link) const
 {
-	cg::Vector NetExtent( AInfo->C.Extent + Extent );
-	cg::Vector RelActor( AInfo->C.Location - Org);
+	float NetRadius = AInfo->Actor->CollisionRadius + Extent.X;
+	float NetHeight = AInfo->Actor->CollisionHeight + Extent.Z;
+	cg::Vector RelActor( cg::Vector(AInfo->Actor->Location,E_Unsafe) - Org);
 	cg::Vector Dir2D = Dir.NormalXY();
 	cg::Vector AdjustedActor = RelActor.TransformByXY( Dir2D );
 
 	//Check relative Y bounds, biggest reject chance (pawns are usually taller than wider)
-	float XDeltaSq = NetExtent.X*NetExtent.X - AdjustedActor.Y*AdjustedActor.Y;
+	float XDeltaSq = Square(NetRadius) - Square(AdjustedActor.Y);
 	if ( XDeltaSq < 0 )
 		return false;
 
 	float ZDif = End.Z - Org.Z;
 
 	//Branchless Z bounds, 0 is low, 1 is high | One of them is always 0.f (before extent transformation)
-	float ZBounds[2] = { -NetExtent.Z, NetExtent.Z};
+	float ZBounds[2] = { -NetHeight, NetHeight};
 	ZBounds[(ZDif >= 0)] += ZDif; //See if ZDif transformation should go in high or low slot
 
 	//Actor out of trace's Z bounds
@@ -482,13 +486,13 @@ bool PrecomputedRay::Hits_GCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 	//Refactored it looks like: (AdjX^2 + AdjY^ <= TS^2), inside XY cylinder
 	if ( AdjustedActor.X * AdjustedActor.X <= XDeltaSq ) //Contained in the infinite XY cylinder
 	{
-		if ( fabsf(AdjustedActor.Z) <= NetExtent.Z ) //Within Z slab (in Cylinder)
+		if ( fabsf(AdjustedActor.Z) <= NetHeight ) //Within Z slab (in Cylinder)
 		{
 			if ( AdjustedActor.X <= KINDA_SMALL_NUMBER )
 				return false; //Tracing away from actor
 			Link = new(G_Stack) FCheckResult(Link);
 			Link->Actor = AInfo->Actor;
-			if ( fabsf(AdjustedActor.Z * 0.98f) > NetExtent.Z )
+			if ( fabsf(AdjustedActor.Z * 0.98f) > NetHeight )
 				Link->Normal = ZNormals[ ZDif > 0 ];
 			else
 				Link->Normal = -RelActor.NormalXY();
@@ -515,13 +519,13 @@ bool PrecomputedRay::Hits_GCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 			float Delta = TargetX / (Dir | Dir2D); //1/HSize(Dir) * TargetX
 			float ZEnd = Dir.Z * Delta;
 			//Positioned point within Z slab, side hit
-			if ( Square(ZEnd - AdjustedActor.Z) < NetExtent.Z*NetExtent.Z )
+			if ( Square(ZEnd - AdjustedActor.Z) < Square(NetHeight) )
 			{
 				Link = new(G_Stack) FCheckResult(Link);
 				Link->Actor = AInfo->Actor;
 				Link->Time = Delta;
 				cg::Vector HitLocation = Org + Dir * Delta;
-				Link->Normal = (HitLocation - AInfo->C.Location).NormalXY();
+				Link->Normal = (HitLocation - cg::Vector(AInfo->Actor->Location,E_Unsafe)).NormalXY();
 				Link->Primitive = nullptr;
 				return true;
 			}
@@ -533,13 +537,13 @@ bool PrecomputedRay::Hits_GCylActor( ActorInfo* AInfo, FCheckResult*& Link) cons
 	//See if hits cylinder cap
 	float Delta = Length / ZDif;
 	if ( AdjustedActor.Z >= 0 )
-		Delta *= AdjustedActor.Z - NetExtent.Z;
+		Delta *= AdjustedActor.Z - NetHeight;
 	else
-		Delta *= AdjustedActor.Z + NetExtent.Z;
+		Delta *= AdjustedActor.Z + NetHeight;
 
 	//	VStart = Org + (End-Org) * (PlaneZ * _Reciprocal(ZDif));
 	cg::Vector HitLocation = Org + Dir * Delta;
-	if ( !(HitLocation - AInfo->C.Location).InCylinder(NetExtent.X) )
+	if ( !(HitLocation - cg::Vector(AInfo->Actor->Location,E_Unsafe)).InCylinder(NetRadius) ) //TODO: REMOVE Z,W FROM CALCS
 		return false;
 	Link = new(G_Stack) FCheckResult(Link);
 	Link->Actor = AInfo->Actor;
@@ -600,7 +604,7 @@ FCheckResult* GenericQueryHelper::QueryGrid( Grid* Grid)
 void GenericQueryHelper::QueryContainer(ActorLinkContainer& Container, FCheckResult*& Result) const
 {
 	ActorLinkContainer::Iterator It(Container);
-	while ( ActorInfo* AInfo = It.GetInfo() )
+	while ( ActorInfo* AInfo = It.GetInfo() ) //Validity check is already done here!
 		(this->*Query)( AInfo, Result);
 }
 
@@ -629,19 +633,19 @@ void PointHelper::PointQuery( ActorInfo* AInfo, FCheckResult*& ResultList) const
 {
 	if ( AInfo->Flags.bUseCylinder )
 	{
-		cg::Vector RelActor = Location - AInfo->C.Location;
-		if ( RelActor.InCylinder( Extent + AInfo->C.Extent) && AInfo->IsValid() )
+		cg::Vector RelActor = Location - cg::Vector(AInfo->Actor->Location, E_Unsafe);
+		if ( RelActor.InCylinder( AInfo->Actor->CollisionRadius+Extent.X, AInfo->Actor->CollisionRadius+Extent.X) )
 		{
 			ResultList = new(G_Stack) FCheckResult(ResultList);
 			ResultList->Actor = AInfo->Actor;
 			ResultList->Location = Location;
-			if ( RelActor.Z >= AInfo->C.Extent.Z )        ResultList->Normal = ZNormals[0];
-			else if ( RelActor.Z <= -(AInfo->C.Extent.Z)) ResultList->Normal = ZNormals[1];
-			else                                        ResultList->Normal = RelActor.NormalXY();
+			if ( RelActor.Z >= AInfo->Actor->CollisionHeight )        ResultList->Normal = ZNormals[0];
+			else if ( RelActor.Z <= -(AInfo->Actor->CollisionHeight)) ResultList->Normal = ZNormals[1];
+			else                                                      ResultList->Normal = RelActor.NormalXY();
 			ResultList->Primitive = nullptr;
 		}
 	}
-	else if ( IntersectsBox( AInfo->P.pBox) && AInfo->IsValid() && AInfo->Actor->Brush )
+	else if ( IntersectsBox( AInfo->GridBox) && AInfo->Actor->Brush )
 	{
 		FCheckResult* ResultNew = new(G_Stack) FCheckResult(ResultList);
 		AActor* Actor = AInfo->Actor;
@@ -672,8 +676,7 @@ RadiusHelper::RadiusHelper( const FVector& InOrigin, float InRadius, uint32 InEx
 
 void RadiusHelper::RadiusQuery( ActorInfo* AInfo, FCheckResult*& ResultList) const
 {
-	cg::Vector ActorLocation = AInfo->cLocation();
-	if ( (ActorLocation-Location).SizeSq() <= RadiusSq )
+	if ( (cg::Vector(AInfo->Actor->Location,E_Unsafe)-Location).SizeSq() <= RadiusSq )
 	{
 		ResultList = new(G_Stack) FCheckResult(ResultList);
 		ResultList->Actor = AInfo->Actor;
@@ -737,10 +740,11 @@ EncroachHelper::~EncroachHelper()
 
 void EncroachHelper::EncroachmentQuery( ActorInfo* AInfo, FCheckResult*& ResultList) const
 {
-	if ( !AInfo->Flags.bIsMovingBrush && AInfo->Actor->bCollideWorld && Bounds.Intersects( AInfo->cBox()) )
+	if ( !AInfo->Flags.bIsMovingBrush && AInfo->Actor->bCollideWorld && Bounds.Intersects( AInfo->GridBox) )
 	{
 		FCheckResult* ResultNew = new(G_Stack) FCheckResult(ResultList);
-		if ( Actor->Brush->PointCheck( *ResultNew, Actor, FVector(AInfo->C.Location,E_NoSSEFPU), FVector(AInfo->C.Extent,E_NoSSEFPU), ExtraNodeFlags) ) //FIT, no hit
+		FVector Extent( AInfo->Actor->CollisionRadius, AInfo->Actor->CollisionRadius, AInfo->Actor->CollisionHeight);
+		if ( Actor->Brush->PointCheck( *ResultNew, Actor, AInfo->Actor->Location, Extent, ExtraNodeFlags) ) //FIT, no hit
 			G_Stack->Pop<FCheckResult>();
 		else
 		{
@@ -753,15 +757,16 @@ void EncroachHelper::EncroachmentQuery( ActorInfo* AInfo, FCheckResult*& ResultL
 
 void EncroachHelper::EncroachmentQueryCyl( ActorInfo* AInfo, FCheckResult*& ResultList) const
 {
-	if ( !AInfo->Flags.bIsMovingBrush && Bounds.Intersects( AInfo->cBox()) )
+	if ( !AInfo->Flags.bIsMovingBrush && Bounds.Intersects( AInfo->GridBox) )
 	{
-		cg::Vector RelActor = Location - AInfo->C.Location;
+		cg::Vector RelActor = Location - cg::Vector(AInfo->Actor->Location,E_Unsafe);
 		if ( AInfo->Actor->Brush ) //This is a custom primitive actor
 		{
 			//Exchange location temporarily
 			FCheckResult* ResultNew = new(G_Stack) FCheckResult(ResultList);
 			Exchange( Actor->Location, *(FVector*)&Location);
-			if ( AInfo->Actor->Brush->PointCheck( *ResultNew, AInfo->Actor, Actor->Location, FVector( AInfo->C.Extent, E_NoSSEFPU), ExtraNodeFlags) ) //FIT, no hit
+			FVector Extent( AInfo->Actor->CollisionRadius, AInfo->Actor->CollisionRadius, AInfo->Actor->CollisionHeight);
+			if ( AInfo->Actor->Brush->PointCheck( *ResultNew, AInfo->Actor, Actor->Location, Extent, ExtraNodeFlags) ) //FIT, no hit
 				G_Stack->Pop<FCheckResult>(); //ABOVE MAY BE BUGGY, REVIEW LOCATION
 			else
 			{
@@ -770,12 +775,12 @@ void EncroachHelper::EncroachmentQueryCyl( ActorInfo* AInfo, FCheckResult*& Resu
 			}
 			Exchange( Actor->Location, *(FVector*)&Location);
 		}
-		else if ( RelActor.InCylinder( Actor->CollisionRadius + AInfo->C.Extent.X) )
+		else if ( RelActor.InCylinder( Actor->CollisionRadius + AInfo->Actor->CollisionRadius, Actor->CollisionHeight + AInfo->Actor->CollisionRadius) )
 		{
 			ResultList = new(G_Stack) FCheckResult(ResultList);
 			ResultList->Actor = AInfo->Actor;
-			ResultList->Location = AInfo->C.Location;
-			float Bound = (RelActor.SizeXYSq() < 0.001f) ? 0.f : AInfo->C.Extent.Z; //If actors are too close (H), don't calc normal and instead push upwards or downwards
+			ResultList->Location = AInfo->Actor->Location;
+			float Bound = (RelActor.SizeXYSq() < 0.001f) ? 0.f : AInfo->Actor->CollisionHeight; //If actors are too close (H), don't calc normal and instead push upwards or downwards
 			if ( RelActor.Z >= Bound )
 				ResultList->Normal = ZNormals[0];
 			else if ( RelActor.Z <= -Bound )

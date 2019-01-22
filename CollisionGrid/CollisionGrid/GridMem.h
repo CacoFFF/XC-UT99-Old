@@ -27,7 +27,7 @@ class GenericMemStack
 	uint32 End;
 
 	friend class GSBaseMarker;
-	friend void* operator new( uint32 Size, GenericMemStack* Mem);
+	friend void* operator new( size_t Size, GenericMemStack* Mem);
 public:
 	GenericMemStack( uint32 InSize)
 		: Cur(0), End( InSize - sizeof(GenericMemStack)) {}
@@ -42,7 +42,7 @@ public:
 	void Exit() {};
 };
 
-inline void* operator new( uint32 Size, GenericMemStack* Mem )
+inline void* operator new( size_t Size, GenericMemStack* Mem )
 {
 	UE_DEV_THROW( Mem->Cur+Size > Mem->End, "Generic memory stack fully used");
 	void* Result =  (void*) (((uint32)Mem) + sizeof(GenericMemStack) + Mem->Cur);

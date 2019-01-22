@@ -154,27 +154,27 @@ char* PlainText::Ansi()
 #endif
 
 
-void* operator new( uint32 Size)
+void* operator new( size_t Size)
 {
 	return appMalloc(Size);
 }
 
-void* operator new( uint32 Size, const TCHAR* Tag)
+void* operator new( size_t Size, const TCHAR* Tag)
 {
 	return GMalloc->Malloc( Size, Tag);
 }
 
-void* operator new( uint32 Size, ESize Units, uint32 RealSize)
+void* operator new( size_t Size, ESize Units, uint32 RealSize)
 {
 	return appMalloc( RealSize << Units);
 }
 
-void* operator new( uint32 Size, EAlign Tag )
+void* operator new( size_t Size, EAlign Tag )
 {
 	return appMallocAligned( Size, Tag);
 }
 
-void* operator new( uint32 Size, EAlign Tag, ESize Units, uint32 RealSize)
+void* operator new( size_t Size, EAlign Tag, ESize Units, uint32 RealSize)
 {
 	return appMallocAligned( RealSize << Units, Tag);
 }

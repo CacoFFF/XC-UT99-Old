@@ -67,13 +67,9 @@ struct DE ActorInfo
 	uint8 CurDepth; //These are per-grid, they gotta go
 	uint8 TopDepth;
 	//[32]
-	union
-	{	struct
-		{	cg::Vector Location;
-			cg::Vector Extent;		} C; //Cylinder mode
-		struct
-		{	cg::Box pBox;			} P; //Primitive mode
-	};
+	cg::Box GridBox;
+
+
 	//[16] Container info!
 /*	uint8 GXStart;
 	uint8 GYStart;
@@ -88,10 +84,7 @@ struct DE ActorInfo
 	static const TCHAR* Name() { return TEXT("ActorInfo"); }
 
 	bool Init( AActor* InActor);
-	bool IsValid();
-
-	cg::Box cBox();
-	cg::Vector cLocation();
+	bool IsValid() const;
 };
 
 //int tat = sizeof(ActorInfo);

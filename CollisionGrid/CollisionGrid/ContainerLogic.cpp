@@ -20,30 +20,29 @@ bool ActorInfo::Init( AActor* InActor)
 	ObjIndex = InActor->Index;
 	Actor = InActor;
 
-	C.Location = cg::Vector( &Actor->Location.X);
-	if ( C.Location.InvalidBits() & 0x0111 ) //Validate location
+	cg::Vector Location( Actor->Location, E_Unsafe);
+	if ( Location.InvalidBits() & 0x0111 ) //Validate location
 	{
-		debugf( TEXT("[CG] Invalid actor location: %s [%f,%f,%f]"), Actor->GetName(), C.Location.X, C.Location.Y, C.Location.Z );
-		cg::Vector NewLoc( &Actor->ColLocation.X);
+		debugf( TEXT("[CG] Invalid actor location: %s [%f,%f,%f]"), Actor->GetName(), Actor->Location.X, Actor->Location.Y, Actor->Location.Z );
+		cg::Vector NewLoc( Actor->ColLocation, E_Unsafe);
 		if ( NewLoc.InvalidBits() & 0x0111 ) //EXPERIMENTAL, RELOCATE ACTOR
 			return false;
-		C.Location = NewLoc;
+		Location = NewLoc;
 		Actor->Location = FVector( NewLoc);
 		debugf( TEXT("[CG] Relocating to [%f,%f,%f]"), Actor->Location.X, Actor->Location.Y, Actor->Location.Z);
 	}
-	C.Location.W = 0;
 
 	if ( InActor->Brush )
 	{
-		P.pBox = (cg::Box) InActor->Brush->GetCollisionBoundingBox( InActor);
+		GridBox = (cg::Box) InActor->Brush->GetCollisionBoundingBox( InActor);
+		GridBox.ExpandBounds( cg::Vector( 8.f, 8.f, 8.f, 0)); //Obscure bug makes encroachment checks fail
 		Flags.bUseCylinder = 0;
 		Flags.bIsMovingBrush = InActor->IsMovingBrush() != 0;
 	}
 	else
 	{
-		C.Extent.X = C.Extent.Y = InActor->CollisionRadius;
-		C.Extent.Z = InActor->CollisionHeight;
-		C.Extent.W = 0;
+		cg::Vector Extent( InActor->CollisionRadius + 2.f, InActor->CollisionRadius + 2.f, InActor->CollisionHeight + 2.f);
+		GridBox = cg::Box( Location - Extent, Location + Extent, E_Strict);
 		Flags.bUseCylinder = 1;
 		Flags.bIsMovingBrush = 0;
 	}
@@ -55,40 +54,19 @@ bool ActorInfo::Init( AActor* InActor)
 	unguard_slow;
 }
 
-bool ActorInfo::IsValid()
+bool ActorInfo::IsValid() const
 {
-#define ABORT(text) { debugf_ansi(text); return false; }
-	if ( !Flags.bCommited ) //Can happen in grid elements
-		return false;
-	if ( (*GetIndexedObject)(ObjIndex) != Actor )
-		ABORT("[CG] ActorInfo::IsValid -> Using invalid object");
-	if ( Actor->bDeleteMe || !Actor->bCollideActors )
-	{
+	if ( !Flags.bCommited )
+	{}
+	else if ( (*GetIndexedObject)(ObjIndex) != Actor )
+		debugf( TEXT("[CG] ActorInfo::IsValid -> Using invalid object"));
+	else if ( Actor->bDeleteMe || !Actor->bCollideActors )
 		debugf( TEXT("[CG] ActorInfo::IsValid -> %s shouldn't be in the grid"), Actor->GetName() );
-		return false;
-	}
-	if ( reinterpret_cast<ActorInfo*>(Actor->CollisionTag) != this )
-		ABORT("[CG] ActorInfo::IsValid -> Mismatching CollisionTag");
-	return true;
-}
-
-//Calculate a box for Cylinder actors
-cg::Box ActorInfo::cBox()
-{
-	cg::Box Result; //Using a result var produces correctly optimized output in MinGW
-	if ( Flags.bUseCylinder )
-		Result = cg::Box( C.Location-C.Extent, C.Location+C.Extent, E_Strict);
+	else if ( reinterpret_cast<ActorInfo*>(Actor->CollisionTag) != this )
+		debugf( TEXT("[CG] ActorInfo::IsValid -> Mismatching CollisionTag"));
 	else
-		Result = P.pBox;
-	return Result;
-}
-
-cg::Vector ActorInfo::cLocation()
-{
-	if ( Flags.bUseCylinder )
-		return C.Location;
-	else
-		return (P.pBox.Min + P.pBox.Max) * 0.5;
+		return true;
+	return false;
 }
 
 
@@ -178,20 +156,19 @@ bool Grid::InsertActor( AActor* Actor)
 	int32 iLinks = 0;
 	bool bGlobalPlacement = false;
 
-	cg::Box ActorBox = AInfo->cBox();
-	if ( Box.Intersects(ActorBox) )
+	if ( Box.Intersects(AInfo->GridBox) )
 	{
-		cg::Box RRActorBox = (ActorBox-Box.Min) * Grid_Mult; //Transform to local coords
+		cg::Box RRActorBox = (AInfo->GridBox-Box.Min) * Grid_Mult; //Transform to local coords
 		cg::Vector fMax = cg::Vectorize(Size - XYZi_One);
 		cg::Integers Min = Clamp(RRActorBox.Min, cg::Vector(E_Zero), fMax).Truncate32();
 		cg::Integers Max = Clamp(RRActorBox.Max, cg::Vector(E_Zero), fMax).Truncate32();
-			
+
 		//Calculate how big the node list will be before doing any listing
 		cg::Integers Total = XYZi_One + Max - Min;
 		UE_DEV_THROW( Total.i <= 0 || Total.j <= 0 || Total.k <= 0, "Bad iBounds calculation"); 
 		if ( Total.i <= 0 || Total.j <= 0 || Total.k <= 0 )
 		{} //Force a no-placement
-		else if ( Total.i*Total.j*Total.k >= MAX_NODE_LINKS )
+		else if ( Total.i*Total.j*Total.k >= MAX_NODE_LINKS ) //Temporary
 			bGlobalPlacement = true;
 		else
 		{
@@ -219,7 +196,7 @@ bool Grid::InsertActor( AActor* Actor)
 		AInfo->LocationType = ELT_Tree;
 		if ( !GridElements[0]->Tree )
 			GridElements[0]->Tree = new(G_MTH->GrabElement(),E_Stack) MiniTree( this, GridElements[0]->Coords() );
-		GridElements[0]->Tree->InsertActorInfo( AInfo, ActorBox);
+		GridElements[0]->Tree->InsertActorInfo( AInfo, AInfo->GridBox);
 	}
 	else
 	{
@@ -249,13 +226,11 @@ bool Grid::RemoveActor( class AActor* OutActor)
 		G_AIH->ReleaseElement( AInfo); //Fix IsValid (create AIH version for decommit flag)
 		OutActor->CollisionTag = 0;
 
-		cg::Box ActorBox = AInfo->cBox();
-
 		if ( AInfo->LocationType == ELT_Global )
 			Actors.RemoveItem( AInfo);
 		else if ( AInfo->LocationType == ELT_Node )
 		{
-			cg::Box LocalBox = ActorBox - Box.Min;
+			cg::Box LocalBox = AInfo->GridBox - Box.Min;
 			cg::Integers Min = cg::Max((LocalBox.Min * Grid_Mult), cg::Vector(E_Zero)).Truncate32();
 			cg::Integers Max = cg::Min((LocalBox.Max * Grid_Mult), cg::Vectorize(Size-XYZi_One) ).Truncate32();
 			for ( int i=Min.i ; i<=Max.i ; i++ )
@@ -265,9 +240,9 @@ bool Grid::RemoveActor( class AActor* OutActor)
 		}
 		else if ( AInfo->LocationType == ELT_Tree )
 		{
-			cg::Integers GridSlot = cg::Max( (ActorBox.Min - Box.Min) * Grid_Mult, cg::Vector(E_Zero)).Truncate32(); //Pick lowest coord, then clamp to 0,0,0
+			cg::Integers GridSlot = cg::Max( (AInfo->GridBox.Min - Box.Min) * Grid_Mult, cg::Vector(E_Zero)).Truncate32(); //Pick lowest coord, then clamp to 0,0,0
 			if ( Node(GridSlot)->Tree )
-				Node(GridSlot)->Tree->RemoveActorInfo( AInfo, ActorBox.Min);
+				Node(GridSlot)->Tree->RemoveActorInfo( AInfo, AInfo->GridBox.Min);
 		}
 		AInfo->LocationType = ELT_Max;
 	}
@@ -333,12 +308,11 @@ MiniTree::MiniTree( MiniTree* T, uint32 SubOctant)
 		if ( G_AIH->IsValid(AInfo) && AInfo->IsValid() )
 		{
 			UE_DEV_THROW( AInfo->CurDepth == Depth, "AInfo in parent tree has my Depth"); //Destroyed tree must be memzero'd
-			if ( (AInfo->TopDepth >= Depth) && (GetSubOctant( AInfo->C.Location) == SubOctant) ) //Belongs here
+			if ( (AInfo->TopDepth >= Depth) && (GetSubOctant( AInfo->GridBox.Min) == SubOctant) ) //Belongs here
 			{
-				cg::Box ActorBox = AInfo->cBox();
 				AInfo->CurDepth = Depth;
 				if ( Depth < MAX_TREE_DEPTH ) //Important to continue subdivision spree
-					AInfo->TopDepth = Depth + (GetSubOctant( ActorBox.Min) == GetSubOctant( ActorBox.Max));
+					AInfo->TopDepth = Depth + (GetSubOctant( AInfo->GridBox.Min) == GetSubOctant( AInfo->GridBox.Max));
 				Actors.AddItem(AInfo);
 				T->Actors.Remove(i);
 			}

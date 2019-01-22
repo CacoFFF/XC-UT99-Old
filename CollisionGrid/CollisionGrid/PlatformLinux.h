@@ -5,6 +5,7 @@
 #define CDECL
 #define FORCEINLINE
 
+typedef uint32 size_t;
 
 // Sizes.
 enum { DEFAULT_ALIGNMENT = 8 }; // Default boundary to align memory allocations on.
