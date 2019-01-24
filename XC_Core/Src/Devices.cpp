@@ -207,7 +207,11 @@ void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 		CriticalOut->Serialize( *Line.Msg);
 		CriticalOut->Serialize( "\r\n");
 	}
-	else if ( Line.Event != NAME_Title )
+	else if ( Line.Event == NAME_Title )
+	{
+		bDoLog = false;
+	}
+	else
 	{
 		if ( RepeatCount == 0 ) //Try to setup repeater
 		{
@@ -244,8 +248,8 @@ void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 
 	if ( bDoLog )
 	{
-		CurCmp = (CurCmp + 1) % OLD_LINES;
 		SerializeNext( *Line.Msg, Line.Event);
+		CurCmp = (CurCmp + 1) % OLD_LINES;
 		appMemswap( &MessageBuffer[CurCmp], &Line, sizeof(FLogLine)); //Destroy old message and keep 'line' in buffer
 //		MessageBuffer[CurCmp] = Line;
 	}

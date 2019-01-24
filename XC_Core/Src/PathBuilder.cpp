@@ -40,6 +40,8 @@ enum EReachSpecFlags
 #define MAX_SCOUT_RADIUS 150
 
 
+static int JumpTo( APawn* Scout, AActor* Other);
+
 //============== Partial actor list compactor
 //
 static void CompactActors( TTransArray<AActor*>& Actors, int32 StartFrom)
@@ -55,11 +57,27 @@ static void CompactActors( TTransArray<AActor*>& Actors, int32 StartFrom)
 		if ( (i != j) && Actors(j) )
 			Actors(i++) = Actors(j);
 	}
+	GWarn->StatusUpdatef( 1, 1, TEXT("Removed %i entries (%i > %i)"), Actors.Num()-i, Actors.Num(), i);
 	if( i != Actors.Num() )
 		Actors.Remove( i, Actors.Num()-i );
 
 	GUndo = Undo;
 	Actors.ModifyAllItems();
+}
+
+//============== Actors are touching
+//
+static int ActorsTouching( AActor* Check, AActor* Other)
+{
+	float NetRadius = Check->CollisionRadius;
+	float NetHeight = Check->CollisionHeight;
+	if ( Other->bCollideActors )
+	{
+		NetRadius += Other->CollisionRadius;
+		NetHeight += Other->CollisionHeight;
+	}
+	FVector Diff = Check->Location - Other->Location;
+	return Square(Diff.X) + Square(Diff.Y) <= Square(NetRadius) && Square(Diff.Z) <= Square(NetHeight);
 }
 
 //============== Cleanup a NavigationPoint
@@ -342,6 +360,7 @@ inline void FPathBuilderMaster::AddMarkers()
 	int32 i;
 	int32 BaseListSize = InfoList.Num();
 
+	GWarn->StatusUpdatef( 0, 1, TEXT("Inserting markers...") );
 	// Add InventorySpots
 	for ( i=0 ; i<Level->Actors.Num() ; i++ )
 	{
@@ -671,6 +690,8 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 	Spec.Init();
 	Spec.Start = Start;
 	Spec.End = End;
+	Spec.CollisionRadius = GoodRadius + 1;
+	Spec.CollisionHeight = GoodHeight + 1;
 	Scout->JumpZ = GoodJumpZ;
 	Scout->GroundSpeed = GoodGroundSpeed;
 	Scout->Physics = PHYS_Walking;
@@ -680,9 +701,33 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 	Scout->bCanFly = 0;
 	Scout->MaxStepHeight = 25;
 
+	int Reachable = 0;
+
+	//Fat mode
+	FVector Fat = End->Location - Start->Location;
+	if ( (Fat.SizeSquared2D() <= Square(129.0)) && Square(Fat.Z) < Square(60) )
+	{
+		Scout->SetCollisionSize( Fat.Size2D() + 5, GoodHeight + Abs(Fat.Z) * 0.5);
+		if ( FindStart(Start->Location + Fat * 0.5) && ActorsTouching(Scout,End) && ActorsTouching(Scout,Start) )
+		{
+			Spec.CollisionRadius = Max( Spec.CollisionRadius, appRound(Scout->CollisionRadius));
+			Spec.CollisionHeight = Max( Spec.CollisionHeight, appRound(Scout->CollisionHeight));
+			Scout->SetCollisionSize( GoodRadius, GoodHeight);
+			int Walkables = FindStart(Start->Location) + FindStart(End->Location);
+			if ( Walkables >= 2 )
+			{
+				Reachable = 1;
+				Spec.reachFlags |= R_WALK;
+				Spec.distance = appRound(Fat.Size());
+			}
+			debugf( NAME_DevNet, L"FAT %f -> %i", Fat.Size2D(), Walkables ); 
+		}
+	}
+
 	//IMPORTANT: SCOUT NEEDS pointReachable() REPLACEMENT TO ALLOW BETTER JUMPING
 	//This also sets reachflags
-	int Reachable = Spec.findBestReachable( Start->Location, End->Location, Scout);
+	if ( !Reachable )
+		Reachable = Spec.findBestReachable( Start->Location, End->Location, Scout);
 
 	//Try with MaxStepHeight big enough to simulate PickWallAdjust() jumps
 	if ( !Reachable )
@@ -691,8 +736,27 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 		// v_end^2 = v_start^2 + 2.gravity.h = 0
 		// h = -(v_start^2) / (2.gravity)
 		Scout->MaxStepHeight = -(GoodJumpZ*GoodJumpZ) / (Start->Region.Zone->ZoneGravity.Z * 2);
-		Reachable = Spec.findBestReachable( Start->Location, End->Location, Scout);
-		if ( Reachable )
+		Reachable = Spec.findBestReachable( Start->Location, End->Location, Scout); //Increase step height to that of a jump
+		if ( !Reachable ) //Try a FerBotz jump
+		{
+			Scout->SetCollisionSize( GoodRadius, GoodHeight);
+			if ( Scout->GetLevel()->FarMoveActor( Scout, Start->Location) )
+			{
+				Reachable = JumpTo( Scout, End);
+				if ( Reachable )
+				{//Manually set flags
+					Spec.reachFlags |= R_WALK;
+					Spec.distance = appRound((Start->Location - End->Location).Size());
+				}
+				else
+				{
+					Reachable = Spec.findBestReachable( Scout->Location, End->Location, Scout);
+					Spec.distance += appRound((Scout->Location - Start->Location).Size());
+				}
+					
+			}
+		}
+		if ( Reachable != 2 ) //2 means no flag
 			Spec.reachFlags |= R_JUMP;
 	}
 
@@ -704,8 +768,18 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 		Reachable = Spec.findBestReachable( Start->Location, End->Location, Scout);
 	}
 
-	if ( !Reachable )
+
+	if ( Reachable )
+	{
+		if ( !(Spec.reachFlags & R_SWIM) && (Start->Region.Zone->bWaterZone || End->Region.Zone->bWaterZone) )
+		{
+			Spec.reachFlags |= R_SWIM;
+			Spec.distance *= 2;
+		}
+	}
+	else
 		Spec.Init();
+
 	return Spec;
 }
 
@@ -752,7 +826,7 @@ static int FlyTo( APawn* Scout, AActor* Other)
 		NetRadius += Other->CollisionRadius;
 		NetHeight += Other->CollisionHeight;
 	}
-	for ( int32 Loops=8 ; Loops>=0 ; Loops++ )
+	for ( int32 Loops=0 ; Loops<8 ; Loops++ )
 	{
 		//Up and down 4 times each
 		FVector Offset( 0, 0, Scout->MaxStepHeight * ((Loops&1) ? 1.0 : -1.0 ) );
@@ -766,6 +840,97 @@ static int FlyTo( APawn* Scout, AActor* Other)
 	return 0;
 }
 
+static int JumpTo( APawn* Scout, AActor* Other)
+{
+	float Gravity = Scout->Region.Zone->ZoneGravity.Z;
+	if ( Gravity >= -0.1 )
+		return 0;
+
+	#define STEP_ALPHA 0.05
+	float NetRadius = Scout->CollisionRadius;
+	float NetHeight = Scout->CollisionHeight;
+	if ( Other->bCollideActors )
+	{
+		NetRadius += Other->CollisionRadius;
+		NetHeight += Other->CollisionHeight;
+	}
+	FVector Offset = Other->Location - Scout->Location;
+	if ( Square(Offset.X) + Square(Offset.Y) < Square(NetRadius) && Square(Offset.Z) < Square(NetHeight) )
+		return 2;
+
+	int bTriedJump = 0;
+	do
+	{
+		float JumpZ = bTriedJump ? 0 : Scout->JumpZ; //Try a normal jump first, then fall
+		float DeltaY = Other->Location.Z - Scout->Location.Z;
+		float disc = JumpZ*JumpZ - 4 * (-DeltaY) * (Gravity * 0.5); //b^2 - 4*c*a
+		if ( disc >= 0 ) //Reachable
+		{
+			disc = appSqrt(disc);
+
+			float DeltaT = (-JumpZ - disc) / Gravity; //b - disc    /  2*a
+
+			FVector HDir = FVector( Other->Location.X - Scout->Location.X,
+									Other->Location.Y - Scout->Location.Y,
+									0);
+			float HDist = HDir.Size2D();
+			if ( HDist > 1 )
+				HDir /= HDist;
+			float HVel = Min( HDist / DeltaT, Scout->GroundSpeed);
+
+			Scout->Velocity.X = HDir.X * HVel;
+			Scout->Velocity.X = HDir.Y * HVel;
+			Scout->Velocity.Z = JumpZ;
+			
+			int Reached = 0;
+			int Near = 0;
+			for ( float f=0 ; f<=DeltaT+STEP_ALPHA ; f+=STEP_ALPHA )
+			{
+				//Make steps 4x smaller near end
+				if ( Near ) 
+					f -= STEP_ALPHA * 0.75;
+				FVector NextLoc;( Scout->Location + Scout->Velocity);
+				NextLoc.X = Scout->Location.X + Scout->Velocity.X * STEP_ALPHA; //MRU
+				NextLoc.Y = Scout->Location.Y + Scout->Velocity.Y * STEP_ALPHA; //MRU
+				NextLoc.Z = Scout->Location.Z + Scout->Velocity.Z * STEP_ALPHA + Gravity * 0.5 * (STEP_ALPHA * STEP_ALPHA); //MRUA
+				FVector OldPos = Scout->Location;
+				Scout->flyMove( NextLoc - Scout->Location, Other);
+				//Simulate press forward a bit
+				Offset = Other->Location - Scout->Location;
+				Scout->Velocity.X *= 0.6;
+				Scout->Velocity.Y *= 0.6;
+				Scout->Velocity.Z += Gravity * STEP_ALPHA;
+				Scout->Velocity += HDir * (HVel * 0.2) + FVector( Offset.X, Offset.Y, 0).SafeNormal() * (HVel * 0.2);
+				Near += (Offset | HDir) <= Scout->CollisionRadius;
+				if ( HVel < Scout->GroundSpeed )
+					debugf( NAME_DevNet, L"Diff %f=[%f(%f), %f]", f, Offset | HDir, Offset.Size2D(), Offset.Z);
+				if ( Square(Offset.X) + Square(Offset.Y) <= Square(NetRadius) && Square(Offset.Z) <= Square(NetHeight) )
+				{
+					if ( HVel < Scout->GroundSpeed )
+						debugf( NAME_DevNet, L"SUCCESS MOVEMENT");
+					Reached = 1;
+					break;
+				}
+				if ( (Offset.Z > NetHeight) || (Scout->Location - OldPos).SizeSquared() <= 1 )
+					break;
+			}
+			if ( !Reached )
+			{
+				if ( HVel < Scout->GroundSpeed )
+					debugf( NAME_DevNet, L"TEST REACH");
+				Scout->Physics = PHYS_Walking;
+				Reached = Scout->pointReachable( Other->Location);
+				if ( HVel < Scout->GroundSpeed && !Reached )
+					debugf( NAME_DevNet, L"FAIL");
+			}
+			if ( Reached )
+				return 1;
+		}
+	}
+	#undef STEP_ALPHA
+	while ( !bTriedJump++ );
+	return 0;
+}
 
 
 //============== Data utils
