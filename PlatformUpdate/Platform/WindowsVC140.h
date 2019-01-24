@@ -9,17 +9,16 @@
 #define __INTEL__				1
 #define __INTEL_BYTE_ORDER__	1
 
-#include <windows.h>
+#ifndef _WINDOWS
+	#define _WINDOWS 1
+#endif
 
 #if !UNICODE
 	#error "DLL should have UNICODE=ON"
 #endif
 
-// Make sure HANDLE is defined.
-#ifndef _WINDOWS_
-	#define HANDLE void*
-	#define HINSTANCE void*
-#endif
+#include <windows.h>
+
 
 #include "PlatformTypes.h"
 
@@ -188,6 +187,11 @@ inline int32 appRound( float F )
 {
 	__asm cvtss2si eax,[F]
 	// return value in eax.
+}
+inline int32 appRound( double F )
+{
+	__asm cvtsd2si eax,[F]
+		// return value in eax.
 }
 
 #define DEFINED_appFloor 1

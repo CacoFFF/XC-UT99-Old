@@ -25,25 +25,23 @@
 #define FIXTIME 4294967296.f
 class FTime
 {
-#if __GNUG__
 #define TIMETYP long long
-#else
-#define TIMETYP __int64
-#endif
 public:
-
+	// Higor:
+	// This FTime version will only perform type conversions in the constructors
+	// So all operations must construct a temporary FTime.
 	FTime      ()               {v=0;}
-	FTime      (float f)        {v=(TIMETYP)(f*FIXTIME);}
-	FTime      (double d)       {v=(TIMETYP)(d*FIXTIME);}
+	FTime      (float f);
+	FTime      (double d);
 	FTime      (int s)          {v=((TIMETYP)s)<<32;}
-	float   GetFloat   ()               {return v/FIXTIME;}
-	FTime   operator+  (float f) const  {return FTime(v+(TIMETYP)(f*FIXTIME));}
+	float   GetFloat   () const         {return v/FIXTIME;} //Not bugged
+	FTime   operator+  (FTime t) const  {return FTime( v+t.v); }
 	float   operator-  (FTime t) const  {return (v-t.v)/FIXTIME;}
-	FTime   operator*  (float f) const  {return FTime(v*f);}
-	FTime   operator/  (float f) const  {return FTime(v/f);}
-	FTime&  operator+= (float f)        {v=v+(TIMETYP)(f*FIXTIME); return *this;}
-	FTime&  operator*= (float f)        {v=(TIMETYP)(v*f); return *this;}
-	FTime&  operator/= (float f)        {v=(TIMETYP)(v/f); return *this;}
+	FTime   operator*  (float f) const  {return FTime(GetFloat()*f);}
+	FTime   operator/  (float f) const  {return FTime(GetFloat()/f);}
+	FTime&  operator+= (float f)        {*this=*this+f; return *this;}
+	FTime&  operator*= (float f)        {*this=*this*f; return *this;}
+	FTime&  operator/= (float f)        {*this=*this/f; return *this;}
 	int     operator== (FTime t) const       {return v==t.v;}
 	int     operator!= (FTime t) const       {return v!=t.v;}
 	int     operator>  (FTime t) const       {return v>t.v;}
@@ -54,12 +52,30 @@ public:
 	float   operator%  (float f) const  {return (v%(TIMETYP)(f*FIXTIME))/FIXTIME;}
 private:
 	FTime (TIMETYP i) {v=i;}
+
 	TIMETYP v;
 };
 
 // Build options.
 #include "UnBuild.h"
 #include "Platform.h"
+
+//Intel byte order assumed
+inline FTime::FTime( float f)
+{
+	INT& High = ((INT*)&v)[1];
+	INT& Low = ((INT*)&v)[0];
+	High = appRound(f);
+	Low = appRound((f - (float)High)*FIXTIME);
+}
+
+inline FTime::FTime( double d)
+{
+	INT& High = ((INT*)&v)[1];
+	INT& Low = ((INT*)&v)[0];
+	High = appRound(d);
+	Low = appRound( (d - (double)High)*FIXTIME);
+}
 
 
 #ifndef GNU_VTABLE_FIX

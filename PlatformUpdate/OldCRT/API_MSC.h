@@ -62,11 +62,6 @@ void __declspec(naked) _ftol2_sse()
 	}
 }
 
-void __declspec(naked) _ftol2()
-{
-	__asm jmp _ftol2_sse ; //Bounce
-}
-
 
 /*
 double __declspec(naked) _ltod3( __int64 v)
