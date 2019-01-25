@@ -9,6 +9,7 @@
 #define P_GET_NAVIG_OPTX(var,def)		P_GET_OBJECT_OPTX(ANavigationPoint,var,def)
 #define P_GET_NAVIG_REF(var)			P_GET_OBJECT_REF(ANavigationPoint,var)
 
+
 	
 // For iterating through a linked list of fields (don't search on superfield).
 template <class T> class TStrictFieldIterator
@@ -39,6 +40,25 @@ protected:
 	}
 	UField* Field;
 };
+
+
+//There's 4096 of these
+static UFunction* GNativeToScriptFuncs[EX_Max];
+void AXC_Engine_Actor::GNativeScriptWrapper( FFrame &Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::GNativeScriptWrapper);
+	uint16 iNative = Stack.Code[-1];
+	if ( (Stack.Code[-2] >= 0x60) && (Stack.Code[-2] < 0x70) )
+		iNative += 0x100 * (Stack.Code[-2] - 0x60);
+	check(iNative < EX_Max);
+	UFunction* Func = GNativeToScriptFuncs[iNative];
+	check(Func->iNative == iNative);
+	Func->iNative = 0;
+	CallFunction( Stack, Result, Func);
+	Func->iNative = iNative;
+	unguard;
+}
+
 
 
 //native static final function bool ReplaceFunction( class<Object> ReplaceClass, class<Object> WithClass, name ReplaceFunction, name WithFunction, optional name InState);
@@ -112,10 +132,10 @@ void AXC_Engine_Actor::execReplaceFunction(FFrame &Stack, RESULT_DECL)
 	
 	//We have both WithFunc and ReplaceFunc
 	//Validate function flags
-	static DWORD FlagsForbidden = FUNC_PreOperator | FUNC_Operator;
-	static DWORD FlagsKeep = FUNC_Net | FUNC_NetReliable | FUNC_Simulated | FUNC_Exec | FUNC_Event;
-	static DWORD FlagsCopy = FUNC_Native | FUNC_Singular;
-	static DWORD FlagsMustMatch = FUNC_Iterator | FUNC_Latent | FUNC_Static | FUNC_Const | FUNC_Invariant;
+	static const DWORD FlagsForbidden = FUNC_PreOperator | FUNC_Operator;
+	static const DWORD FlagsKeep = FUNC_Net | FUNC_NetReliable | FUNC_Simulated | FUNC_Exec | FUNC_Event;
+	static const DWORD FlagsCopy = FUNC_Native | FUNC_Singular;
+	static const DWORD FlagsMustMatch = FUNC_Iterator | FUNC_Latent | FUNC_Static | FUNC_Const | FUNC_Invariant;
 	
 	if ( (WithFunc->FunctionFlags ^ ReplaceFunc->FunctionFlags) & FlagsMustMatch )
 	{
@@ -200,13 +220,17 @@ void AXC_Engine_Actor::execReplaceFunction(FFrame &Stack, RESULT_DECL)
 		}
 		ReplaceFunc->Script = WithFunc->Script;
 	}
-	else //Replacing a native function, replace GNatives entry too!!!
+
+	if ( ReplaceFunc->iNative > 0 && ReplaceFunc->iNative < EX_Max ) //Original func has a iNative opcode!
 	{
-		INT iN = ReplaceFunc->iNative;
-		if ( iN>0 && iN<4096 && (GNatives[iN] != (Native)&UObject::ProcessInternal) )
-			GNatives[iN] = WithFunc->Func;
+		if ( WithFunc->Func != &UObject::ProcessInternal ) //Replacement is native function
+			GNatives[ReplaceFunc->iNative] = WithFunc->Func;
+		else //Replacement is pure unrealscript function
+		{
+			GNativeToScriptFuncs[ReplaceFunc->iNative] = ReplaceFunc;
+			GNatives[ReplaceFunc->iNative] = (Native)&AXC_Engine_Actor::GNativeScriptWrapper;
+		}
 	}
-//	ReplaceFunc->iNative = WithFunc->iNative;
 
 	*(UBOOL*)Result = 1;
 	unguard;

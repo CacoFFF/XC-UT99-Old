@@ -37,18 +37,14 @@ INT FXC_LevelWatcher::Tick( FLOAT DeltaSeconds)
 	TickCount++;
 	//Level change detector
 	guard(LevelCheck);
-	ULevel* ALevel = (&Engine->GLevel)[Engine->b451Setup];
-	if ( ALevel != Level )
+	if ( Engine->Level() != Level )
 	{
-		ULevel* AEntry = (&Engine->GEntry)[Engine->b451Setup];
-		Level = (ALevel != AEntry) ? ALevel : NULL;
+		Level = Engine->Level();
 		//Level changed
 		if ( Level )
-		{
 			CurActorNameIdx = Level->iFirstDynamicActor;
-		}
 	}
-	if ( !Level )
+	if ( !Level && (Level != Engine->Entry()) )
 		return 0;
 	unguard;
 	

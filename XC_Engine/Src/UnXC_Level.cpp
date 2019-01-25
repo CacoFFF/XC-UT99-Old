@@ -12,6 +12,14 @@
 	#define unguardf_win32(msg) unguardf(msg)
 #endif
 
+#if 0
+	#define check_test(expr) 
+#else
+	#define check_test(expr) check(expr)
+#endif
+
+
+
 class FSurfaceInfo;
 class FTransTexture;
 class FSurfaceFacet;
@@ -39,6 +47,7 @@ inline void* operator new( size_t Size, void* Loc, EPlace Tag )
 {
 	return Loc;
 }
+
 
 
 struct FBatch
@@ -456,8 +465,8 @@ void FNetworkNotifyPL::NotifyProgress( const TCHAR* Str1, const TCHAR* Str2, FLO
 
 
 
-enum EOwned { EPri_Owned };
-enum EGeneral { EPri_General };
+enum EOwned { EPri_Owned=1 };
+enum EGeneral { EPri_General=0 };
 
 struct FActorPriority
 {
@@ -525,8 +534,15 @@ struct FActorPriority
 			SuperRelevant = 1;
 			Dot = 2.0f;
 		}
-		else
-			SuperRelevant = Actor->bAlwaysRelevant || (NetOwner->ViewTarget && (Actor->IsOwnedBy(NetOwner->ViewTarget) || Actor->Instigator == NetOwner->ViewTarget));
+		else if ( Actor->bAlwaysRelevant )
+			SuperRelevant = 1;
+		else if ( NetOwner->ViewTarget && (Actor->IsOwnedBy(NetOwner->ViewTarget) || Actor->Instigator == NetOwner->ViewTarget) )
+		{
+			if( !NetOwner->ViewTarget->IsA(APawn::StaticClass()) //ViewTarget not a pawn
+				|| !Actor->IsA(AInventory::StaticClass())  //Actor not an item
+				|| ((APawn*)NetOwner->ViewTarget)->Weapon == Actor ) //Actor is the pawn's weapon
+				SuperRelevant = 1; //This prevents bursting a viewtarget's inventory chain
+		}
 
 		FLOAT Pri = Actor->GetNetPriority( Sent, Time, InConnection->BestLag);
 		Priority = appRound( (Dot + 3.0f) * Pri * 65536.f);
@@ -534,28 +550,16 @@ struct FActorPriority
 		if ( Actor->bNetOptional )
 			Priority -= 3000000;
 	}
+
 	friend INT Compare( const FActorPriority* A, const FActorPriority* B )
 	{
+		if ( A->SuperRelevant != B->SuperRelevant )
+			return B->SuperRelevant - A->SuperRelevant;
 		return B->Priority - A->Priority;
 	}
 };
 
-//Fix this if old relevancy was toggled
-//If True, actor is to be globally checked
-inline FLOAT UpdateNetTag( AActor* Other, FLOAT DeltaTime)
-{
-	Other->NetTag &= 0x7FFFFFFF; //Become positive
-	FLOAT* NetTag = (FLOAT*) &Other->NetTag;
-	if ( *NetTag > 120.f || appIsNan(*NetTag) )
-		*NetTag = appFrand() * 99.f;
-	else if ( *NetTag > 99.f )
-		*NetTag -= 99.f;
-	FLOAT TestVal = *NetTag;
-	*NetTag += DeltaTime;
-	return TestVal;
-}
-
-inline UBOOL OwnedByAPlayer( const AActor* Test)
+static UBOOL OwnedByAPlayer( const AActor* Test)
 {
 	for ( ; Test ; Test=Test->Owner )
 		if ( Test->IsA(APlayerPawn::StaticClass()) && Cast<UNetConnection>(((APlayerPawn*)Test)->Player) )
@@ -580,41 +584,6 @@ MS_ALIGN(16) struct LineCheckHelper
 	{
 		ST_Traces++;
 	}
-
-/*	BYTE CheckTrans( INT iNode, FVector4* End, FVector4* Start, BYTE Outside )
-	{
-		if ( Depth >= 63 )
-			return 0;
-		FVector4 *Middle = &V[Depth++];
-		while( iNode != INDEX_NONE )
-		{
-			const FBspNode&	Node = (const FBspNode&)Nodes[iNode];
-			FLOAT Dist[2];
-			DoublePlaneDotU( &Node.Plane, Start, End, Dist);
-	//		BYTE  NotCsg = (Node.NodeFlags & NF_NotCsg) || (Node.NodeFlags & NF_NotVisBlocking);
-			BYTE  NotCsg = (Node.NodeFlags & 5) != 0; //No branch, no ops
-	//		INT   G1 = *(INT*)&Dist[0] >= 0;
-	//		INT   G2 = *(INT*)&Dist[1] >= 0;
-	//		if( G1!=G2 )
-			if ( (*(INT*)&Dist[0] ^ *(INT*)&Dist[1]) < 0 ) //Different sign check
-			{
-				*Middle = FLinePlaneIntersectDist( Start, End, Dist); //GCC may crash here
-				INT G2 = *(INT*)&Dist[1] >= 0;
-				if ( !CheckTrans(Node.iChild[G2],Middle,End,G2^((G2^Outside) & NotCsg)) )
-				{
-					Depth--;
-					return 0;
-				}
-				End = Middle;
-			}
-			NotCsg = (Node.NodeFlags & 1);
-			INT   G1 = *(INT*)&Dist[0] >= 0;
-			Outside = G1^((G1^Outside)&NotCsg);
-			iNode   = Node.iChild[G1];
-		}
-		Depth--;
-		return Outside;
-	}*/
 
 	BYTE CheckTransAlt( INT iNode, FVector4* End, FVector4* Start, BYTE Outside )
 	{
@@ -661,7 +630,8 @@ static UBOOL ActorIsRelevant( AActor* Actor, APlayerPawn* Player, AActor* Viewer
 		return 1;
 	if ( Actor->Owner )
 	{
-		if ( Actor->IsOwnedBy(Viewer) )
+		// Added extra conditions to prevent replicating items from view target
+		if ( Actor->IsOwnedBy(Viewer) && (Viewer == Player || !Actor->IsA(AInventory::StaticClass())) ) 
 			return 1;
 		if ( Actor->Owner->bIsPawn && ((APawn*)Actor->Owner)->Weapon == Actor )
 			return ActorIsRelevant( Actor->Owner, Player, Viewer, ViewPos, EndOffset);
@@ -682,6 +652,37 @@ static UBOOL ActorIsRelevant( AActor* Actor, APlayerPawn* Player, AActor* Viewer
 
 	return Helper->CheckTransAlt( 0, ViewPos, Helper->V, Viewer->XLevel->Model->RootOutside);
 }
+
+static UBOOL ActorIsNeverRelevant( AActor* Actor) //Helps discard a few dozens more actors
+{
+	if ( Actor->RemoteRole == ROLE_None )
+		return 1;
+	if ( Actor->bAlwaysRelevant || Actor->bRelevantIfOwnerIs || Actor->bRelevantToTeam || Actor->NetTag ) //NetTag tells us the actor has possibly been replicated!
+		return 0;
+	if ( Actor->IsA(APlayerPawn::StaticClass()) && ((APlayerPawn*)Actor)->Player )
+		return 0;
+	if ( Actor->bHidden && !Actor->Owner && !Actor->AmbientSound && !Actor->bBlockPlayers )
+		return 1;
+	return 0;
+}
+
+//Fix this if old relevancy was toggled
+//If True, actor is to be globally checked
+static FLOAT UpdateNetTag( AActor* Other, FLOAT DeltaTime)
+{
+	Other->NetTag &= 0x7FFFFFFF; //Become positive
+	FLOAT& NetTime = *(FLOAT*) &Other->NetTag;
+	FLOAT OldValue;
+	if ( NetTime > 99.f || appIsNan(NetTime) )
+		OldValue = NetTime = 0;
+	else
+	{
+		OldValue = NetTime;
+		NetTime += DeltaTime;
+	}
+	return OldValue;
+}
+
 
 //BROWSE IS CALLED TOWARDS LOCALMAPURL DURING INIT, WHICH THEN CALLS LOADMAP!
 UBOOL UXC_GameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo, FString& Error )
@@ -1306,7 +1307,10 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 
 	FRotator Rotation;				//O=36
 	FVector4 Location;				//O=48 (FVector4 has alignment=16)
-	AActor* Viewer;					//O=64
+	FVector4 ViewDir;				//O=64 (FVector4 has alignment=16)
+	AActor* Viewer;					//O=80
+	INT PriorityCount;				//O=84
+	INT Pad[2];
 
 	FConnectionRelevancyList( UNetConnection* InConn, FConnectionRelevancyList* InNext, INT InID)
 		:	Connection( (UXC_NetConnectionHack*)InConn)
@@ -1324,6 +1328,61 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		check(Viewer);
 	}
 	
+	void AddPriority( AActor* Actor, UActorChannel* Channel, UBOOL bOwned, UBOOL SuperRelevancyCondition=0, INT SuperRelevancyValue=0)
+	{
+		if ( bOwned )	PriorityArray[PriorityCount] = FActorPriority( EPri_Owned,   Location, ViewDir, Connection, Channel, Actor);
+		else			PriorityArray[PriorityCount] = FActorPriority( EPri_General, Location, ViewDir, Connection, Channel, Actor);
+		if ( SuperRelevancyCondition )
+			PriorityArray[PriorityCount].SuperRelevant = SuperRelevancyValue;
+		PriorityRefs[PriorityCount] = PriorityArray + PriorityCount;
+		PriorityCount++;
+	}
+
+	// Returns amount of Super Relevants
+	INT SortPriorities()
+	{
+		guard_win32(SortPriorities);
+
+		INT i;
+#if 0 && _WINDOWS
+		//Sorts first by super relevancy (3 blocks), then by priority within each block
+		Sort( PriorityRefs, PriorityCount);
+		for ( i=0 ; i<PriorityCount && PriorityRefs[i]->SuperRelevant>0 ; i++);
+		INT SuperRelevantCount = i;
+		for ( ; i<PriorityCount && PriorityRefs[i]->SuperRelevant==0 ; i++ );
+		PriorityCount = i; //Leave negative SuperRelevants out
+#else
+		//For some reason Sort template is broken in linux
+		INT SuperRelevantCount = 0;
+		for ( i=0 ; i<PriorityCount ; i++ )
+		{
+			if ( PriorityRefs[i]->SuperRelevant > 0 )
+				Exchange( PriorityRefs[i], PriorityRefs[SuperRelevantCount++]);
+			else if ( PriorityRefs[i]->SuperRelevant < 0 )
+				Exchange( PriorityRefs[i--], PriorityRefs[--PriorityCount]); //'i' needs to be checked again
+		}
+		const INT Bounds[3] = { 0, SuperRelevantCount, PriorityCount};
+		for ( INT Stage=1 ; Stage<ARRAY_COUNT(Bounds) ; Stage++ )
+		{
+			const INT Top = Bounds[Stage];
+			for ( i=Bounds[Stage-1] ; i<Top ; i++ ) //i=Base
+			{
+				INT Highest = i;
+				for ( INT j=i+1 ; j<Top ; j++ ) //j=Comparand
+					if ( PriorityRefs[Highest]->Priority < PriorityRefs[j]->Priority )
+						Highest = j;
+				if ( Highest != i )
+					Exchange( PriorityRefs[Highest], PriorityRefs[i]);
+			}
+		}
+#endif
+
+
+		return SuperRelevantCount;
+		unguard_win32;
+	}
+
+
 	void ReplicatePawn( UActorChannel* Channel)
 	{
 		guard(ReplicatePawn);
@@ -1332,11 +1391,21 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		*(INT*)&ModifyLocation = 0; //Kill a warning by setting bogus loc
 		//0x01 = Location (skip)
 		//0x02 = Location (force higher Z)
+		//
 		APawn* NewPawn = (APawn*)Channel->Actor;
 		if ( Channel->Recent.Num() )
 		{
 			APawn* OldPawn = (APawn*)Channel->Recent.GetData();
 			FLOAT Delta = Connection->Driver->Time - Channel->LastUpdateTime;
+
+			INT SkippedVelocity = 0;
+			if ( (appRound(NewPawn->Velocity.X) == appRound(OldPawn->Velocity.X))
+				&& (appRound(NewPawn->Velocity.Y) == appRound(OldPawn->Velocity.Y))
+				&& (appRound(NewPawn->Velocity.Z) == appRound(OldPawn->Velocity.Z)) )
+			{
+				OldPawn->Velocity = NewPawn->Velocity;
+				SkippedVelocity = 1;
+			}
 
 			//Pawn walked up, likely stairs
 			if ( (NewPawn->Physics == PHYS_Walking) && (NewPawn->Location.Z - OldPawn->Location.Z > 7.f) )
@@ -1350,9 +1419,7 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 			}
 			else if ( NewPawn->Physics == PHYS_None || NewPawn->Physics == PHYS_Rotating )
 			{}
-			else if ( (OldPawn->Velocity.SizeSquared() < KINDA_SMALL_NUMBER) && ((OldPawn->Location-NewPawn->Location).SizeSquared() > 0.1f) )
-			{}
-			else
+			else if ( SkippedVelocity ) //Only do this if we're sure the client has the correct velocity
 			{
 				ModifyLocation = OldPawn->Location + OldPawn->Velocity * Delta;
 				FVector ModifyDelta = NewPawn->Location - ModifyLocation;
@@ -1371,22 +1438,9 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 					RepFlags |= 0x01;
 					OldPawn->Location = NewPawn->Location;
 				}
-				
-				if ( (appRound(NewPawn->Velocity.X) == appRound(OldPawn->Velocity.X))
-					&& (appRound(NewPawn->Velocity.Y) == appRound(OldPawn->Velocity.Y))
-					&& (appRound(NewPawn->Velocity.Z) == appRound(OldPawn->Velocity.Z)) )
-				{
-					OldPawn->Velocity = NewPawn->Velocity;
-				}
-			}
+		
 
-			if ( ((OldPawn->Rotation.Pitch & 0xFF00) == (NewPawn->Rotation.Pitch & 0xFF00))
-				&& ((OldPawn->Rotation.Yaw & 0xFF00) == (NewPawn->Rotation.Yaw & 0xFF00))
-				&& ((OldPawn->Rotation.Roll & 0xFF00) == (NewPawn->Rotation.Roll & 0xFF00)) )
-			{
-					OldPawn->Rotation = NewPawn->Rotation;
 			}
-			
 			OldPawn->OldLocation.Z = OldPawn->ColLocation.Z;
 			OldPawn->ColLocation.Z = OldPawn->Location.Z;
 		}
@@ -1397,7 +1451,7 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		if ( !(RepFlags & 0x01) && NewPawn->Physics == PHYS_Walking )
 			ZTransform += 1.0f;
 		NewPawn->Location.Z += ZTransform;
-		ReplicateActor( Channel);
+		Channel->ReplicateActor();
 		NewPawn->Location.Z -= ZTransform;
 		if ( RepFlags & 0x01 )
 			((APawn*)Channel->Recent.GetData())->Location = ModifyLocation;
@@ -1408,16 +1462,22 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 	void ReplicateActor( UActorChannel* Channel)
 	{
 		AActor* Actor = Channel->Actor;
-		UClass* RemoteClass = Channel->ActorClass;
-		if ( RemoteClass != Actor->GetClass() ) //Custom rep rules!
+		if ( Channel->Recent.Num() ) //This forces a skip in rotation update if only the first byte changed
 		{
-			UClass** ClassAddr = ((UClass**)Actor) + 9; //Offset 36
-			Exchange( RemoteClass, ClassAddr[0]);
-			Channel->ReplicateActor();
-			Exchange( RemoteClass, ClassAddr[0]);
+			AActor* OldActor = (AActor*)Channel->Recent.GetData();
+			*(uint8*)&OldActor->Rotation.Pitch = *(uint8*)&Actor->Rotation.Pitch;
+			*(uint8*)&OldActor->Rotation.Yaw   = *(uint8*)&Actor->Rotation.Yaw;
+			*(uint8*)&OldActor->Rotation.Roll  = *(uint8*)&Actor->Rotation.Roll;
 		}
+		UClass*& ActorClass = *(UClass**)((BYTE*)Actor + 36);
+		UClass* RealClass = ActorClass;
+//		check_test( Channel->ActorClass);
+		ActorClass = Channel->ActorClass;
+		if ( Actor->bSimulatedPawn )
+			ReplicatePawn( Channel);
 		else
 			Channel->ReplicateActor();
+		ActorClass = RealClass;
 	}
 	
 	UClass* FindNetworkSuperClass( AActor* Actor) //Actor->bSuperClassRelevancy
@@ -1437,7 +1497,7 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 	void RelevancyLoop( FLOAT RealDelta, FLOAT MaxTickRate, INT ConnID)
 	{
 		guard_win32(RelevancyLoop);
-		INT ConsiderCount = 0;
+		PriorityCount = 0;
 
 
 		guard_win32(SetupTraceStart);
@@ -1483,29 +1543,24 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 
 				if ( !Channel && (i < BURST_OWNED_COUNT) ) //Force prioritization when bursting
 					bPrioritize = 1;
+				else if ( Actor->bAlwaysRelevant ) //Already passed general check time earlier
+				{
+					bPrioritize = !( Actor->CheckRecentChanges() && Channel && Channel->Recent.Num() && !Channel->Dirty.Num() && Actor->NoVariablesToReplicate( (AActor*) &Channel->Recent(0)) );
+					if ( !bPrioritize ) //bAlwaysRelevant actor skips an update
+						Channel->RelevantTime = Connection->Driver->Time;
+				}
 				else
 				{
-					if ( Actor->bAlwaysRelevant ) //Already passed general check time earlier
-					{
-						bPrioritize = !( Actor->CheckRecentChanges() && Channel && Channel->Recent.Num() && !Channel->Dirty.Num() && Actor->NoVariablesToReplicate( (AActor*) &Channel->Recent(0)) );
-						if ( !bPrioritize ) //bAlwaysRelevant actor skips an update
-							Channel->RelevantTime = Connection->Driver->Time;
-					}
-					else
-					{
-						FLOAT UF = Actor->UpdateFrequency( Viewer, Dir, Location);
-						bPrioritize = (UF >= MaxTickRate) || (appRound( (*(FLOAT*)&Actor->NetTag + OffsetFloat)*UF) != appRound( (*(FLOAT*)&Actor->NetTag + OffsetFloat - RealDelta)* UF));
-						//Owned actors shouln't spread updates, do not add to OffsetFloat
-					}
+					FLOAT UF = Actor->UpdateFrequency( Viewer, Dir, Location);
+					bPrioritize = (UF >= MaxTickRate) || (appRound( (*(FLOAT*)&Actor->NetTag + OffsetFloat)*UF) != appRound( (*(FLOAT*)&Actor->NetTag + OffsetFloat - RealDelta)* UF));
+					//Owned actors shouln't spread updates, do not add to OffsetFloat
 				}
 
 				if ( bPrioritize )
 				{
-					PriorityArray[ConsiderCount] = FActorPriority( EPri_Owned, Location, Dir, Connection, Channel, Actor);
-					PriorityRefs[ConsiderCount] = PriorityArray + ConsiderCount;
-					if ( bChannelsSaturated && (i >= BURST_OWNED_COUNT) && (PriorityArray[ConsiderCount].SuperRelevant == 1) && !Actor->bHidden && !Actor->Inventory && (Actor != Connection->Actor) )
-						PriorityArray[ConsiderCount].SuperRelevant = 0; //We can afford to lose visible owned actors above burst capacity
-					ConsiderCount++;
+					AddPriority( Actor, Channel, EPri_Owned);
+					if ( bChannelsSaturated && (i >= BURST_OWNED_COUNT) && (PriorityArray[PriorityCount-1].SuperRelevant == 1) && !Actor->bHidden && !Actor->Inventory && (Actor != Connection->Actor) )
+						PriorityArray[PriorityCount-1].SuperRelevant = 0; //We can afford to lose visible owned actors above burst capacity
 				}
 			}
 		}
@@ -1513,11 +1568,10 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 
 		//Spectator: artificially reduce tickrate to half when updating non-owned stuff
 		//Update owned stuff as usual, but update others at half the rate
-		UBOOL bSkipMainPri = false; //Do not prioritize, simply fix NetTag
+		UBOOL bSkipMainPri = 0; //Do not prioritize, simply fix NetTag
 		if ( (Connection->UserFlags&32) || (Connection->Actor->PlayerReplicationInfo && Connection->Actor->PlayerReplicationInfo->bIsSpectator) )
 		{
-			if ( (Connection->TickCount & 1) == 0 ) //This will prevent the general loop
-				bSkipMainPri = true;
+			bSkipMainPri = Connection->TickCount & 1; //This will prevent the general loop
 			RealDelta *= 2.f;
 			MaxTickRate *= 0.5f;
 		}
@@ -1540,20 +1594,17 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 					UBOOL SuperRelevancy = 1; //SuperRelevancy override
 					UActorChannel* Channel = AC->FindRef(Actor);
 
-					if (Actor->bRelevantIfOwnerIs) //Immediately close channel if owner isn't relevant
+					if ( Actor->bRelevantIfOwnerIs && (!Actor->Owner || !AC->FindRef(Actor->Owner)) ) //Immediately close channel if owner isn't relevant
 					{
-						if (!Actor->Owner || !AC->FindRef(Actor->Owner))
-						{
-							if (Channel)
-								Channel->Close();
-							continue;
-						}
+						if (Channel)
+							Channel->Close();
+						continue;
 					}
 
 					if (Actor->bRelevantToTeam) //Can be combined with above condition
 					{
 						APlayerReplicationInfo* PRI = Connection->Actor->PlayerReplicationInfo;
-						if (!PRI || PRI->bIsSpectator)
+						if ( !PRI || (PRI->bIsSpectator && !PRI->bWaitingPlayer) )
 							continue;
 						UByteProperty* TeamProperty = Cast<UByteProperty>(FindScriptVariable(Actor->GetClass(), TEXT("Team"), NULL));
 						SuperRelevancy = -1;
@@ -1571,13 +1622,7 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 							continue;
 					}
 
-					if (Actor->IsOwnedBy(Connection->Actor))
-						PriorityArray[ConsiderCount] = FActorPriority(EPri_Owned, Location, Dir, Connection, Channel, Actor);
-					else
-						PriorityArray[ConsiderCount] = FActorPriority(EPri_General, Location, Dir, Connection, Channel, Actor);
-					PriorityArray[ConsiderCount].SuperRelevant = SuperRelevancy;
-					PriorityRefs[ConsiderCount] = PriorityArray + ConsiderCount;
-					ConsiderCount++;
+					AddPriority( Actor, Channel, Actor->IsOwnedBy(Connection->Actor), true, SuperRelevancy);
 				}
 			}
 		}
@@ -1606,14 +1651,8 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 						OffsetFloat += 0.023f;
 					}
 	
-					if ( bPrioritize )
-					{
-						PriorityArray[ConsiderCount] = FActorPriority( EPri_General, Location, Dir, Connection, Channel, Actor);
-						PriorityRefs[ConsiderCount] = PriorityArray + ConsiderCount;
-						if ( bChannelsSaturated && !Actor->bHidden && (Actor != Connection->Actor) )
-							PriorityArray[ConsiderCount].SuperRelevant = 0; //We can afford to lose visible actors
-						ConsiderCount++;
-					}
+					if ( bPrioritize ) //In case of saturation, visible actors can be lost
+						AddPriority( Actor, Channel, 0, bChannelsSaturated && !Actor->bHidden && (Actor != Connection->Actor), 0);
 				}
 			}
 			//Reached owner list, bypass it
@@ -1630,42 +1669,10 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		for ( i=0 ; i<ST->Num() ; i++ )
 			(*ST)(i)->NetTag &= 0x7FFFFFFF;
 		
-		INT SuperRelevantCount = 0;
-
-		guard_win32(SortPriorities);
-
-		//Sort by SuperRelevancy (2 blocks)
-		{
-			i=0;
-			while ( i<ConsiderCount && (PriorityRefs[i]->SuperRelevant > 0) ) //Find first non-Super, use as buffer
-				i++;
-			SuperRelevantCount = i++;
-			for ( ; i<ConsiderCount ; i++ ) //Arrange all other SuperRelevants into first block
-				if ( PriorityRefs[i]->SuperRelevant > 0 )
-					Exchange( PriorityRefs[i], PriorityRefs[SuperRelevantCount++] );
-			for ( i=SuperRelevantCount ; i<ConsiderCount ; i++ ) //Arrange discarded actors last and leave them out
-				if ( (PriorityRefs[i]->SuperRelevant < 0) && !PriorityRefs[i]->Channel )
-					Exchange(PriorityRefs[i--], PriorityRefs[--ConsiderCount]);
-		}
-
-		//Sort by priority on each SuperRelevancy block
-		INT HighBounds[2] = { SuperRelevantCount, ConsiderCount };
-		INT LowBounds[2] = { 1, SuperRelevantCount+1 };
-//		PriorityRefs = PriorityRefs_New;
-		for ( INT j=0 ; j<2 ; j++ )
-			for ( i=LowBounds[j] ; i<HighBounds[j] ; i++ ) //2 bound sets, one for each block
-			{
-				FActorPriority* CurPri = PriorityRefs[i]; //Buffered 'Current Priority being evaluated'
-				INT k;
-				for ( k=i ; (k>=LowBounds[j]) && (CurPri->Priority > PriorityRefs[k-1]->Priority) ; k-- ) //Find where 'Current' goes
-					PriorityRefs[k] = PriorityRefs[k-1]; //Push elements up without swapping (faster!)
-				PriorityRefs[k] = CurPri;
-			}
-		unguard_win32;
-
 		//Too many super relevants, discard less
-		if ( ConsiderCount - DiscardCount < SuperRelevantCount )
-			DiscardCount = ConsiderCount - SuperRelevantCount;
+		INT SuperRelevantCount = SortPriorities();
+		if ( PriorityCount - DiscardCount < SuperRelevantCount )
+			DiscardCount = PriorityCount - SuperRelevantCount;
 
 		UNetDriver* NetDriver = Connection->Driver;
 		
@@ -1676,9 +1683,9 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 			INT FrameRate = Clamp( appRound(MaxTickRate) >> 2, 5, 50);
 			if ( Connection->TickCount % FrameRate == 0 )
 			{
-				if ( PriorityRefs[ConsiderCount-1]->Channel )
-					PriorityRefs[ConsiderCount-1]->Channel->Close();
-				ConsiderCount--;
+				if ( PriorityRefs[PriorityCount-1]->Channel )
+					PriorityRefs[PriorityCount-1]->Channel->Close();
+				PriorityCount--;
 			}
 			unguard_win32;
 		}
@@ -1691,7 +1698,7 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		EndOffset.Z *= 0.95;
 
 		guard_win32(Relevancy);
-		for ( i=0 ; i<ConsiderCount ; i++ )
+		for ( i=0 ; i<PriorityCount ; i++ )
 		{
 			UActorChannel* Channel = PriorityRefs[i]->Channel;
 			if ( !Channel && ChannelCount > 1022 ) //We don't need to perform a check if the list is saturated
@@ -1736,14 +1743,10 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 					if ( !Connection->IsNetReady(0) )
 						break;
 					if( IsRelevant )
-						Channel->RelevantTime = NetDriver->Time + 0.1 + appFrand();
+						Channel->RelevantTime = NetDriver->Time + (0.1f + appFrand());
 					if( Channel->IsNetReady(0) )
 					{
-						//Hack for simulated pawns, reduces bandwidth
-						if ( Actor->bSimulatedPawn )
-							ReplicatePawn( Channel);
-						else
-							ReplicateActor( Channel);
+						ReplicateActor( Channel);
 						Updated++;
 					}
 					if ( !Connection->IsNetReady(0) )
@@ -1756,13 +1759,13 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 		}
 
 		//Saturation flag
-		if ( i < ConsiderCount )
+		if ( i < PriorityCount )
 			Connection->UserFlags |= 32;
 		else
 			Connection->UserFlags &= ~32;
 		
 		//Make sure channels don't go past RelevantTimeout if they don't have to during saturation
-		for ( ; i<ConsiderCount ; i++ )
+		for ( ; i<PriorityCount ; i++ )
 		{
 			UActorChannel* Channel = PriorityRefs[i]->Channel;
 			if ( Channel && (NetDriver->Time-Channel->RelevantTime < NetDriver->RelevantTimeout - 1.1f) )
@@ -1779,7 +1782,7 @@ MS_ALIGN(16) struct FConnectionRelevancyList
 			}
 		}
 		
-		unguardf_win32( (TEXT("[%i/%i] %s"), i, ConsiderCount, PriorityRefs[i]->Actor->GetName() ));
+		unguardf_win32( (TEXT("[%i/%i] %s"), i, PriorityCount, PriorityRefs[i]->Actor->GetName() ));
 	
 		
 		unguard_win32;
@@ -1846,7 +1849,8 @@ INT UXC_Level::ServerTickClients( FLOAT DeltaSeconds )
 	for( i=iFirstNetRelevantActor; i<Actors.Num(); i++ ) //Consider all actors for now
 	{
 		AActor* Actor = Actors(i);
-		if ( Actor && Actor->RemoteRole != ROLE_None )
+
+		if ( Actor && !ActorIsNeverRelevant(Actor) ) //Discards more than ROLE_None check
 		{
 			//NetTag rules: always positive, between 0 and 99 (up to 120)
 			FLOAT OldTime = UpdateNetTag( Actor, DeltaSeconds);
@@ -2015,16 +2019,16 @@ static UBOOL RemoveParam( FString& Str, FString& Parsed, const TCHAR* ParamName)
 	unguard;
 }
 
-static TCHAR HelloText[]	= { 'H', 'E', 'L', 'L', 'O', 0 };
-static TCHAR JoinText[]		= { 'J', 'O', 'I', 'N', 0 };
-static TCHAR LoginText[]	= { 'L', 'O', 'G', 'I', 'N', 0 };
-static TCHAR UserFlagText[]	= { 'U', 'S', 'E', 'R', 'F', 'L', 'A', 'G', 0 }; //Do not userflag pre-join
-static TCHAR HaveText[]		= { 'H', 'A', 'V', 'E', 0 };
-static TCHAR SkipText[]		= { 'S', 'K', 'I', 'P', 0 };
-static TCHAR NetspeedText[]	= { 'N', 'E', 'T', 'S', 'P', 'E', 'E', 'D', 0 };
+static const TCHAR HelloText[]	= { 'H', 'E', 'L', 'L', 'O', 0 };
+static const TCHAR JoinText[]		= { 'J', 'O', 'I', 'N', 0 };
+static const TCHAR LoginText[]	= { 'L', 'O', 'G', 'I', 'N', 0 };
+static const TCHAR UserFlagText[]	= { 'U', 'S', 'E', 'R', 'F', 'L', 'A', 'G', 0 }; //Do not userflag pre-join
+static const TCHAR HaveText[]		= { 'H', 'A', 'V', 'E', 0 };
+static const TCHAR SkipText[]		= { 'S', 'K', 'I', 'P', 0 };
+static const TCHAR NetspeedText[]	= { 'N', 'E', 'T', 'S', 'P', 'E', 'E', 'D', 0 };
 
-static TCHAR* ValidClientCommands[] = { UserFlagText, NetspeedText };
-static TCHAR* ValidJoinCommands[] = { HelloText, JoinText, LoginText, HaveText, SkipText, NetspeedText};
+static const TCHAR* ValidClientCommands[] = { UserFlagText, NetspeedText };
+static const TCHAR* ValidJoinCommands[] = { HelloText, JoinText, LoginText, HaveText, SkipText, NetspeedText};
 
 void UXC_Level::NotifyReceivedText(UNetConnection* Connection, const TCHAR* Text)
 {

@@ -1,0 +1,35 @@
+===============================================
+Exposed properties for existing native classes
+===============================================
+
+Additional properties are now visible on certain native classes and their subclasses.
+These increase the potential functionality of servers and clients running mods coded
+to access them via GetPropertyText() or GET commands.
+
+Warning: compiling and saving code accessing these properties without the above
+methods will render your package unusable!
+
+See "Relevancy loop.txt" for extra properties in Actor.
+
+====================
+ List of properties:
+
+= CLASS           -> CPP_PropertyName       -> UScript_PropertyName     (type)                       (flags)
+
+- GameEngine      -> GLevel                 -> Level                    (obj Level)                  (const, editconst)
+- GameEngine      -> GEntry                 -> Entry                    (obj Level)                  (const, editconst)
+- DemoRecDriver   -> DemoFileName           -> DemoFileName             (string)                     (const, editconst)
+- LevelBase       -> NetDriver              -> NetDriver                (obj NetDriver)              (const, editconst)
+- LevelBase       -> DemoRecDriver          -> DemoRecDriver            (obj NetDriver)              (const, editconst)
+- LevelBase       -> Engine                 -> Engine                   (obj Engine)                 (const, editconst)
+- LevelBase       -> URL.Protocol           -> URL_Protocol             (string)                     (const, editconst)
+- LevelBase       -> URL.Host               -> URL_Host                 (string)                     (const, editconst)
+- LevelBase       -> URL.Port               -> URL_Port                 (int)                        (const, editconst)
+- LevelBase       -> URL.Map                -> URL_Map                  (string)                     (const, editconst)
+- LevelBase       -> URL.Op                 -> URL_Options              (array<string>)              (const, editconst)
+- LevelBase       -> URL.Portal             -> URL_Portal               (string)                     (const, editconst)
+- LevelBase       -> Actors.Num()           -> ActorListSize            (int)                        (const, editconst)
+- Level           -> iFirstDynamicActor     -> iFirstDynamicActor       (int)                        (const, editconst)
+- Level           -> iFirstNetRelevantActor -> iFirstNetRelevantActor   (int)                        (const, editconst)
+- NetDriver       -> ClientConnections      -> ClientConnections        (array<obj NetConnection>)   (const, editconst)
+- NetDriver       -> ServerConnection       -> ServerConnection         (obj NetConnection)          (const, editconst)

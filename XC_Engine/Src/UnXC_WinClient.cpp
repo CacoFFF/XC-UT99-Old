@@ -32,30 +32,43 @@ class DLL_EXPORT WWindowsViewportWindow_Hack : public WWindow
 		//Disassembler marked it as X, next as Y... is it mouse coordinates?
 		uint32 CaptureSwitch = *(uint32*)(((uint8*)Viewport) + 0x1C0);
 		bool IsCaptured = CaptureSwitch != 0xFFFFFFFF;
-		if ( IsCaptured )
-		{
-			if ( Message == WM_INPUT ) //Process raw input
-			{
-				static RAWINPUT raw;
-				uint32 dwSize = sizeof(raw);
 
-				GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, (unsigned int*)&dwSize, sizeof(RAWINPUTHEADER));
-				if ( raw.header.dwType == RIM_TYPEMOUSE )
+		//Raw input capture ignores normal mouse movement
+		if ( IsCaptured && (Message == WM_MOUSEMOVE) )
+			return 0;
+
+		//Raw input message
+		if ( Message == WM_INPUT )
+		{
+			static RAWINPUT raw;
+			uint32 dwSize = sizeof(raw);
+
+			GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, (unsigned int*)&dwSize, sizeof(RAWINPUTHEADER));
+			if ( raw.header.dwType == RIM_TYPEMOUSE )
+			{
+				if ( IsCaptured )
 				{
-//					debugf( TEXT("RAW CAPTURE: %i, %i, %i"), raw.data.mouse.ulRawButtons, raw.data.mouse.lLastX, raw.data.mouse.lLastY);
 					GEngine->MouseDelta( Viewport, raw.data.mouse.ulRawButtons, raw.data.mouse.lLastX, -raw.data.mouse.lLastY);
 					if ( raw.data.mouse.lLastX )
 						GEngine->InputEvent( Viewport, IK_MouseX, IST_Axis, raw.data.mouse.lLastX);
 					if ( raw.data.mouse.lLastY )
 						GEngine->InputEvent( Viewport, IK_MouseY, IST_Axis, -raw.data.mouse.lLastY);
 				}
-
+				if ( raw.data.mouse.ulButtons )
+				{
+					if ( raw.data.mouse.ulButtons & 64 ) //Back button press
+						GEngine->InputEvent( Viewport, IK_Unknown05, IST_Press);
+					if ( raw.data.mouse.ulButtons & 128 ) //Back button release
+						GEngine->InputEvent( Viewport, IK_Unknown05, IST_Release);
+					if ( raw.data.mouse.ulButtons & 256 ) //Forward button press
+						GEngine->InputEvent( Viewport, IK_Unknown06, IST_Press);
+					if ( raw.data.mouse.ulButtons & 512 ) //Forward button release
+						GEngine->InputEvent( Viewport, IK_Unknown06, IST_Release);
+				}
 			}
-			else if ( Message == WM_MOUSEMOVE ) //Discard normal mouse input
-			{
-				return 0;
-			}
+			return 1;
 		}
+
 		//Normal code path
 		return (Viewport->*hViewportWndProc)( Message, wParam, lParam );
 	}

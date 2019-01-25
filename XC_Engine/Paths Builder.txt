@@ -1,0 +1,71 @@
+==================================================
+New Path Builder and visualizer for Unreal Editor
+==================================================
+
+The new Paths Builder has been rewritten from scratch to address limitations in the original pathing code 
+and to produce paths using a more predictable, simple behaviour.
+
+It will be available through a button on the brush builders' panel.
+
+===========
+ Rendering:
+
+Upon loading XC_Core, Unreal Editor's ReachSpec rendering will be modified to display inbound and outbound
+paths separately with an arrow head indicating their direction.
+
+Additionally the ReachSpecs will be color coded as following:
+- WALK/SWIM >> GREEN
+- JUMP      >> YELLOW
+- AIR       >> RED
+- BLUE      >> SPECIAL
+
+
+==================
+ Building process:
+
+Every pair of Navigation Points are sorted by distance prior to creation of ReachSpecs.
+Then said ReachSpecs will be created by said order of distance between it's ends.
+The main purpose of this is to completely eliminate the old "Paths Prune" process which becomes erratic
+after the paths list (16) fills in areas full of Navigation Points.
+Since all short paths are built first, it becomes easier to see if a long path already has a set of
+short routes connecting them which makes discarding the long path a lot easier.
+
+The new criteria to discard routes is more aggresive at shorter distances which prevents
+overcrowding of reachspecs in places full of Navigation Points (ex: areas full of items).
+The theoretical maximum distance is 2000, but it may be lower in specific areas/routes.
+
+
+====================
+ Special ReachSpecs:
+
+An additional rule to the Paths Builder has been added.
+Just like a Trigger uses Event >> Tag to send signals to Actors in the game, the Paths Builder will
+Attempt to create a one-way 'special' ReachSpec from points with Event to points with matching Tag.
+
+Logic:
+B.Tag = 'Destination'
+A.Event = 'Destination'
+R_SPECIAL ReachSpec created with Start=A, End=B, Distance=500 (same type as Teleporters, Lift paths)
+
+
+=========
+ Markers:
+
+As usual, markers will be spawned for Inventory and Warp zones with the difference that if a marker
+is unhidden from Unreal Editor, it will not be deleted/respawned when the new Path Builder is run.
+
+Placement of markers considers the smaller collision size of a UT player and uses additional placement
+methods when the marker doesn't initially fit in the item's spot.
+Said methods consist on a walk simulation from another nearby Navigation Point.
+
+
+=====================
+ Reachability checks:
+
+The builder runs additional reachability checks in case of failure, these reachability checks
+allow the builder to jump over multiple obstacles and ledges.
+
+If Navigation Points still fail to connect when on ramps or stairs, consider moving the node closer to
+the ground or using Event >> Tag linking.
+
+

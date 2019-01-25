@@ -5,6 +5,7 @@ S3TC tools in Unreal Editor
 Starting with version 22, XC_Engine attaches a few new commands to the texture properties window.
 These commands are present in the form of BOOL properties under Actions tab.
 
+*Note: You must load XC_Engine into editor for this feature to be available.
 
 =======================================
 A lesson in dual formatted UT textures:

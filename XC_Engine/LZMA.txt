@@ -1,0 +1,27 @@
+==========================
+LZMA in Unreal Tournament:
+==========================
+
+=====================
+ Package downloading:
+
+Clients can query redirects and UT [XC] servers for LZMA files.
+Servers can send the compressed package if the LZMA (or UZ) file is on the
+same directory as the package.
+
+It is possible to enable automatic LZMA compression on a XC_Engine server.
+As soon as a server loads a map, it'll automatically compress the files that
+are eligible to be sent to clients.
+See: "XC_GameEngine settings" in documentation.
+
+
+=========================
+ Compression commandlets:
+
+You can LZMA compress files using a XC_Core commandlet:
+> UCC LZMACompress ..\Maps\CTF-Coret.unr
+
+You can LZMA decompress files using 7zip, WinRar or:
+> UCC LZMADecompress ..\Maps\CTF-Coret.unr.lzma
+
+Both commandlets support wildcards.

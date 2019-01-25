@@ -49,6 +49,10 @@ event XC_Init()
 	//	ReplaceFunction( class'TeamGamePlus', class'XC_Engine_TGP', 'AddToTeam', 'AddToTeam'); LINUX CRASH, SEE FURTHER DETAILS IN THIS FUNCTION
 	}
 
+	//****
+	//Pawn
+	ReplaceFunction( class'Pawn', class'XC_Engine_ScriptedPawn', 'PickTarget', 'Pawn_PickTarget');
+	
 	//****************
 	//TournamentPlayer
 	ReplaceFunction( class'TournamentPlayer', class'XC_Engine_TournamentPlayer', 'Summon', 'Summon');

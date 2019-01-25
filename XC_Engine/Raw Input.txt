@@ -1,0 +1,34 @@
+===================================
+Raw Mouse input in Windows clients
+===================================
+
+Unreal Tournament clients can now get Windows to provide the game with
+raw input messages for processing.
+
+In order to enable this you must go to preferences and the new XC_Engine
+tab and tick the Raw Input checkbox.
+You must restart Unreal Tournament for these changes to go into effect.
+
+
+===============
+ Mouse capture:
+
+Mouse capture has not been altered and the game still uses the old code.
+What XC_Engine does is simply detect when mouse is captured and instead
+override all default mouse movement messages sent by the operating system.
+
+
+========================
+ Additional keybindings:
+
+When Raw Input is enabled, the game can detect the MouseX1 and MouseX2
+buttons (Back/Forward) and map them to their corresponding key bindings:
+- Unknown05 (0x05 - MouseX1 - Back)
+- Unknown06 (0x06 - MouseX2 - Forward)
+
+In the preferences' window's keybinder these two keys will be displayed
+with their corresponding MouseX1, MouseX2 names.
+
+Additionally, these buttons are detected whether mouse is captured or not,
+which allows it's usage when the game is in windowed + menu mode.
+** Note: This may cause detection even when the game window is out of focus!

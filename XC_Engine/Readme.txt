@@ -43,51 +43,39 @@ Collision Grid replacing the old hash, loaded from CollisionGrid (.dll/.so)
 Cleaner map switch by nulling out potentially dangerous actor references to the main level.
 Lower memory usage and faster map cleanup on long games by recycling actor names.
 Log file size reduction by grouping log spam and displaying how much log messages repeat.
+UnrealScript patcher for servers and offline play, allows replacement of code in runtime.
 
 - Server
 Moving Brush Tracker in Dedicated servers (movers block visibility checks), specific maps can be ignored.
-Various exploits patched, see "Server exploits.txt" for more info.
-New Relevancy loop code, see "Relevancy loop.txt" for more info.
-Enhanced coop/SP games in online play, see "TravelManager.txt" for more info.
-Ability to send maps marked as 'no download'.
-LZMA autocompressor can be run on a separate thread as soon as a map is loaded.
-(Experimental) Sliding player bug workaround by reordering the package order, putting textures last.
-
-- Server / Player ** these are selectively disabled upon joining a server **
-Runtime UnrealScript/Native function replacer plus existing premade replacements (bugfixes, optimizations).
-Big collection of new native functions to use, check the UnrealScript source for documentation.
-XC_Core natives have their numbered opcodes enabled for use without package dependancy.
-Thread safe memory allocator (if not running XC_Launcher)
+See "Server Exploits" for a list of patched exploits.
+See "Relevancy loop" for changes in relevancy netcode.
+See "TravelManager" for info on coop server enhancements.
+Ability to send maps marked as 'no download' (Unreal SP content for example).
+Sliding player bug workaround for clients with S3TC textures.
 
 - Linux
 Server/Client communication no longer borks strings with non-standard characters.
 Added SIGSEGV and SIGIOT handlers, crash logs display the call history almost like windows UT.
 
-- Editor:
-Enhanced navigation network builder, see "XC_PathBuilder.txt" for more info.
-New Unreal Editor addons added to the brush builder pane.
-
 - Client / Player:
-Built-in framerate limiter, see "Framerate limiter.txt" for more info.
 Ingame cache converter, see "AutoCacheConverter.txt" for more info.
 Prevents servers from using 'Open' and 'ClientTravel' commands to open local files on the client.
 Clients no longer send options 'Game' and 'Mutator' in their login string.
 In most cases of package mismatch when joining, clients will load/download from other sources instead of failing to connect.
 More info displayed during file download: amount of files, data pending installation.
-Raw mouse input support, see your Preferences window.
 
 
-=================
-XC_IpDrv
-Enhanced Net Driver and file downloaders.
-=================
-Net Driver:
-- ICMP unreachable exploit patched.
-- Connection limit, kills dataless connections.
-- Better memory usage (and one less exploit from it).
-
-HTTP LZMA file downloader.
-- (Experimental) Can connect to redirects via proxy.
+====================
+Other documentation:
+====================
+- LZMA
+- Editor
+- S3TC in Editor
+- Paths Builder
+- Raw Input
+- Framerate limiter
+- Object properties
+- Self Dynamic Loading
 
 
 ================
@@ -132,30 +120,6 @@ Values other than 1 (or approximate) indicate that XC_Engine is the one responsi
 for keeping your game running at normal speed.
 
 
-===================
-Exposed properties:
-===================
-Additional properties are now visible on certain native classes and their subclasses, these increase the potential functionality of servers and clients running mods coded to access them via GetPropertyText() or GET commands.
-See "Relevancy loop.txt" for extra properties in Actor.
-= CLASS -> CPP_PropertyName -> UScript_PropertyName (type) (flags)
-
-- GameEngine		-> GLevel		-> Level   (Level)   (const, editconst)
-- GameEngine		-> GEntry		-> Entry   (Level)   (const, editconst)
-- DemoRecDriver		-> DemoFileName		-> DemoFileName   (string)   (const, editconst)
-- LevelBase		-> NetDriver		-> NetDriver   (obj NetDriver)   (const, editconst)
-- LevelBase		-> DemoRecDriver	-> DemoRecDriver   (obj NetDriver)   (const, editconst)
-- LevelBase		-> Engine		-> Engine   (obj Engine)   (const, editconst)
-- LevelBase		-> URL.Protocol		-> URL_Protocol   (string)   (const, editconst)
-- LevelBase		-> URL.Host		-> URL_Host   (string)   (const, editconst)
-- LevelBase		-> URL.Port		-> URL_Port   (int)   (const, editconst)
-- LevelBase		-> URL.Map		-> URL_Map   (string)   (const, editconst)
-- LevelBase		-> URL.Op		-> URL_Options   (array<string>)   (const, editconst)
-- LevelBase		-> URL.Portal		-> URL_Portal   (string)   (const, editconst)
-- LevelBase		-> Actors.Num()		-> ActorListSize   (int)   (const, editconst)
-- Level			-> iFirstDynamicActor	-> iFirstDynamicActor   (int)   (const, editconst)
-- Level			-> iFirstNetRelevantActor -> iFirstNetRelevantActor   (int)   (const, editconst)
-- NetDriver		-> ClientConnections	-> ClientConnections   (array<obj NetConnection>)   (const, editconst)
-- NetDriver		-> ServerConnection	-> ServerConnection   (obj NetConnection)   (const, editconst)
 
 ====================================
 Functions patched/hooked in runtime:

@@ -4,6 +4,54 @@ class XC_Engine_ScriptedPawn expands ScriptedPawn
 native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI);
 native(3541) final iterator function NavigationActors( class<NavigationPoint> NavClass, out NavigationPoint P, optional float Distance, optional vector VOrigin, optional bool bVisible);
 
+function Pawn Pawn_PickTarget(out float bestAim, out float bestDist, vector FireDir, vector projStart)
+{
+	local Pawn P, Best;
+	local vector Delta;
+	local float Aim, Dist;
+	
+	ForEach PawnActors( class'Pawn', P, 2000, projStart)
+	{
+		if ( (P != self) && (P.Health > 0) && P.bProjTarget )
+		{
+			if ( (PlayerReplicationInfo == None)
+				|| (P.PlayerReplicationInfo == None)
+				|| (Level.Game.bTeamGame && PlayerReplicationInfo.Team != P.PlayerReplicationInfo.Team) )
+			{
+				//Additional reject for players
+				if ( bIsPlayer && (PlayerReplicationInfo != None) )
+				{
+					if ( ScriptedPawn(P) != None )
+					{
+						if ( ScriptedPawn(P).AttitudeToPlayer == ATTITUDE_Friendly )
+							continue;
+					}
+					else if ( StationaryPawn(P) != None )
+					{
+						if ( StationaryPawn(P).SameTeamAs(PlayerReplicationInfo.Team) )
+							continue;
+					}
+				}
+				Delta = P.Location - projStart;
+				Aim = Delta dot FireDir;
+				if ( Aim > 0 )
+				{
+					Dist = VSize(Delta);
+					Aim /= Dist;
+					if ( (Aim > bestAim) && LineOfSightTo(P) )
+					{
+						Best = P;
+						bestAim = Aim;
+						bestDist = Dist;
+					}
+				}
+				
+			}
+		}
+	}
+	return Best;
+}
+
 function Gasbag_PlayRangedAttack()
 {
 	local vector adjust;

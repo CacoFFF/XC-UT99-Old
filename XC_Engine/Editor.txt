@@ -1,0 +1,49 @@
+=========================
+Addons for Unreal Editor
+=========================
+
+By loading XC_EditorAdds in Unreal Editor via 'EditPackages' new buttons will
+appear on the Brush Builder panel.
+
+These addons consist on
+- Paths Builder (see "Paths Builder" documentation)
+- Level cleanup
+- Brush To Mesh
+- Measure Distance
+- Properties Window
+
+
+==============
+ Manual setup:
+
+Add the new EditPackages line in UnrealTournament.ini under:
+[Editor.EditorEngine]
+...
+EditPackages=XC_EditorAdds
+
+
+========
+ Addons:
+
+- Level cleanup:
+Compacts the actor list and removes texture information from brush faces that
+don't currently have an existing surface in the map's BSP construction.
+This is very useful to get rid of unused textures that remain referenced by
+hidden/non-built faces from brushes.
+
+- Brush To Mesh:
+Converts the selected brush into a mesh and spawns an actor at the brush's location.
+The user must specify a unique mesh name.
+Additionally texture tiling can be simulated by splitting the mesh into smaller faces.
+Default actor class is Unreali.Knife
+Default package is MyLevel (embedded into map).
+*Note: The mesh shouldn't have more than 7 unique textures
+
+- Measure Distance:
+Compares distance between two selected actors.
+Compares distance between one selected actor and it's nearest camera.
+
+- Properties Window:
+Opens up a fixed property window on the selected actor, this one doesn't change when
+selecting another actor.
+Also, the 'None' tab displays the hidden properties.

@@ -5,13 +5,13 @@ These are a few samples of XC_GameEngine settings.
 - Use the map sorting functions if you need to fix your mapvote.
 - Copy ServerPackages and ServerActors from your Engine.GameEngine block
 - bFasterUpload (def=true) should be set to False if your server has a 100% working redirect.
-- On slow computers, disable the collision octree: bCollisionHashHook=False
 
 
 Client:
 [XC_Engine.XC_GameEngine]
 bCacheConvertAtJoin=True
 bFasterUpload=True
+bUseRawInput=True
 ;ServerPackages=
 ;ServerActors=
 
@@ -64,3 +64,4 @@ bScriptDebug=False	(Displays script callstack on crash logs)
 ClientFrameRateLimit=0  (Engine frame rate limiter for clients)
 bInterceptMalloc=True   (Add thread-safe layer to malloc)
 bInterceptLog=True      (Add thread-safe layer to log, filters log spam by grouping lines together)
+bUseRawInput=False      (UT clients use raw mouse input)
