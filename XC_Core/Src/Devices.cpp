@@ -144,16 +144,16 @@ FLogLine::FLogLine( EName InEvent, const TCHAR* InData)
 FOutputDeviceInterceptor::FOutputDeviceInterceptor( FOutputDevice* InNext)
 	:	Next( InNext )
 	,	CriticalOut(NULL)
+	,	ProcessLock(0)
 	,	SerializeLock(0)
 	,	Repeater(NAME_Log)
-	,	CriticalSet(0)
+	,	MultiLineCount(0)
+	,	MultiLineCur(0)
 {
-	ClearRepeater();
 }
 
 FOutputDeviceInterceptor::~FOutputDeviceInterceptor()
 {
-	CriticalSet = true;
 	if ( CriticalOut )
 	{
 		DestructOutputDevice( CriticalOut);
@@ -161,6 +161,7 @@ FOutputDeviceInterceptor::~FOutputDeviceInterceptor()
 	}
 	if ( Next )
 		delete Next;
+	ProcessLock = 0;
 }
 
 void FOutputDeviceInterceptor::SetRepeaterText( TCHAR* Text)
@@ -186,11 +187,10 @@ void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 {
 	CSpinLock Lock(&ProcessLock);
 	UBOOL bDoLog = true;
-	if ( GIsCriticalError && !CriticalSet ) //Flush all saved lines if we're printing a crash log
-	{
+
+	//Flush all saved lines if we're printing a crash log
+	if ( GIsCriticalError )
 		FlushRepeater();
-		CriticalSet = true;
-	}
 
 	if ( Line.Event == NAME_Critical )
 	{
@@ -213,33 +213,29 @@ void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 	}
 	else
 	{
-		if ( RepeatCount == 0 ) //Try to setup repeater
+		//Attempt to setup repeater
+		if ( !MultiLineCount && !GIsCriticalError )
 		{
-			for ( INT i=0 ; i<OLD_LINES ; i++ )
-			{
-				DWORD Idx = (CurCmp-i) % OLD_LINES;
-				if ( MessageBuffer[Idx] == Line )
+			for ( INT i=0 ; i<MessageHistory.Num() && bDoLog ; i++ )
+				if ( MessageHistory(i) == Line ) //Found a match!
 				{
+					RepeatCount = 1;
+					MultiLineCur = MultiLineCount = (DWORD)i + 1;
 					bDoLog = false;
-					StartCmp = Idx;
-					LastCmp = StartCmp+(i!=0); //Multi line comparison means we checked first line
-					RepeatCount = 1+(i==0); //Single line comparison already means a full repetition
-					break;
 				}
-			}
 		}
-		else //Repeater already up
+		
+		//Repeater exists
+		if ( MultiLineCount )
 		{
-			if ( MessageBuffer[LastCmp] == Line )
+			if ( !bDoLog || MessageHistory(MultiLineCur-1) == Line ) //Matches
 			{
 				bDoLog = false;
-				if ( LastCmp == CurCmp )
+				if ( --MultiLineCur == 0 ) //All lines match, increment repeater
 				{
-					LastCmp = StartCmp;
 					RepeatCount++;
+					MultiLineCur = MultiLineCount;
 				}
-				else
-					LastCmp = (LastCmp + 1) % OLD_LINES;
 			}
 			else
 				FlushRepeater();
@@ -249,44 +245,53 @@ void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 	if ( bDoLog )
 	{
 		SerializeNext( *Line.Msg, Line.Event);
-		CurCmp = (CurCmp + 1) % OLD_LINES;
-		appMemswap( &MessageBuffer[CurCmp], &Line, sizeof(FLogLine)); //Destroy old message and keep 'line' in buffer
-//		MessageBuffer[CurCmp] = Line;
+		MessageHistory.InsertZeroed( 0);
+		appMemswap( &MessageHistory(0), &Line, sizeof(FLogLine)); //Destroy old message and keep 'line' in buffer (NO REALLOCS!)
 	}
+
+	if ( MessageHistory.Num() > OLD_LINES )
+		MessageHistory.Remove( OLD_LINES, MessageHistory.Num()-OLD_LINES);
 }
 
 void FOutputDeviceInterceptor::FlushRepeater()
 {
-	if ( RepeatCount == 0 )
-		return;
 	if ( RepeatCount > 1 )
 	{
 		TCHAR Ch[128];
-		if ( CurCmp == StartCmp ) //One line
+		if ( MultiLineCount <= 1 ) //One line
 			appSprintf( Ch, TEXT("=== Last line repeats %i times."), RepeatCount);
-		else
-			appSprintf( Ch, TEXT("=== Last %i lines repeat %i times."), (CurCmp-StartCmp)%OLD_LINES + 1, RepeatCount);
+		else //More than one line
+			appSprintf( Ch, TEXT("=== Last %i lines repeat %i times."), MultiLineCount, RepeatCount);
 		SerializeNext( Ch, Repeater);
-	
-		if ( StartCmp != CurCmp ) //Multi-line, there may be lines that didn't fully complete a repetition cycle, post them
-			while ( LastCmp != StartCmp )
-			{
-				SerializeNext( *MessageBuffer[LastCmp].Msg, MessageBuffer[LastCmp].Event);
-				LastCmp = (LastCmp - 1) % OLD_LINES;
-			}
 	}
-	ClearRepeater();
+
+	//Messages that were held back must be added to history and printed
+	TArray<FLogLine> HistoryAdd;
+	INT Add = (INT)(MultiLineCount - MultiLineCur);
+	if ( Add > 0 )
+	{
+		HistoryAdd.AddZeroed( Add);
+		while ( --Add >= 0 )
+		{
+			HistoryAdd(Add) = MessageHistory( (INT)MultiLineCur + Add);
+			SerializeNext( *HistoryAdd(Add).Msg, HistoryAdd(Add).Event);
+		}
+	}
+
+	if ( RepeatCount > 1 )
+		MessageHistory.Empty();
+
+	if ( HistoryAdd.Num() )
+	{
+		MessageHistory.InsertZeroed( 0, HistoryAdd.Num());
+		appMemswap( &MessageHistory(0), &HistoryAdd(0), sizeof(FLogLine) * HistoryAdd.Num() );
+	}
+
+	RepeatCount = 0;
+	MultiLineCount = 0;
+	MultiLineCur = 0;
 }
 
-void FOutputDeviceInterceptor::ClearRepeater()
-{
-	for ( DWORD i=0 ; i<OLD_LINES ; i++ )
-		MessageBuffer[i].Msg.Empty(); //Should use safe-empty
-	RepeatCount = 0;
-	StartCmp = 0;
-	LastCmp = 0;
-	CurCmp = 0;
-}
 
 void FOutputDeviceInterceptor::SerializeNext( const TCHAR* Text, EName Event)
 {

@@ -10,6 +10,7 @@
 
 XC_CORE_API extern UBOOL b440Net;
 #include "UnXC_Arc.h"
+#include "UnXC_Script.h"
 
 #include "XC_CoreGlobals.h"
 #include "UnXC_Math.h"
@@ -145,6 +146,8 @@ XC_CORE_API void XCCNatives( UBOOL bEnable)
 		GNatives[602] = (Native)&UXC_CoreStatics::execAllObjects;
 		GNatives[643] = (Native)&UXC_CoreStatics::execAppSeconds;
 		GNatives[3014] = (Native)&UXC_CoreStatics::execHasFunction;
+		GNatives[3538] = (Native)&UXC_CoreStatics::execMapRoutes;
+		GNatives[3539] = (Native)&UXC_CoreStatics::execBuildRouteCache;
 		GNatives[3554] = (Native)&UXC_CoreStatics::execConnectedDests;
 		GNatives[3555] = (Native)&UXC_CoreStatics::execOr_ObjectObject;
 		GNatives[3556] = (Native)&UXC_CoreStatics::execClock;
@@ -166,6 +169,8 @@ XC_CORE_API void XCCNatives( UBOOL bEnable)
 		GNatives[602] = (Native)&UObject::execUndefined;
 		GNatives[643] = (Native)&UObject::execUndefined;
 		GNatives[3014] = (Native)&UObject::execUndefined;
+		GNatives[3538] = (Native)&UObject::execUndefined;
+		GNatives[3539] = (Native)&UObject::execUndefined;
 		GNatives[3554] = (Native)&UObject::execUndefined;
 		GNatives[3555] = (Native)&UObject::execUndefined;
 		GNatives[3556] = (Native)&UObject::execUndefined;
@@ -243,7 +248,7 @@ public:
 			//Restore and process
 			UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*)&Defaults(0);
 			((size_t*)this)[0] = ((size_t*)UObject::StaticClass())[0];
-			DefaultObject->XC_Core_Version = 9;
+			DefaultObject->XC_Core_Version = 10;
 		}
 	}
 
@@ -259,7 +264,7 @@ void UXC_CoreStatics::StaticConstructor()
 {
 	UClass* TheClass = GetClass();
 	UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*) &TheClass->Defaults(0);
-	DefaultObject->XC_Core_Version = 9;
+	DefaultObject->XC_Core_Version = 10;
 
 	StartTime = FPlatformTime::InitTiming();
 
@@ -297,7 +302,7 @@ void UXC_CoreStatics::execHNormal( FFrame &Stack, RESULT_DECL)
 {
 	P_GET_VECTOR( A);
 	P_FINISH;
-	if ( A.X == 0.0 || A.Y == 0.0 )
+	if ( A.X == 0.0 && A.Y == 0.0 )
 		*(FVector*)Result = FVector(0,0,0);
 	else
 		*(FVector*)Result = _UnsafeNormal2D( A);
@@ -353,19 +358,11 @@ void UXC_CoreStatics::execOr_ObjectObject(FFrame &Stack, RESULT_DECL)
 
 void UXC_CoreStatics::execHasFunction(FFrame &Stack, RESULT_DECL)
 {
-	guard(UsdkObject::execHasFunction);
-
 	P_GET_NAME(FunctionName);
 	P_GET_OBJECT_OPTX(UObject, O, Stack.Object);
 	P_FINISH;
 
-	*(UBOOL*)Result = 0;
-	if ( !O )
-		return;
-	
-	*(UBOOL*)Result = O->FindFunction(FunctionName,1) != NULL;
-
-	unguard;
+	*(UBOOL*)Result = O ? (O->FindFunction(FunctionName,1) != NULL) : 0;
 }
 
 
@@ -436,7 +433,6 @@ void UXC_CoreStatics::execFixName( FFrame& Stack, RESULT_DECL )
 	P_GET_STR( Str);
 	P_GET_UBOOL_OPTX( bCreate, false);
 	P_FINISH;
-	
 	if ( !FixNameCase(*Str) && bCreate )
 		FName NewName( *Str);
 }
@@ -445,7 +441,6 @@ void UXC_CoreStatics::execStringToName( FFrame& Stack, RESULT_DECL )
 {
 	P_GET_STR( S);
 	P_FINISH;
-	
 	*(FName*)Result = FName( *S);
 }
 
@@ -464,6 +459,8 @@ void UXC_CoreStatics::execMakeColor( FFrame& Stack, RESULT_DECL )
 	Stack.Step( Stack.Object, ((BYTE*)Result)+2 );
 	if ( *Stack.Code != EX_EndFunctionParms )
 		Stack.Step( Stack.Object, ((BYTE*)Result)+3 );
+	else
+		((BYTE*)Result)[3] = 0;
 	P_FINISH;
 
 /*	BYTE CData[4];
@@ -516,6 +513,79 @@ void UXC_CoreStatics::execAllObjects( FFrame& Stack, RESULT_DECL )
 		}
 	POST_ITERATOR;
 }
+
+void UXC_CoreStatics::execMapRoutes( FFrame &Stack, RESULT_DECL)
+{
+	guard(UXC_CoreStatics::execMapRoutes);
+	P_GET_OBJECT(APawn,Reference);
+	P_GET_OBJECT_ARRAY_INPUT(ANavigationPoint,StartAnchors);
+	P_GET_NAME_OPTX( RouteMapperEvent, NAME_None);
+	P_FINISH;
+
+	// Cannot be called from a static function
+	*(ANavigationPoint**)Result = (Stack.Object && Reference) ? MapRoutes( Reference, StartAnchors, RouteMapperEvent) : NULL;
+	unguard;
+}
+
+void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
+{
+	guard(UXC_CoreStatics::execBuildRouteCache);
+	P_GET_NAVIG(EndPoint);
+	Stack.Step( Stack.Object, NULL); //Do not paste back result
+	UProperty* CacheProp = GProperty;
+	void* Addr = GPropAddr;
+	P_FINISH;
+
+	*(ANavigationPoint**)Result = NULL;
+	if ( !Addr || !EndPoint || !EndPoint->startPath )
+		return;
+
+	INT NodeCount = 0;
+	while ( EndPoint->prevOrdered )
+	{
+		NodeCount++;
+		EndPoint->prevOrdered->nextOrdered = EndPoint;
+		EndPoint = EndPoint->prevOrdered;
+		if ( NodeCount >= 15000 ) //Crash prevention
+			return;
+	}
+
+	APawn* P = Cast<APawn>(Stack.Object);
+	if ( P )
+	{
+	//Skip nearby nodes
+		while ( EndPoint
+		&&	(Square(EndPoint->Location.Z-P->Location.Z) < Square(EndPoint->CollisionHeight+P->CollisionHeight))
+		&&	(Square(EndPoint->Location.X-P->Location.X)+Square(EndPoint->Location.Y-P->Location.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)) )
+		EndPoint = EndPoint->nextOrdered;
+	}
+
+	ANavigationPoint** List = NULL;
+	if ( CacheProp->IsA( UArrayProperty::StaticClass()) )
+	{
+		((TArray<ANavigationPoint*>*)Addr)->Empty();
+		((TArray<ANavigationPoint*>*)Addr)->AddZeroed( NodeCount);
+		List = (ANavigationPoint**) ((TArray<ANavigationPoint*>*)Addr)->GetData();
+	}
+	else if ( CacheProp->IsA( UObjectProperty::StaticClass()) )
+	{
+		NodeCount = Min( NodeCount, CacheProp->ArrayDim);
+		List = (ANavigationPoint**)Addr;
+	}
+
+	if ( List )
+	{
+		*(ANavigationPoint**)Result = EndPoint;
+		INT i;
+		for ( i=0 ; i<NodeCount && EndPoint ; i++, EndPoint=EndPoint->nextOrdered )
+			List[i] = EndPoint;
+		while ( i<CacheProp->ArrayDim ) //I shouldn't need to distinguish between DynArray (dim=1) and Normal array (dim='n')
+			List[i++] = NULL;
+	}
+
+	unguard;
+}
+
 
 void UXC_CoreStatics::execDynamicLoadObject_Fix( FFrame& Stack, RESULT_DECL )
 {

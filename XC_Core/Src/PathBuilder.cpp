@@ -432,8 +432,8 @@ inline void FPathBuilderMaster::DefineSpecials()
 				if ( (InfoList(j).Owner->IsA(ATeleporter::StaticClass()))
 					&& ((ATeleporter*)InfoList(j).Owner)->URL == *Teleporter->Tag )
 				{
-					SpecialSpec.Start = Teleporter;
-					SpecialSpec.End = InfoList(j).Owner;
+					SpecialSpec.Start = InfoList(j).Owner;
+					SpecialSpec.End = Teleporter;
 					AttachReachSpec( SpecialSpec);
 				}
 			}
@@ -446,8 +446,8 @@ inline void FPathBuilderMaster::DefineSpecials()
 				if ( (InfoList(j).Owner->IsA(AWarpZoneMarker::StaticClass()))
 					&& ((AWarpZoneMarker*)InfoList(j).Owner)->markedWarpZone->OtherSideURL == *Warp->markedWarpZone->ThisTag )
 				{
-					SpecialSpec.Start = Warp;
-					SpecialSpec.End = InfoList(j).Owner;
+					SpecialSpec.Start = InfoList(j).Owner;
+					SpecialSpec.End = Warp;
 					AttachReachSpec( SpecialSpec);
 				}
 			}
@@ -710,8 +710,8 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 		Scout->SetCollisionSize( Fat.Size2D() + 5, GoodHeight + Abs(Fat.Z) * 0.5);
 		if ( FindStart(Start->Location + Fat * 0.5) && ActorsTouching(Scout,End) && ActorsTouching(Scout,Start) )
 		{
-			Spec.CollisionRadius = Max( Spec.CollisionRadius, appRound(Scout->CollisionRadius));
-			Spec.CollisionHeight = Max( Spec.CollisionHeight, appRound(Scout->CollisionHeight));
+			Spec.CollisionRadius = Max( Spec.CollisionRadius, appRound(Scout->CollisionRadius) + 2);
+			Spec.CollisionHeight = Max( Spec.CollisionHeight, appRound(Scout->CollisionHeight) + 2);
 			Scout->SetCollisionSize( GoodRadius, GoodHeight);
 			int Walkables = FindStart(Start->Location) + FindStart(End->Location);
 			if ( Walkables >= 2 )
@@ -720,7 +720,7 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 				Spec.reachFlags |= R_WALK;
 				Spec.distance = appRound(Fat.Size());
 			}
-			debugf( NAME_DevNet, L"FAT %f -> %i", Fat.Size2D(), Walkables ); 
+//			debugf( NAME_DevNet, L"FAT %f -> %i", Fat.Size2D(), Walkables ); 
 		}
 	}
 
@@ -833,7 +833,7 @@ static int FlyTo( APawn* Scout, AActor* Other)
 		Scout->moveSmooth( Offset);
 		Scout->moveSmooth( Other->Location - Scout->Location);
 		FVector Delta = Other->Location - Scout->Location;
-		if ( Square(Delta.X + Delta.Y) <= Square(NetRadius)
+		if ( Square(Delta.X) + Square(Delta.Y) <= Square(NetRadius)
 			&& Square(Delta.Z) <= Square(NetHeight) )
 			return 1;
 	}
@@ -902,12 +902,12 @@ static int JumpTo( APawn* Scout, AActor* Other)
 				Scout->Velocity.Z += Gravity * STEP_ALPHA;
 				Scout->Velocity += HDir * (HVel * 0.2) + FVector( Offset.X, Offset.Y, 0).SafeNormal() * (HVel * 0.2);
 				Near += (Offset | HDir) <= Scout->CollisionRadius;
-				if ( HVel < Scout->GroundSpeed )
-					debugf( NAME_DevNet, L"Diff %f=[%f(%f), %f]", f, Offset | HDir, Offset.Size2D(), Offset.Z);
+//				if ( HVel < Scout->GroundSpeed )
+//					debugf( NAME_DevNet, L"Diff %f=[%f(%f), %f]", f, Offset | HDir, Offset.Size2D(), Offset.Z);
 				if ( Square(Offset.X) + Square(Offset.Y) <= Square(NetRadius) && Square(Offset.Z) <= Square(NetHeight) )
 				{
-					if ( HVel < Scout->GroundSpeed )
-						debugf( NAME_DevNet, L"SUCCESS MOVEMENT");
+//					if ( HVel < Scout->GroundSpeed )
+//						debugf( NAME_DevNet, L"SUCCESS MOVEMENT");
 					Reached = 1;
 					break;
 				}
@@ -916,12 +916,12 @@ static int JumpTo( APawn* Scout, AActor* Other)
 			}
 			if ( !Reached )
 			{
-				if ( HVel < Scout->GroundSpeed )
-					debugf( NAME_DevNet, L"TEST REACH");
+//				if ( HVel < Scout->GroundSpeed )
+//					debugf( NAME_DevNet, L"TEST REACH");
 				Scout->Physics = PHYS_Walking;
 				Reached = Scout->pointReachable( Other->Location);
-				if ( HVel < Scout->GroundSpeed && !Reached )
-					debugf( NAME_DevNet, L"FAIL");
+//				if ( HVel < Scout->GroundSpeed && !Reached )
+//					debugf( NAME_DevNet, L"FAIL");
 			}
 			if ( Reached )
 				return 1;
@@ -962,7 +962,7 @@ struct FQueryResult
 
 static int TraverseTo( APawn* Scout, AActor* To, float MaxDistance, int Visible)
 {
-	debugf( NAME_DevPath, TEXT("Traversing to %s"), To->GetName() );
+//	debugf( NAME_DevPath, TEXT("Traversing to %s"), To->GetName() );
 	FQueryResult* Results = nullptr;
 	MaxDistance = MaxDistance * MaxDistance;
 

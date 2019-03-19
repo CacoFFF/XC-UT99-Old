@@ -56,13 +56,58 @@ native /*(3570)*/ static final function vector HNormal( vector A);
 native /*(3571)*/ static final function float HSize( vector A);
 native /*(3572)*/ static final function float InvSqrt( float C);
 
+//********************************
+// *********** Route mapper
+//
+// Pass a list of Start Anchors (or autogenerate one based on 'Reference' position if not passed)
+// - Start Anchors must have VisitedWeight preset to a value that indicates initial route cost (if you're not sure set to 0)
+// - The list of anchors can be of any size!!
+// Pass an event that optionally modifies the behaviour of the route mapper (base Cost set, bEndPoint marking)
+//
+// When the optional event is called, all path nodes have:
+// - bEndPoint = false
+// - StartPath = none
+// -** StartAnchors special case: StartAnchor.StartPath = StartAnchor
+// - Cost = (ExtraCost/SpecialCost)
+// - VisitedWeight = Initial_Route_Cost (StartAnchor only) 
+//
+// Setting bEndPoint=True forces the route mapper to end if a short route has been found from start to end (not full mapping).
+// Setting Cost alters the weight of this path node.
+// Setting initial VisitedWeight (on StartAnchor) will give additional starting weight/cost to the whole route starting from this point.
+//
+// When the mapping has finished:
+// - The return value of the function is the nearest bEndPoint=True path (if provided)
+//
+// On path nodes after finished:
+// - StartPath     = StartAnchor corresponding to this route (none means unreachable)
+// ** If StartPath isn't none:
+// -- VisitedWeight = 'distance' from nearest StartAnchor.
+// -- PrevOrdered   = Previous path node in this route
+//
+native /*(3538)*/ final function NavigationPoint MapRoutes( Pawn Seeker, optional NavigationPoint StartAnchors[16], optional name RouteMapperEvent);
+native /*(3539)*/ final function NavigationPoint BuildRouteCache( NavigationPoint EndPoint, out NavigationPoint CacheList[16]); //May skip start point if being touched by caller
+
+//These variations work too, StartAnchor/CacheList can have array dim 1-256
+//native (3538) final function NavigationPoint MapRoutes( Pawn Seeker, optional NavigationPoint StartAnchor, optional name RouteMapperEvent);
+//native (3539) final function NavigationPoint BuildRouteCache( NavigationPoint EndPoint, out array<NavigationPoint> CacheList);
+
+
+// These are the event templates (must be located at Caller class):
+event MapRouteEvent_1();
+event MapRouteEvent_2( Pawn Seeker);
+event MapRouteEvent_3( Pawn Seeker, array<NavigationPoint> StartAnchors);
+
+
 //Fixes
 native static final function Object DynamicLoadObject_Fix( string ObjectName, class ObjectClass, optional bool MayFail );
 
 //Editor-only
 native static final function Mesh BrushToMesh( Actor Brush, name InPkg, name InName, optional int InFlags);
 native static final function string CleanupLevel( Level Level);
+native static final function string PathsRebuild( Level Level, optional Pawn ScoutReference, optional bool bBuildAir);
 
+//For use with subclasses
+static function string StaticCall( string Code);
 
 static function TestClock()
 {
