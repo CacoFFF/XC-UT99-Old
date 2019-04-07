@@ -47,10 +47,10 @@ public:
 	volatile UBOOL SerializeLock; //Serialize being called
 
 	EName Repeater;
-	volatile UBOOL CriticalSet;
-	INT RepeatCount;
-	DWORD StartCmp, LastCmp, CurCmp;
-	FLogLine MessageBuffer[OLD_LINES]; //Lines held for comparison
+	DWORD RepeatCount;
+	TArray<FLogLine> MessageHistory; //Newer=Lower, up to OLD_LINES
+	DWORD MultiLineCount;
+	DWORD MultiLineCur;
 
 	//Constructor
 	FOutputDeviceInterceptor( FOutputDevice* InNext=NULL );
@@ -63,8 +63,6 @@ public:
 	void SetRepeaterText( TCHAR* Text);
 	void ProcessMessage( FLogLine& Line);
 	void FlushRepeater();
-	void ClearRepeater();
 	void SerializeNext( const TCHAR* Text, EName Event );
 };
-
 #endif

@@ -145,6 +145,8 @@
     <ClCompile Include="Src\Devices.cpp" />
     <ClCompile Include="Src\EditorAdds.cpp" />
     <ClCompile Include="Src\PathBuilder.cpp" />
+    <ClCompile Include="Src\RouteMapper.cpp" />
+    <ClCompile Include="Src\ScriptCompilerAdds.cpp" />
     <ClCompile Include="Src\XC_CoreScript.cpp" />
     <ClCompile Include="Src\XC_Generic.cpp" />
     <ClCompile Include="Src\XC_Globals.cpp" />
@@ -159,6 +161,7 @@
     <ClInclude Include="Inc\FPackageFileSummary.h" />
     <ClInclude Include="Inc\UnXC_Arc.h" />
     <ClInclude Include="Inc\UnXC_Math.h" />
+    <ClInclude Include="Inc\UnXC_Script.h" />
     <ClInclude Include="Inc\XC_Commandlets.h" />
     <ClInclude Include="Inc\XC_Core.h" />
     <ClInclude Include="Inc\XC_CoreClasses.h" />

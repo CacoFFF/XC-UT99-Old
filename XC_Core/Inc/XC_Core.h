@@ -18,14 +18,6 @@ you need and add the proper macros and definitions in your own private header
 #pragma warning (disable : 4714) //Allow forceinline to fail
 
 
-#define P_GET_CLASS(var)                P_GET_OBJECT(UClass,var)
-#define P_GET_INPUT_REF(var)            P_GET_OBJECT_REF(UInput,var)
-#define P_GET_PAWN_OPTX(var,def)        P_GET_OBJECT_OPTX(APawn,var,def)
-#define P_GET_PAWN_REF(var)             P_GET_OBJECT_REF(APawn,var)
-#define P_GET_NAVIG(var)                P_GET_OBJECT(ANavigationPoint,var)
-#define P_GET_NAVIG_OPTX(var,def)       P_GET_OBJECT_OPTX(ANavigationPoint,var,def)
-#define P_GET_NAVIG_REF(var)            P_GET_OBJECT_REF(ANavigationPoint,var)
-
 //Safely empty a dynamic array on UT v451
 #define SafeEmpty( A) if (A.GetData()) A.Empty()
 #define SafeEmptyR( A) if (A->GetData()) A->Empty()
@@ -60,6 +52,9 @@ you need and add the proper macros and definitions in your own private header
 #include "Core.h"
 #include "Cacus/CacusPlatform.h"
 #include "XC_CoreClasses.h"
+
+// Private functions
+int StaticInitScriptCompiler();
 
 #ifdef __LINUX_X86__
 	#undef CPP_PROPERTY

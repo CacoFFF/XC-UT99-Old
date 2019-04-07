@@ -249,6 +249,9 @@ public:
 			UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*)&Defaults(0);
 			((size_t*)this)[0] = ((size_t*)UObject::StaticClass())[0];
 			DefaultObject->XC_Core_Version = 10;
+
+			//Init script compiler modifier during XC_Core.u load
+			StaticInitScriptCompiler();
 		}
 	}
 
@@ -527,6 +530,20 @@ void UXC_CoreStatics::execMapRoutes( FFrame &Stack, RESULT_DECL)
 	unguard;
 }
 
+
+static AActor* HandleSpecial( APawn* Other, ANavigationPoint* NextPath)
+{
+	AActor* Special = NULL;
+	if ( NextPath && NextPath->IsProbing( NAME_SpecialHandling) )
+	{
+		Special = NextPath;
+		Other->HandleSpecial( Special);
+		if ( Special == Other->SpecialGoal )
+			Other->SpecialGoal = NULL;
+	}
+	return Special;
+}
+
 void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 {
 	guard(UXC_CoreStatics::execBuildRouteCache);
@@ -534,13 +551,14 @@ void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 	Stack.Step( Stack.Object, NULL); //Do not paste back result
 	UProperty* CacheProp = GProperty;
 	void* Addr = GPropAddr;
+	P_GET_PAWN_OPTX(PawnHandleSpecial,NULL);
 	P_FINISH;
 
-	*(ANavigationPoint**)Result = NULL;
+	*(AActor**)Result = NULL;
 	if ( !Addr || !EndPoint || !EndPoint->startPath )
 		return;
 
-	INT NodeCount = 0;
+	INT NodeCount = 1; //Because EndPoint is already there!
 	while ( EndPoint->prevOrdered )
 	{
 		NodeCount++;
@@ -550,22 +568,32 @@ void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 			return;
 	}
 
-	APawn* P = Cast<APawn>(Stack.Object);
+	APawn* P = Cast<APawn>(Stack.Object) ? (APawn*)Stack.Object : PawnHandleSpecial;
 	if ( P )
 	{
 	//Skip nearby nodes
-		while ( EndPoint
-		&&	(Square(EndPoint->Location.Z-P->Location.Z) < Square(EndPoint->CollisionHeight+P->CollisionHeight))
-		&&	(Square(EndPoint->Location.X-P->Location.X)+Square(EndPoint->Location.Y-P->Location.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)) )
-		EndPoint = EndPoint->nextOrdered;
+		FVector Delta;
+		while ( EndPoint && EndPoint->nextOrdered )
+		{
+			Delta = EndPoint->Location - P->Location;
+			if ( Square(Delta.X)+Square(Delta.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)
+			&&	 Square(Delta.Z)                 < Square(EndPoint->CollisionHeight+P->CollisionHeight)
+			&&	 P->pointReachable(EndPoint->nextOrdered->Location) )
+				EndPoint = EndPoint->nextOrdered;
+			else
+				break;
+		}
 	}
 
 	ANavigationPoint** List = NULL;
 	if ( CacheProp->IsA( UArrayProperty::StaticClass()) )
 	{
 		((TArray<ANavigationPoint*>*)Addr)->Empty();
-		((TArray<ANavigationPoint*>*)Addr)->AddZeroed( NodeCount);
-		List = (ANavigationPoint**) ((TArray<ANavigationPoint*>*)Addr)->GetData();
+		if ( NodeCount )
+		{
+			((TArray<ANavigationPoint*>*)Addr)->AddZeroed( NodeCount);
+			List = (ANavigationPoint**) ((TArray<ANavigationPoint*>*)Addr)->GetData();
+		}
 	}
 	else if ( CacheProp->IsA( UObjectProperty::StaticClass()) )
 	{
@@ -573,16 +601,44 @@ void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 		List = (ANavigationPoint**)Addr;
 	}
 
+	*(AActor**)Result = EndPoint;
 	if ( List )
 	{
-		*(ANavigationPoint**)Result = EndPoint;
-		INT i;
-		for ( i=0 ; i<NodeCount && EndPoint ; i++, EndPoint=EndPoint->nextOrdered )
-			List[i] = EndPoint;
+		List[0] = EndPoint;
+		INT i = 1;
+		while ( i<NodeCount && List[i-1] )
+		{
+			List[i] = List[i-1]->nextOrdered;
+			i++;
+		}
 		while ( i<CacheProp->ArrayDim ) //I shouldn't need to distinguish between DynArray (dim=1) and Normal array (dim='n')
 			List[i++] = NULL;
 	}
 
+	if ( PawnHandleSpecial && EndPoint )
+	{
+		AActor* Special = HandleSpecial( PawnHandleSpecial, EndPoint);
+		if ( !Special )
+		{
+			FVector Delta = PawnHandleSpecial->Location - EndPoint->Location;
+			if ( EndPoint->nextOrdered
+			&&	Square(Delta.X)+Square(Delta.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)
+			&&	Square(Delta.Z)                 < Square(EndPoint->CollisionHeight+P->CollisionHeight) )
+			{
+				EndPoint = EndPoint->nextOrdered;
+				if ( List == PawnHandleSpecial->RouteCache ) //Pop route cache as well
+				{
+					for ( INT i=0 ; i<15 ; i++ )
+						List[i] = List[i+1];
+					List[15] = List[14] ? List[14]->nextOrdered : NULL;
+				}
+				// Again!
+				Special = HandleSpecial( PawnHandleSpecial, EndPoint);
+			}
+		}
+		//Override (new?) endpoint if needed
+		*(AActor**)Result = Special ? Special : EndPoint;
+	}
 	unguard;
 }
 

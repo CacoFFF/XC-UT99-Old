@@ -20,6 +20,9 @@
 
 #ifndef NAMES_ONLY
 
+//Engine forwards
+class ANavigationPoint;
+class APawn;
 
 class XC_CORE_API UBinarySerializer : public UObject
 {
@@ -47,38 +50,40 @@ public:
     NO_DEFAULT_CONSTRUCTOR(UBinarySerializer)
 };
 
-
 class XC_CORE_API UXC_CoreStatics : public UObject
 {
 public:
-    BITFIELD bGNatives:1 GCC_PACK(4);
-    INT XC_Core_Version GCC_PACK(4);
-    INT XC_Engine_Version;
-    FLOAT iC[2];
-    DECLARE_FUNCTION(execInvSqrt);
-    DECLARE_FUNCTION(execHSize);
-    DECLARE_FUNCTION(execHNormal);
-    DECLARE_FUNCTION(execUnClock);
-    DECLARE_FUNCTION(execClock);
-    DECLARE_FUNCTION(execOr_ObjectObject);
-    DECLARE_FUNCTION(execConnectedDests);
-    DECLARE_FUNCTION(execAppSeconds);
-    DECLARE_FUNCTION(execAppCycles);
-    DECLARE_FUNCTION(execGetParentClass);
-    DECLARE_FUNCTION(execStringToName);
-    DECLARE_FUNCTION(execLocs);
-    DECLARE_FUNCTION(execMakeColor);
+	BITFIELD bGNatives:1 GCC_PACK(4);
+	INT XC_Core_Version GCC_PACK(4);
+	INT XC_Engine_Version;
+	FLOAT iC[2];
+	DECLARE_FUNCTION(execInvSqrt);
+	DECLARE_FUNCTION(execHSize);
+	DECLARE_FUNCTION(execHNormal);
+	DECLARE_FUNCTION(execUnClock);
+	DECLARE_FUNCTION(execClock);
+	DECLARE_FUNCTION(execOr_ObjectObject);
+	DECLARE_FUNCTION(execConnectedDests);
+	DECLARE_FUNCTION(execAppSeconds);
+	DECLARE_FUNCTION(execAppCycles);
+	DECLARE_FUNCTION(execGetParentClass);
+	DECLARE_FUNCTION(execStringToName);
+	DECLARE_FUNCTION(execLocs);
+	DECLARE_FUNCTION(execMakeColor);
 	DECLARE_FUNCTION(execFindObject);
 	DECLARE_FUNCTION(execAllObjects);
 	DECLARE_FUNCTION(execHasFunction);
 	DECLARE_FUNCTION(execFixName);
+	DECLARE_FUNCTION(execMapRoutes);
+	DECLARE_FUNCTION(execBuildRouteCache);
 	DECLARE_FUNCTION(execDynamicLoadObject_Fix);
 	DECLARE_FUNCTION(execBrushToMesh);
 	DECLARE_FUNCTION(execCleanupLevel);
 	DECLARE_FUNCTION(execPathsRebuild);
 
-
 	void StaticConstructor();
+
+	ANavigationPoint* MapRoutes( APawn* Reference, TArray<ANavigationPoint*>& StartAnchors, FName RouteMapperEvent=NAME_None);
 
     DECLARE_CLASS(UXC_CoreStatics,UObject,0,XC_Core)
     NO_DEFAULT_CONSTRUCTOR(UXC_CoreStatics)
@@ -117,6 +122,8 @@ AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execFindObject);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execAllObjects);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execHasFunction);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execFixName);
+AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execMapRoutes);
+AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execBuildRouteCache);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execDynamicLoadObject_Fix);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execBrushToMesh);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execCleanupLevel);

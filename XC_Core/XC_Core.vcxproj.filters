@@ -28,6 +28,12 @@
     <ClCompile Include="Src\PathBuilder.cpp">
       <Filter>Src</Filter>
     </ClCompile>
+    <ClCompile Include="Src\RouteMapper.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\ScriptCompilerAdds.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Src">
@@ -78,6 +84,9 @@
       <Filter>Inc</Filter>
     </ClInclude>
     <ClInclude Include="Inc\FMallocThreadedProxy.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\UnXC_Script.h">
       <Filter>Inc</Filter>
     </ClInclude>
   </ItemGroup>

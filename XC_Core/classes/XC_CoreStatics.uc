@@ -84,12 +84,17 @@ native /*(3572)*/ static final function float InvSqrt( float C);
 // -- VisitedWeight = 'distance' from nearest StartAnchor.
 // -- PrevOrdered   = Previous path node in this route
 //
+//********************************
+//
+// When BuildRouteCache is given a HandleSpecial pawn, the 'SpecialHandling' events are called on the next path(s)
+// The return value is the next path (can be altered by SpecialHandling)
+//
 native /*(3538)*/ final function NavigationPoint MapRoutes( Pawn Seeker, optional NavigationPoint StartAnchors[16], optional name RouteMapperEvent);
-native /*(3539)*/ final function NavigationPoint BuildRouteCache( NavigationPoint EndPoint, out NavigationPoint CacheList[16]); //May skip start point if being touched by caller
+native /*(3539)*/ static final function Actor BuildRouteCache( NavigationPoint EndPoint, out NavigationPoint CacheList[16], optional Pawn HandleSpecial);
 
 //These variations work too, StartAnchor/CacheList can have array dim 1-256
 //native (3538) final function NavigationPoint MapRoutes( Pawn Seeker, optional NavigationPoint StartAnchor, optional name RouteMapperEvent);
-//native (3539) final function NavigationPoint BuildRouteCache( NavigationPoint EndPoint, out array<NavigationPoint> CacheList);
+//native (3539) final function Actor BuildRouteCache( NavigationPoint EndPoint, out array<NavigationPoint> CacheList, optional Pawn HandleSpecial);
 
 
 // These are the event templates (must be located at Caller class):
