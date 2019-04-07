@@ -7,7 +7,7 @@ var int GW_Counter;
 //*******************************
 // Native viewclass!!!
 exec native function ViewClass( class<actor> aClass, optional bool bQuiet );
-
+native event PlayerCalcView( out Actor ViewActor, out vector CameraLocation, out rotator CameraRotation);
 
 
 native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI, optional Pawn StartAt);
@@ -491,40 +491,6 @@ exec function ViewPlayerNum_Fast(optional int num)
 		else
 			ClientMessage(ViewingFrom@OwnCamera, 'Event', true);
 	}
-}
-
-
-//==============
-//Faster loop, don't increase iteration count
-function Inventory FindInventoryType_Fast( class<Inventory> DesiredClass ) //Compiler hack, originally class<Object>
-{
-	local Inventory Inv;
-	if ( ClassIsChildOf( DesiredClass, class'Inventory') ) //Here we do check that it's a class<Inventory> being passed
-		ForEach InventoryActors( DesiredClass, Inv) //Native class check occurs here, so Inv matches what we're looking for
-			return Inv;
-}
-
-
-//==============
-//Single trace mode, prevents dangerous recursions
-function Actor TraceShot_Safe( out vector HitLocation, out vector HitNormal, vector EndTrace, vector StartTrace)
-{
-	local Actor A, Other;
-	
-	ForEach TraceActors( class'Actor', A, HitLocation, HitNormal, EndTrace, StartTrace)
-	{
-		if ( Pawn(A) != None )
-		{
-			if ( (A != self) && Pawn(A).AdjustHitLocation( HitLocation, EndTrace - StartTrace) )
-				Other = A;
-		}
-		else if ( (A == Level) || (Mover(A) != None) || A.bProjTarget || (A.bBlockPlayers && A.bBlockActors) )
-			Other = A;
-
-		if ( Other != None )
-			break;
-	}
-	return Other;
 }
 
 

@@ -139,8 +139,17 @@ function UpgradeVersion()
 		AddConditionUnique( "CLASS:SCFActor:XC_Engine.SCF_Disabler");
 	}
 	
-	LastVersion = 22;
+	if ( LastVersion < 23 )
+	{
+		AddConditionUnique( "GAMECLASS:UnrealGameInfo:XC_Engine.ACE_Disabler");
+	}
 	
+	if ( LastVersion < 24 )
+	{
+		AddConditionUnique( "PACKAGE:Predator:XC_UPakPredator.XC_UPakPredator");
+	}
+	
+	LastVersion = 23;
 }
 /*=============== UpgradeVersion end ===============*/
 

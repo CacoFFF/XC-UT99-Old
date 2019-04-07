@@ -61,6 +61,9 @@ public:
 	INT CurrentDownloader;
 	INT DownloadedCount;
 	INT BytesLeft;
+	INT XCGE_Server;
+
+	static FNetworkNotifyPL Instance;
 	
 	void SetPending( UPendingLevelMirror* NewPendingLevel);
 	void CountBytesLeft( UNetConnection* Connection);
@@ -78,7 +81,6 @@ public:
 };
 
 
-#ifndef DISABLE_ADDONS
 #include "XC_CoreObj.h"
 
 class XC_ENGINE_API FXC_BrushTrackerFixer : public FGenericSystem
@@ -100,9 +102,5 @@ public:
 
 	UBOOL IsTyped( const TCHAR* Type);
 };
-
-#endif
-
-
 
 #endif

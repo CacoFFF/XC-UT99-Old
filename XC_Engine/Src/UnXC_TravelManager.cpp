@@ -4,7 +4,6 @@
 =============================================================================*/
 
 #include "XC_Engine.h"
-#ifndef DISABLE_ADDONS
 #include "UnXC_Travel.h"
 #include "XC_ClassCache.h" //Move to XC_Core
 
@@ -228,8 +227,6 @@ void FXC_TravelManager::PostMapChange( ULevel* NewLevel, UBOOL bClearMap)
 	}
 	unguard;
 }
-#endif
-
 
 /*-----------------------------------------------------------------------------
 	The End.

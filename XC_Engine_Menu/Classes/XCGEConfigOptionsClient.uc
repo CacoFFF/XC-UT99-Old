@@ -23,6 +23,24 @@ var UWindowCheckbox DevLogsCheck;
 var localized string DevLogsText;
 var localized string DevLogsHelp;
 
+//=====================
+//==== Map List Sorting
+
+// Map list sort label
+var UMenuLabelControl MapListTitle;
+var localized string MapListText;
+
+// Sort by Folder
+var UWindowCheckbox MapSortFolderCheck;
+var localized string MapSortFolderText;
+var localized string MapSortFolderHelp;
+
+// Sort Inverted
+var UWindowCheckbox MapSortInvertCheck;
+var localized string MapSortInvertText;
+var localized string MapSortInvertHelp;
+
+
 var float ControlOffset;
 
 function bool GetScriptConfig()
@@ -51,7 +69,7 @@ final function string GetFramerate()
 
 function Created()
 {
-	local int ControlWidth, ControlLeft, ControlRight;
+	local int ControlWidth, TitleWidth, ControlLeft, ControlRight;
 	local int CenterWidth, CenterPos, i;
 	local string Sens;
 
@@ -63,7 +81,6 @@ function Created()
 
 	CenterWidth = (WinWidth/4)*3;
 	CenterPos = (WinWidth - CenterWidth)/2;
-
 	
 	ControlOffset = 40;
 	
@@ -77,8 +94,6 @@ function Created()
 	RawInputCheck.SetHelpText(RawInputHelp);
 	RawInputCheck.SetFont(F_Normal);
 	RawInputCheck.Align = TA_Right;
-
-	
 	// Framerate limiter //1R
 	FramerateEdit = UWindowEditControl(CreateControl(class'UWindowEditControl', ControlRight, ControlOffset, ControlWidth, 1));
 	FramerateEdit.SetText(FramerateText);
@@ -97,7 +112,7 @@ function Created()
 	ControlOffset += 10;
 	
 	
-	// LanPlayerHost //1L
+	// LanPlayerHost //2L
 	LanPlayerHostCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlLeft, ControlOffset, ControlWidth, 1));
 	if ( GetScriptConfig() )
 		LanPlayerHostCheck.bChecked = ConfigModule.bListenServerPlayerRelevant;
@@ -105,22 +120,46 @@ function Created()
 	LanPlayerHostCheck.SetHelpText(LanPlayerHostHelp);
 	LanPlayerHostCheck.SetFont(F_Normal);
 	LanPlayerHostCheck.Align = TA_Right;
-
-	// 1R = nothing here
+	// 2R = nothing here
 	ControlOffset += 25;
 
 	//=======
 	// Debug
 	ControlOffset += 10;
 
-	// Developer logs
+	// Developer logs //3R
 	DevLogsCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlLeft, ControlOffset, ControlWidth, 1));
 	DevLogsCheck.bChecked = bool(GetPlayerOwner().ConsoleCommand("get XC_GameEngine bEnableDebugLogs"));
 	DevLogsCheck.SetText(DevLogsText);
 	DevLogsCheck.SetHelpText(DevLogsHelp);
 	DevLogsCheck.SetFont(F_Normal);
 	DevLogsCheck.Align = TA_Right;
+	// 3R = nothing here
 	ControlOffset += 25;
+	
+	
+	//==========
+	// Map List
+	ControlOffset += 10;
+	MapListTitle = UMenuLabelControl(CreateControl(class'UMenuLabelControl', CenterPos, ControlOffset, CenterWidth, 1)); 
+	MapListTitle.SetText(MapListText);
+	MapListTitle.Align = TA_Center;
+	ControlOffset += 15;
+	
+	// Sort by Folder //Left
+	MapSortFolderCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlLeft, ControlOffset, ControlWidth, 1));
+	MapSortFolderCheck.bChecked = bool(GetPlayerOwner().ConsoleCommand("get XC_GameEngine bSortMaplistByFolder"));
+	MapSortFolderCheck.SetText(MapSortFolderText);
+	MapSortFolderCheck.SetHelpText(MapSortFolderHelp);
+	MapSortFolderCheck.SetFont(F_Normal);
+	MapSortFolderCheck.Align = TA_Right;
+	// Sort Inverted //Right
+	MapSortInvertCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlRight, ControlOffset, ControlWidth, 1));
+	MapSortInvertCheck.bChecked = bool(GetPlayerOwner().ConsoleCommand("get XC_GameEngine bSortMaplistInvert"));
+	MapSortInvertCheck.SetText(MapSortInvertText);
+	MapSortInvertCheck.SetHelpText(MapSortInvertHelp);
+	MapSortInvertCheck.SetFont(F_Normal);
+	MapSortInvertCheck.Align = TA_Right;
 }
 
 function AfterCreate()
@@ -153,6 +192,13 @@ function BeforePaint(Canvas C, float X, float Y)
 
 	DevLogsCheck.SetSize(ControlWidth, 1);
 	DevLogsCheck.WinLeft = ControlLeft;
+	
+	MapListTitle.SetSize(CenterWidth, 1);
+	MapListTitle.WinLeft = CenterPos;
+	MapSortFolderCheck.SetSize(ControlWidth, 1);
+	MapSortFolderCheck.WinLeft = ControlLeft;
+	MapSortInvertCheck.SetSize(ControlWidth, 1);
+	MapSortInvertCheck.WinLeft = ControlRight;
 }
 
 function Notify(UWindowDialogControl C, byte E)
@@ -175,6 +221,12 @@ function Notify(UWindowDialogControl C, byte E)
 		case DevLogsCheck:
 			DevLogsChecked();
 			break;
+		case MapSortFolderCheck:
+			MapSortFolderChecked();
+			break;
+		case MapSortInvertCheck:
+			MapSortInvertChecked();
+			break;
 		}
 	}
 }
@@ -182,6 +234,18 @@ function Notify(UWindowDialogControl C, byte E)
 function RawInputChecked()
 {
 	GetPlayerOwner().ConsoleCommand("set XC_GameEngine bUseRawInput " $ int(RawInputCheck.bChecked));
+	SaveEngineConfig();
+}
+
+function MapSortFolderChecked()
+{
+	GetPlayerOwner().ConsoleCommand("set XC_GameEngine bSortMaplistByFolder " $ int(MapSortFolderCheck.bChecked));
+	SaveEngineConfig();
+}
+
+function MapSortInvertChecked()
+{
+	GetPlayerOwner().ConsoleCommand("set XC_GameEngine bSortMaplistInvert " $ int(MapSortInvertCheck.bChecked));
 	SaveEngineConfig();
 }
 
@@ -218,14 +282,18 @@ function DevLogsChecked()
 defaultproperties
 {
 	RawInputText="Raw Input"
-	RawInputHelp="Enabling Raw Input will remove all mouse filtering and acceleration. You must restart the game for this setting to take effect."
+	RawInputHelp="Enabling Raw Input will remove all mouse filtering and acceleration. You must disable DirectInput and restart the game for this setting to take effect."
 	DevLogsText="Developer log"
 	DevLogsHelp="If checked, XC_Engine will print additional information to the game/server log."
 	LanPlayerHostText="LAN Host Skin"
 	LanPlayerHostHelp="If checked, LAN games hosts will have their player, skin and voice automatically setup for download."
 	FramerateText="Max Framerate"
 	FramerateHelp="Sets the game's maximum framerate (4 to 200). Make sure to disable any framerate limiter in the renderer!."
-	
+	MapListText="Map List Sorting"
+	MapSortFolderText="By Directory"
+	MapSortFolderHelp="Sorts the map list by directories instead of globally."
+	MapSortInvertText="Inverted"
+	MapSortInvertHelp="Reverses the map list order."
 }
 
 

@@ -5,7 +5,6 @@
 #ifndef _INC_XC_TRAVEL
 #define _INC_XC_TRAVEL
 
-#ifndef DISABLE_ADDONS
 #include "XC_CoreObj.h"
 
 struct FTravelPlayerMap
@@ -53,7 +52,6 @@ class XC_ENGINE_API FXC_TravelManager : public FGenericSystem
 	void PostMapChange( ULevel* NewLevel, UBOOL bClearMap=0);
 	
 };
-#endif
 
 #endif
 

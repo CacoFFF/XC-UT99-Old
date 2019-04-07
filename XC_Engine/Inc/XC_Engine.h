@@ -30,7 +30,6 @@
 //Disablers, used for debugging and fast builds
 //#define DISABLE_COLLISION
 //#define DISABLE_PROPERTIES
-//#define DISABLE_ADDONS
 //#define DISABLE_SCRIPT
 //#define DISABLE_STATICS
 #define XC_RENDER_API 0
@@ -51,10 +50,8 @@
 
 
 //class UXC_GameEngine;
-#ifndef DISABLE_ADDONS
-	class FXC_TravelManager;
-	class FXC_TimeManager;
-#endif
+class FXC_TravelManager;
+class FXC_TimeManager;
 #ifndef DISABLE_COLLISION
 	class FCollisionCacus;
 	class FNodeGrid3;

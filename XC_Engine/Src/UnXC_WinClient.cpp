@@ -16,7 +16,6 @@ typedef LONG (UViewport::*ProcFunc)(UINT,UINT,LONG);
 static ProcFunc hViewportWndProc = 0;
 
 
-
 //This object appears to be a window that references the Windows Viewport
 class DLL_EXPORT WWindowsViewportWindow_Hack : public WWindow
 {
@@ -26,11 +25,13 @@ class DLL_EXPORT WWindowsViewportWindow_Hack : public WWindow
 
 	WWindowsViewportWindow_Hack()	{}
 
+
+
 	virtual LONG WndProc( UINT Message, UINT wParam, LONG lParam )
 	{
 		//If this value is 0xFFFFFFFF, then capture is off (per WinViewport)
 		//Disassembler marked it as X, next as Y... is it mouse coordinates?
-		uint32 CaptureSwitch = *(uint32*)(((uint8*)Viewport) + 0x1C0);
+		uint32 CaptureSwitch = *(uint32*)((uint8*)Viewport + 0x1C0);
 		bool IsCaptured = CaptureSwitch != 0xFFFFFFFF;
 
 		//Raw input capture ignores normal mouse movement
@@ -53,6 +54,12 @@ class DLL_EXPORT WWindowsViewportWindow_Hack : public WWindow
 						GEngine->InputEvent( Viewport, IK_MouseX, IST_Axis, raw.data.mouse.lLastX);
 					if ( raw.data.mouse.lLastY )
 						GEngine->InputEvent( Viewport, IK_MouseY, IST_Axis, -raw.data.mouse.lLastY);
+
+					CURSORINFO Info;
+					Info.cbSize = sizeof(Info);
+					GetCursorInfo( &Info);
+					if ( Info.flags & CURSOR_SHOWING )
+						ShowCursor( false); //ShowCursor eats up 8x as many cycles as GetCursorInfo
 				}
 				if ( raw.data.mouse.ulButtons )
 				{

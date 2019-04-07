@@ -9,6 +9,8 @@
 
 #include "XC_Engine.h"
 #include "XC_Networking.h"
+#include "UnRender.h"
+#include "XC_CoreGlobals.h"
 
 //**********************************************************
 // Level watcher, performs various tasks on the loaded level
@@ -253,4 +255,80 @@ INT FXC_ServerProc::Tick( FLOAT DeltaSeconds)
 		return 1;
 	}
 	return 0;
+}
+
+
+//**********************************************************
+// Net Client Processor
+#include "UnXC_NetClientProc.h"
+FXC_NetClientProc::FXC_NetClientProc()
+	: Engine(NULL)
+	, Level(NULL)
+	, XCGE_Server_Ver(0)
+	, TickRate(0)
+	, RenDev(NULL)
+{}
+
+UBOOL FXC_NetClientProc::IsTyped( const TCHAR* Type)
+{
+	return appStricmp( Type, TEXT("NetClientProc")) == 0;
+}
+
+INT FXC_NetClientProc::Tick( FLOAT DeltaSeconds)
+{
+	guard(FXC_NetClientProc::Tick);
+
+	// Client is dead/shutting down
+	if ( !Engine->Client->Viewports.Num() || !Engine->Client->Viewports(0) )
+		return 0;
+
+	// Level change (delayed notify)
+	if ( Engine->Level() != Level )
+		ChangedLevel();
+
+	UNetDriver* NetDriver;
+	if ( !Level || !(NetDriver=Level->NetDriver) || !NetDriver->ServerConnection || (NetDriver == Level->DemoRecDriver) )
+		return 0;
+
+	guard(UpdateRender);
+	if ( Engine->Client->Viewports(0)->RenDev != RenDev )
+	{
+		RenDev = Engine->Client->Viewports(0)->RenDev;
+		RenDevTickRate = NULL;
+		UProperty* TickRateProp;
+		if ( RenDev	
+			&& (TickRateProp=FindScriptVariable( RenDev->GetClass(), TEXT("FrameRateLimit")))
+			&& TickRateProp->IsA(UIntProperty::StaticClass()) )
+		{
+			RenDevTickRate = (INT*) ((BYTE*)RenDev + TickRateProp->Offset);
+		}
+	}
+	unguard;
+
+
+	//** This is a net client **//
+	// Update TICKRATE on XC_Engine server
+	if ( XCGE_Server_Ver >= 24 )
+	{
+		INT NewTickRate = appRound(Engine->GetMaxTickRate());
+		if ( RenDevTickRate && (*RenDevTickRate > 4) )
+			NewTickRate = Min(NewTickRate, *RenDevTickRate);
+		if ( (NewTickRate >= 4) && (NewTickRate <= 200) && (NewTickRate != TickRate) && ((TickRate == 0) || (NetDriver->Time - LastTickRateTime > 0.5)) )
+		{
+			TickRate = NewTickRate;
+			LastTickRateTime = NetDriver->Time;
+			NetDriver->ServerConnection->Logf( TEXT("TICKRATE %i"), TickRate);
+		}
+	}
+
+	return 1;
+	unguard;
+}
+
+void FXC_NetClientProc::ChangedLevel()
+{
+	Level = Engine->Level();
+	XCGE_Server_Ver = 0;
+	TickRate = 0;
+	LastTickRateTime = FTime();
 }

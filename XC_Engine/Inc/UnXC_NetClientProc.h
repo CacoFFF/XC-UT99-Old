@@ -1,23 +1,33 @@
 /*=============================================================================
-	UnXC_ServerProc.h
+	UnXC_NetClientProc.h
 	Author: Fernando Velázquez
 
-	Additional processing for a net server
+	Additional processing for a net client
 =============================================================================*/
 
-#ifndef _INC_XC_SERVERPROC
-#define _INC_XC_SERVERPROC
+#ifndef _INC_XC_NETCLIENTPROC
+#define _INC_XC_NETCLIENTPROC
 
-class FXC_ServerProc : public FGenericSystem
+class FXC_NetClientProc : public FGenericSystem
 {
 public:
 	UXC_GameEngine* Engine;
+	ULevel* Level;
+	INT XCGE_Server_Ver;
+	INT TickRate;
+	FTime LastTickRateTime;
 
-	FXC_ServerProc();
+	URenderDevice* RenDev;
+	INT* RenDevTickRate;
 
-	//FGenericSystem interface
+	FXC_NetClientProc();
+
+	// FGenericSystem interface
 	INT Tick( FLOAT DeltaSeconds);
 	UBOOL IsTyped( const TCHAR* Type);
+
+	// FXC_NetClientProc
+	void ChangedLevel();
 };
 
 #endif

@@ -8,6 +8,12 @@ class XC_Engine_Actor expands Actor
 	native
 	transient;
 
+// Opcodes used:
+/*  3538 - 3542
+    3552 - 3561
+    3570 - 3572
+*/
+	
 //Reach flags used in navigation
 const R_WALK       = 0x00000001; //walking required
 const R_FLY        = 0x00000002; //flying required 
@@ -273,6 +279,7 @@ event XC_Init()
 	ReplaceFunction( class'Mover', class'XC_Engine_Mover', 'Trigger', 'TC_Trigger', 'TriggerControl');
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'TeamSay', 'TeamSay');
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewClass', 'ViewClass'); //Native version
+	//ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerCalcView', 'PlayerCalcView'); //Native version //BUG
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewPlayer', 'ViewPlayer_Fast'); //Partial name search
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'GetWeapon', 'GetWeapon');
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PrevItem', 'PrevItem');
@@ -280,12 +287,15 @@ event XC_Init()
 		ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerTick', 'PlayerTick_CF', 'CheatFlying'); //Spectators go thru teles
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerTick', 'PlayerTick_FD', 'FeigningDeath'); //Multiguning fix
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'AnimEnd', 'AnimEnd_FD', 'FeigningDeath');
-	ReplaceFunction( class'Pawn', class'XC_Engine_PlayerPawn', 'FindInventoryType', 'FindInventoryType_Fast');
-	ReplaceFunction( class'Pawn', class'XC_Engine_PlayerPawn', 'TraceShot', 'TraceShot_Safe');
+	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'FindInventoryType', 'FindInventoryType_Fast');
+	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'TraceShot', 'TraceShot_Safe');
+	ReplaceFunction( class'XC_Engine_Pawn', class'Pawn', 'FindPathToward_Org', 'FindPathToward');
+	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'FindPathToward', 'FindPathToward_RouteMapper');
 	if ( Level.Game != None )
 		ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewPlayerNum', 'ViewPlayerNum_Fast'); //Lag+crash exploit fix
 	ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'Killed', 'Killed');
 	ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'ScoreKill', 'ScoreKill');
+	ReplaceFunction( class'GameReplicationInfo', class'XC_GameReplicationInfo', 'Timer', 'Timer_Server');
 	ReplaceFunction( class'Mutator', class'XC_CollisionMutator', 'AddMutator', 'AddMutator');
 	ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'CheckVisibility', 'CheckVisibility');
 	ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'SpawnCopy', 'Weapon_SpawnCopy');
@@ -375,6 +385,42 @@ final function bool AttachMenu()
 			return MenuStatics.static.StaticCall("OPTIONS") == "OK";
 	}
 	return false;
+}
+
+
+//=======================================================================
+//=======================================================================
+// ROUTE MAPPER
+// 
+
+native(3538) final function NavigationPoint MapRoutes_FPTW( Pawn Seeker, optional NavigationPoint StartAnchors[16], optional name RouteMapperEvent);
+native(640) static final function int Array_Length_NP( out array<NavigationPoint> Ar, optional int SetSize);
+
+event FindPathToward_Event( Pawn Seeker, array<NavigationPoint> StartAnchors)
+{
+	local NavigationPoint N, Best;
+	local float Dist, BestDist;
+	
+	Assert( Target != None);
+	
+	if ( NavigationPoint(Target) != None )
+		Best = NavigationPoint(Target);
+	else
+	{
+		BestDist = 200 + int(Seeker.bHunting) * 2000;
+		ForEach NavigationActors( class'NavigationPoint', N, BestDist, Target.Location, true)
+		{
+			Dist = VSize(N.Location - Target.Location);
+			if ( Dist < BestDist )
+			{
+				Best = N;
+				BestDist = Dist;
+			}
+		}
+	}
+	
+	if ( Best != None )
+		Best.bEndPoint = true;
 }
 
 
