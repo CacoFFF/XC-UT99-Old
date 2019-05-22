@@ -5,6 +5,17 @@
 #ifndef INC_XC_MATH
 #define INC_XC_MATH
 
+#include "Cacus/Math/Math.h"
+
+// Does PlaneDot on both Start and End on the same plane (Unaligned plane)
+// Dist must be a FLOAT[2] array
+XC_CORE_API void DoublePlaneDot( const FPlane& Plane, const CFVector4& Start, const CFVector4& End, FLOAT* Dist2);
+
+//Obtains intersection using distances to plane as alpha (optimal for traces)
+//Use DoublePlaneDot to obtain the Dist array
+XC_CORE_API CFVector4 LinePlaneIntersectDist( const CFVector4& Start, const CFVector4& End, FLOAT* Dist2);
+
+
 /** This instruction copies the first element of an array onto the xmm0 register once populated
 movss xmm0, [a]
 shufps xmm0, xmm0, 0
@@ -55,19 +66,6 @@ inline FLOAT fast_sign_nozero(FLOAT f)
     FLOAT r = 1.0f;
     (INT&)r |= ((INT&)f & 0x80000000); // mask sign bit in f, set it in r if necessary
     return r;
-}
-
-// returns 1.0f for positive floats, -1.0f for negative floats, 0.0f for zero
-inline FLOAT fast_sign(FLOAT f)
-{
-	if (((INT&)f & 0x7FFFFFFF)==0)
-    	return 0.f; // test exponent & mantissa bits: is input zero?
-	else
-	{
-		FLOAT r = 1.0f;
-		(INT&)r |= ((INT&)f & 0x80000000); // mask sign bit in f, set it in r if necessary
-		return r;
-    }
 }
 
 inline FLOAT _Reciprocal( FLOAT F)
@@ -862,63 +860,6 @@ inline void DoublePlaneDotU( const FPlane* Plane, const FVector4* Start, const F
 #endif
 }
 
-
-// Does PlaneDot on both Start and End on the same plane (Aligned plane)
-// Dist must be a FLOAT[2] array
-inline void DoublePlaneDotA( const FVector4* Plane, const FVector4* Start, const FVector4* End, FLOAT* Dist)
-{
-#if ASM
-		__asm
-		{
-			mov      eax,[End]		//Get address of End vector
-			mov      edi,[Start]	//Get address of Start vector
-			mov      ecx,[Plane]	//Get address of node Plane
-			mov      edx,[Dist]		//Get address of Dist array
-			movaps   xmm0,[eax]		//x0: End
-			movaps   xmm1,[edi]		//x1: Start
-			movaps   xmm2,[ecx]		//x2: Plane, not aligned
-			mulps    xmm0,xmm2		//x0: (End * Plane)(X,Y,Z,W)
-			mulps    xmm1,xmm2		//x1: (Start * Plane)(X,Y,Z,W)
-
-			//Sum all scalars in register x0 (using x2 temp)
-			pshufd xmm2,xmm0,49 // 1->0, 3->2 ...0b00110001 | 0x31
-			addps xmm0,xmm2 // 0+1, xx, 2+3, xx
-			movhlps xmm2,xmm0 //2,3 -> 0,1
-			addss xmm0,xmm2
-			
-			//Sum all scalars in register x1 (using x2 temp)
-			pshufd xmm2,xmm1,49 // 1->0, 3->2 ...0b00110001 | 0x31
-			addps xmm1,xmm2 // 0+1, xx, 2+3, xx
-			movhlps xmm2,xmm1 //2,3 -> 0,1
-			addss xmm1,xmm2
-			
-			movss [edx+0],xmm1
-			movss [edx+4],xmm0 
-		}
-#elif ASMLINUX
-		__asm__ __volatile__("movaps    (%%eax),%%xmm0 \n"
-							"movaps     (%%edi),%%xmm1 \n"
-							"movaps     (%%ecx),%%xmm2 \n"
-							"mulps       %%xmm2,%%xmm0 \n"
-							"mulps       %%xmm2,%%xmm1 \n"
-							"pshufd  $49,%%xmm0,%%xmm2 \n"
-							"addps       %%xmm2,%%xmm0 \n"
-							"movhlps     %%xmm0,%%xmm2 \n"
-							"addss       %%xmm2,%%xmm0 \n"
-							"pshufd  $49,%%xmm1,%%xmm2 \n"
-							"addps       %%xmm2,%%xmm1 \n"
-							"movhlps     %%xmm1,%%xmm2 \n"
-							"addss       %%xmm2,%%xmm1 \n"
-							"movss       %%xmm1,0(%%edx)\n"
-							"movss       %%xmm0,4(%%edx)\n"
-		: :	"a" (End), "D" (Start), "c" (Plane), "d" (Dist) : "memory"	);
-//		__asm__ __volatile__("movss      %%xmm1,%0 \n"	: "=m" (Dist1) );
-//		__asm__ __volatile__("movss      %%xmm0,%0 \n"	: "=m" (Dist2) );*/
-#else
-		Dist[0] = Plane->PlaneDot(*Start);
-		Dist[1] = Plane->PlaneDot(*End  );
-#endif
-}
 
 //Obtains intersection using distances to plane as alpha (optimal for traces), W = -1.f by default
 //Use DoublePlaneDot to obtain the Dist array

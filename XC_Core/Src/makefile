@@ -1,10 +1,15 @@
 CXX = gcc-2.95
 
-OTHERSTUFF = -Wl
-CXXFLAGS = -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pentium -fpermissive -D_REENTRANT -fPIC -fsigned-char -pipe -DGPackage=XC_Core -Werror -I. -I../inc -I../../Core/Inc -I../../Engine/Inc -I../../XC_Core/Inc -I../../CacusLib -I/usr/include/i386-linux-gnu/
-LDFLAGS = -shared -Wl,-rpath,. -export-dynamic -Wl,--eh-frame-hdr -Wl,--traditional-format -Wl,-z,defs -lm -lc -ldl -lnsl -lpthread -Wl,-z,defs
-OUTPUT = ../../System/XC_Core.so
+SONAME = XC_Core.so
+
+CXXFLAGS = -D__LINUX_X86__ -fno-for-scope -O2 -fomit-frame-pointer -march=pentium -fpermissive -D_REENTRANT -fPIC -fsigned-char -pipe -DGPackage=XC_Core -Werror -I. -I../Inc -I../../Core/Inc -I../../Engine/Inc -I../../CacusLib -I/usr/include/i386-linux-gnu/
+
+LDFLAGS = -shared -Wl,-rpath,. -export-dynamic -Wl,--eh-frame-hdr -Wl,--traditional-format -Wl,-z,defs -lm -lc -ldl -lnsl -lpthread -Wl,-z,defs -Wl,-soname,$(SONAME)
+
+OUTPUT = ../../System/$(SONAME)
+
 LIBS = ../../System/Core.so ../../System/Engine.so 
+
 OBJDIR = Obj/
 
 
@@ -15,7 +20,8 @@ SRCS = XC_CoreScript.cpp	\
 	XC_Generic.cpp	\
 	Devices.cpp	\
 	CacusLibCompat.cpp	\
-	RouteMapper.cpp
+	RouteMapper.cpp	\
+	Math.cpp
 
 OBJS = $(SRCS:%.cpp=$(OBJDIR)%.o)
 

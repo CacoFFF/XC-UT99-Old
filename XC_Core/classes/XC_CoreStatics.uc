@@ -30,6 +30,7 @@ var() transient float iC[2]; //If you want to internally clock
 //227 compatible opcodes
 native /* (192)*/ static final function Color MakeColor( byte R, byte G, byte B, optional byte A);
 native /* (238)*/ static final function string Locs( string InStr );
+native /* (257)*/ static final function bool LoadPackageContents( string PackageName, class<Object> ListType, out array<Object> PckContents );
 native /* (391)*/ static final function name StringToName( string S );
 native /* (600)*/ static final function Object FindObject( string ObjectName, class ObjectClass, optional Object ObjOuter ); //ObjOuter param incompatible with 227!!!
 native /* (601)*/ static final function Class<Object> GetParentClass( Class<Object> ObjClass );

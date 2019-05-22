@@ -60,6 +60,8 @@ int StaticInitScriptCompiler();
 	#undef CPP_PROPERTY
 	#define CPP_PROPERTY(name) \
 		EC_CppProperty, (BYTE*)&((ThisClass*)1)->name - (BYTE*)1
+
+	inline int StaticInitScriptCompiler() { return 0; }
 #endif
 
 

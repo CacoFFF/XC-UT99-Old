@@ -15,14 +15,90 @@
 
 #pragma comment (lib,"Psapi.lib")
 
+//***************
+// Virtual Memory
+template <size_t MemSize> class TScopedVirtualProtect
+{
+	uint8* Address;
+	uint32 RestoreProtection;
 
-// Hook description
+	TScopedVirtualProtect() {}
+public:
+	TScopedVirtualProtect( uint8* InAddress)
+		: Address( InAddress)
+	{
+		if ( Address )	VirtualProtect( Address, MemSize, PAGE_EXECUTE_READWRITE, &RestoreProtection);
+	}
+
+	~TScopedVirtualProtect()
+	{
+		if ( Address )	VirtualProtect( Address, MemSize, RestoreProtection, &RestoreProtection);
+	}
+};
+
+// Writes a long relative jump
+static void EncodeJump( uint8* At, uint8* To)
+{
+	TScopedVirtualProtect<5> VirtualUnlock( At);
+	uint32 Relative = To - (At + 5);
+	*At = 0xE9;
+	*(uint32*)(At+1) = Relative;
+}
+// Writes a long relative call
+static void EncodeCall( uint8* At, uint8* To)
+{
+	TScopedVirtualProtect<5> VirtualUnlock( At);
+	uint32 Relative = To - (At + 5);
+	*At = 0xE8;
+	*(uint32*)(At+1) = Relative;
+}
+
+
+
+//***************
+// Hook resources 
+
+class FPropertyBase_XC
+{
+public:
+	typedef FPropertyBase_XC* (FPropertyBase_XC::*Constructor_UProp)(UProperty* PropertyObj);
+	static Constructor_UProp FPropertyBase_UProp;
+public:
+	// Variables.
+	int unk_00;
+	int ArrayDim; //Set to 0 on Dyn Arrays!
+	uint32 PropertyFlags;
+	union
+	{
+		UField* Field;
+		uint32 BitMask;
+	};
+	UClass* MetaClass;
+
+	FPropertyBase_XC* ConstructorProxy_UProp( UProperty* PropertyObj);
+};
+FPropertyBase_XC::Constructor_UProp FPropertyBase_XC::FPropertyBase_UProp = nullptr;
+
+
+class FToken : public FPropertyBase_XC //Large class!
+{
+public:
+};
+
+
 class FScriptCompiler_XC
 {
 public:
-	UField* FindField( UStruct* Owner, const TCHAR* InIdentifier, UClass* FieldClass, const TCHAR* P4);
-};
+	typedef int (FScriptCompiler_XC::*CompileExpr_Func)( FPropertyBase_XC, const TCHAR*, FToken*, int, FPropertyBase_XC*);
+	static CompileExpr_Func CompileExpr_Org;
 
+	UField* FindField( UStruct* Owner, const TCHAR* InIdentifier, UClass* FieldClass, const TCHAR* P4);
+	int CompileExpr_FunctionParam( FPropertyBase_XC Type, const TCHAR* Error, FToken* Token, int unk_p4, FPropertyBase_XC* unk_p5);
+};
+FScriptCompiler_XC::CompileExpr_Func FScriptCompiler_XC::CompileExpr_Org = nullptr;
+
+
+//TODO: Disassemble Editor.so for more symbols
 // Hook helper
 struct ScriptCompilerHelper_XC_CORE
 {
@@ -33,36 +109,35 @@ public:
 	TArray<UFunction*> StaticFunctions; //Hardcoded static functions
 	//Struct mirroring causes package dependancy, we need to copy the struct
 
-	ScriptCompilerHelper_XC_CORE()
-		: bInit(0)	{}
+	UProperty* LastProperty;
+	UFunction* Array_Length;
+	UFunction* Array_Insert;
+	UFunction* Array_Remove;
 
-	void AddFunction( UStruct* InStruct, const TCHAR* FuncName)
+
+	ScriptCompilerHelper_XC_CORE()
+		: bInit(0), LastProperty(nullptr), Array_Length(nullptr), Array_Insert(nullptr), Array_Remove(nullptr)
+	{}
+
+	UFunction* AddFunction( UStruct* InStruct, const TCHAR* FuncName)
 	{
 		UFunction* F = FindBaseFunction( InStruct, FuncName);
-		if ( !F )
-			return;
-
-		if ( F->FunctionFlags & FUNC_Static )
-			StaticFunctions.AddItem( F);
-		else if ( InStruct->IsChildOf( AActor::StaticClass()) )
-			ActorFunctions.AddItem( F);
-		else
-			ObjectFunctions.AddItem( F);
+		if ( F )
+		{
+			if ( F->FunctionFlags & FUNC_Static )
+				StaticFunctions.AddItem( F);
+			else if ( InStruct->IsChildOf( AActor::StaticClass()) )
+				ActorFunctions.AddItem( F);
+			else
+				ObjectFunctions.AddItem( F);
+		}
+		return F;
 	}
 };
 static ScriptCompilerHelper_XC_CORE Helper; //Makes C runtime init construct this object
 
 
-// Writes a long relative jump
-static void EncodeJump( uint8* At, uint8* To)
-{
-	uint32 OldProt;
-	VirtualProtect( At, 5, PAGE_EXECUTE_READWRITE, &OldProt);
-	uint32 Relative = To - (At + 5);
-	*At = 0xE9;
-	*(uint32*)(At+1) = Relative;
-	VirtualProtect( At, 5, OldProt, &OldProt);
-}
+
 
 #define ForceAssign(Member,dest) \
 	__asm { \
@@ -85,9 +160,31 @@ int StaticInitScriptCompiler()
 		return 0; //Prevent multiple recursion
 
 	uint8* Tmp;
-	ForceAssign( FScriptCompiler_XC::FindField, Tmp);
+
+	Tmp = EditorBase + 0xA5B70; //Get FScriptCompiler::CompileExpr
+	ForceAssign( Tmp, FScriptCompiler_XC::CompileExpr_Org);
+
+	Tmp = EditorBase + 0xA4490; //Get FPropertyBase::FPropertyBase( UProperty*) --- real ---
+	ForceAssign( Tmp, FPropertyBase_XC::FPropertyBase_UProp);
+
+	ForceAssign( FScriptCompiler_XC::FindField, Tmp); //Trampoline FScriptCompiler::FindField into our version
 	EncodeJump( EditorBase + 0xA17A0, Tmp);
+
+	ForceAssign( FScriptCompiler_XC::CompileExpr_FunctionParam, Tmp); //Proxy FScriptCompiler::CompileExpr for function params
+	EncodeCall( EditorBase + 0xA3758, Tmp);
+
+	ForceAssign( FPropertyBase_XC::ConstructorProxy_UProp, Tmp); //Middleman FPropertyBase::FPropertyBase( UProperty*) using it's jumper
+	EncodeJump( EditorBase + 0x1131, Tmp);
 }
+
+
+FPropertyBase_XC* FPropertyBase_XC::ConstructorProxy_UProp( UProperty* PropertyObj)
+{
+	Helper.LastProperty = PropertyObj;
+	(this->*FPropertyBase_UProp)( PropertyObj);
+	return this;
+}
+
 
 
 UField* FScriptCompiler_XC::FindField( UStruct* Owner, const TCHAR* InIdentifier, UClass* FieldClass, const TCHAR* P4)
@@ -127,12 +224,15 @@ UField* FScriptCompiler_XC::FindField( UStruct* Owner, const TCHAR* InIdentifier
 			Helper.AddFunction( XCGEA, TEXT("CollidingActors"));
 			Helper.AddFunction( XCGEA, TEXT("NavigationActors"));
 			Helper.AddFunction( XCGEA, TEXT("ConnectedDests"));
+			Helper.AddFunction( XCGEA, TEXT("ReplaceFunction"));
+			Helper.AddFunction( XCGEA, TEXT("RestoreFunction"));
 		}
 		UClass* XCEL = FindObject<UClass>( NULL, TEXT("XC_Engine.XC_EditorLoader"), 1);
 		if ( XCEL )
 		{
 			Helper.AddFunction( XCEL, TEXT("MakeColor"));
 			Helper.AddFunction( XCEL, TEXT("Locs"));
+			Helper.AddFunction( XCEL, TEXT("LoadPackageContents"));
 			Helper.AddFunction( XCEL, TEXT("StringToName"));
 			Helper.AddFunction( XCEL, TEXT("FindObject"));
 			Helper.AddFunction( XCEL, TEXT("GetParentClass"));
@@ -149,6 +249,9 @@ UField* FScriptCompiler_XC::FindField( UStruct* Owner, const TCHAR* InIdentifier
 			Helper.AddFunction( XCEL, TEXT("InvSqrt"));
 			Helper.AddFunction( XCEL, TEXT("MapRoutes"));
 			Helper.AddFunction( XCEL, TEXT("BuildRouteCache"));
+			Helper.Array_Length = Helper.AddFunction( XCEL, TEXT("Array_Length"));
+			Helper.Array_Insert = Helper.AddFunction( XCEL, TEXT("Array_Insert"));
+			Helper.Array_Remove = Helper.AddFunction( XCEL, TEXT("Array_Remove"));
 		}
 	}
 
@@ -175,3 +278,21 @@ UField* FScriptCompiler_XC::FindField( UStruct* Owner, const TCHAR* InIdentifier
 	
 	return nullptr;
 }
+
+int FScriptCompiler_XC::CompileExpr_FunctionParam( FPropertyBase_XC Type, const TCHAR* Error, FToken* Token, int unk_p4, FPropertyBase_XC* unk_p5)
+{
+	guard(CompileExpr_FunctionParam)
+
+	UObject* Container = Helper.LastProperty ? Helper.LastProperty->GetOuter() : nullptr;
+	int Result = (this->*CompileExpr_Org)(Type,Error,Token,unk_p4,unk_p5);
+
+	if ( (Result == -1) && Container && (Type.ArrayDim == 0) && (Token->ArrayDim == 0) ) //Dynamic array mismatch, see if we can hardcode behaviour
+	{
+		if ( Container == Helper.Array_Length || Container == Helper.Array_Insert || Container == Helper.Array_Remove )
+			Result = 1; // This is the first parameter of any of these array handlers
+	}
+
+	return Result;
+	unguard
+}
+

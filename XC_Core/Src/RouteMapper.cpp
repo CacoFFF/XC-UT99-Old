@@ -74,6 +74,7 @@ ANavigationPoint* UXC_CoreStatics::MapRoutes( APawn* Reference, TArray<ANavigati
 		StartAnchors(i)->startPath = StartAnchors(i);
 
 	// Call event after resetting the network, give coder opportunity to alter the behaviour of the mapper.
+	guard(RouteMapperEvent)
 	if ( RouteMapperEvent != NAME_None )
 	{
 		UFunction* func = FindFunction(RouteMapperEvent);
@@ -104,24 +105,26 @@ ANavigationPoint* UXC_CoreStatics::MapRoutes( APawn* Reference, TArray<ANavigati
 				ProcessEvent( func, &EventParams);
 		}
 	}
+	unguard
 
 	// Setup list of operational nodes, it will hold all to-be-checked nodes.
 	ANavigationPoint** NList = new(GMem, BufferSize+1) ANavigationPoint*;
+	INT Remaining = 0;
 	for ( i=0 ; i<StartAnchors.Num() ; i++ )
 	{
 		if ( StartAnchors(i)->cost < MAX_WEIGHT ) //This anchor is eligible
 		{
-			NList[i] = StartAnchors(i);
-			NList[i]->bestPathWeight = PATH_LISTED | PATH_VISITABLE;
-			if ( NList[i]->visitedWeight == MAX_WEIGHT )
-				NList[i]->visitedWeight = 0;
+			NList[Remaining] = StartAnchors(i);
+			NList[Remaining]->bestPathWeight = PATH_LISTED | PATH_VISITABLE;
+			if ( NList[Remaining]->visitedWeight == MAX_WEIGHT )
+				NList[Remaining]->visitedWeight = 0;
+			Remaining++;
 		}
 		else
 			StartAnchors(i)->bestPathWeight = PATH_UNUSABLE;
 	}
 
 	// Setup loop environment
-	INT Remaining = i;
 	const INT W = appFloor( Reference->CollisionRadius);
 	const INT H = appFloor( Reference->CollisionHeight);
 	const INT M = Reference->calcMoveFlags();
@@ -133,6 +136,7 @@ ANavigationPoint* UXC_CoreStatics::MapRoutes( APawn* Reference, TArray<ANavigati
 	// When a node is removed from this list, it'll not be checked again.
 	// When processing in said order, we can be 99.9% sure that there's no need to
 	// re-add a node that's been left out.
+	guard(ProcessList)
 	while( Remaining > 0 )
 	{
 		//Grab node with lowest 'visitedWeight'
@@ -186,6 +190,7 @@ ANavigationPoint* UXC_CoreStatics::MapRoutes( APawn* Reference, TArray<ANavigati
 			}
 		}
 	}
+	unguard
 
 	Mark.Pop();
 	return NearestEndPoint;

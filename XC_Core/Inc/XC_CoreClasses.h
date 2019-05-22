@@ -69,6 +69,7 @@ public:
 	DECLARE_FUNCTION(execGetParentClass);
 	DECLARE_FUNCTION(execStringToName);
 	DECLARE_FUNCTION(execLocs);
+	DECLARE_FUNCTION(execLoadPackageContents);
 	DECLARE_FUNCTION(execMakeColor);
 	DECLARE_FUNCTION(execFindObject);
 	DECLARE_FUNCTION(execAllObjects);
@@ -117,6 +118,7 @@ AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execAppCycles);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execGetParentClass);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execStringToName);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execLocs);
+AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execLoadPackageContents);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execMakeColor);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execFindObject);
 AUTOGENERATE_FUNCTION(UXC_CoreStatics,-1,execAllObjects);

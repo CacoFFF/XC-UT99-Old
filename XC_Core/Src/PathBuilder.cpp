@@ -434,7 +434,9 @@ inline void FPathBuilderMaster::DefineSpecials()
 				{
 					SpecialSpec.Start = InfoList(j).Owner;
 					SpecialSpec.End = Teleporter;
+					SpecialSpec.distance = 100;
 					AttachReachSpec( SpecialSpec);
+					SpecialSpec.distance = 500;
 				}
 			}
 		}
@@ -589,7 +591,7 @@ inline void FPathBuilderMaster::DefineFor( ANavigationPoint* A, ANavigationPoint
 
 		FVector ADelta = InfoList(i).Owner->Location - A->Location; //Dir . ADelta > 0 (req)
 		FVector BDelta = InfoList(i).Owner->Location - B->Location; //Dir . BDelta < 0 (req)
-		if ( (ADelta | X) * (BDelta | X) >= 0 )
+		if ( ((ADelta | X) + 16.0) * ((BDelta | X) - 16.0) >= 0 )
 			continue; //Fast: Only consider nodes in the band between A and B (parallel planes)
 
 		float ExistingDistance = ADelta.Size() + BDelta.Size();
@@ -756,8 +758,7 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 					
 			}
 		}
-		if ( Reachable != 2 ) //2 means no flag
-			Spec.reachFlags |= R_JUMP;
+		Spec.reachFlags |= Reachable;
 	}
 
 	if ( Aerial && !Reachable )
@@ -840,6 +841,14 @@ static int FlyTo( APawn* Scout, AActor* Other)
 	return 0;
 }
 
+static int BadWater( AZoneInfo* Zone)
+{
+	return Zone->bWaterZone
+	&& (Zone->ZoneFluidFriction > 2
+	|| Zone->DamagePerSec > 3
+	|| Zone->ZoneTerminalVelocity < 50);
+}
+
 static int JumpTo( APawn* Scout, AActor* Other)
 {
 	float Gravity = Scout->Region.Zone->ZoneGravity.Z;
@@ -856,7 +865,7 @@ static int JumpTo( APawn* Scout, AActor* Other)
 	}
 	FVector Offset = Other->Location - Scout->Location;
 	if ( Square(Offset.X) + Square(Offset.Y) < Square(NetRadius) && Square(Offset.Z) < Square(NetHeight) )
-		return 2;
+		return R_WALK;
 
 	int bTriedJump = 0;
 	do
@@ -908,7 +917,7 @@ static int JumpTo( APawn* Scout, AActor* Other)
 				{
 //					if ( HVel < Scout->GroundSpeed )
 //						debugf( NAME_DevNet, L"SUCCESS MOVEMENT");
-					Reached = 1;
+					Reached = R_WALK | R_JUMP;
 					break;
 				}
 				if ( (Offset.Z > NetHeight) || (Scout->Location - OldPos).SizeSquared() <= 1 )
@@ -916,15 +925,19 @@ static int JumpTo( APawn* Scout, AActor* Other)
 			}
 			if ( !Reached )
 			{
+				if ( BadWater(Scout->Region.Zone) )
+					return 0;
 //				if ( HVel < Scout->GroundSpeed )
 //					debugf( NAME_DevNet, L"TEST REACH");
-				Scout->Physics = PHYS_Walking;
+				Scout->Physics = Scout->Region.Zone->bWaterZone ? PHYS_Swimming : PHYS_Walking;
 				Reached = Scout->pointReachable( Other->Location);
+				if ( Reached )
+					Reached |= R_WALK | R_JUMP | (R_SWIM * Scout->Region.Zone->bWaterZone);
 //				if ( HVel < Scout->GroundSpeed && !Reached )
 //					debugf( NAME_DevNet, L"FAIL");
 			}
 			if ( Reached )
-				return 1;
+				return Reached;
 		}
 	}
 	#undef STEP_ALPHA

@@ -5,6 +5,7 @@
 // Includes.
 #include "XC_Core.h"
 
+#include "UnLinker.h"
 #include "Engine.h"
 
 
@@ -113,6 +114,7 @@ INT DummyFixNames()
 		FixNameCase( TEXT("execGetParentClass") );
 		FixNameCase( TEXT("execStringToName") );
 		FixNameCase( TEXT("execLocs") );
+		FixNameCase( TEXT("execLoadPackageContents") );
 		FixNameCase( TEXT("execMakeColor") );
 		FixNameCase( TEXT("FindObject") );
 		FixNameCase( TEXT("AllObjects") );
@@ -140,6 +142,7 @@ XC_CORE_API void XCCNatives( UBOOL bEnable)
 		GetDefault<UXC_CoreStatics>()->bGNatives = true;
 		GNatives[198] = (Native)&UXC_CoreStatics::execMakeColor;
 		GNatives[238] = (Native)&UXC_CoreStatics::execLocs;
+		GNatives[257] = (Native)&UXC_CoreStatics::execLoadPackageContents;
 		GNatives[391] = (Native)&UXC_CoreStatics::execStringToName;
 		GNatives[600] = (Native)&UXC_CoreStatics::execFindObject;
 		GNatives[601] = (Native)&UXC_CoreStatics::execGetParentClass;
@@ -163,6 +166,7 @@ XC_CORE_API void XCCNatives( UBOOL bEnable)
 		GetDefault<UXC_CoreStatics>()->bGNatives = false;
 		GNatives[198] = (Native)&UObject::execUndefined;
 		GNatives[238] = (Native)&UObject::execUndefined;
+		GNatives[257] = (Native)&UObject::execUndefined;
 		GNatives[391] = (Native)&UObject::execUndefined;
 		GNatives[600] = (Native)&UObject::execUndefined;
 		GNatives[601] = (Native)&UObject::execUndefined;
@@ -455,6 +459,43 @@ void UXC_CoreStatics::execLocs( FFrame& Stack, RESULT_DECL )
 	*(FString*)Result = A.Locs();
 }
 
+void UXC_CoreStatics::execLoadPackageContents( FFrame& Stack, RESULT_DECL )
+{
+	guard( execLoadPackageContents);
+	P_GET_STR( PackageName);
+	P_GET_CLASS( ListType);
+	Stack.Step( Stack.Object, NULL); //GET DYN ARRAY REF, do not paste back result
+	P_FINISH;
+
+	*(UBOOL*)Result = 0;
+	check( GProperty && GProperty->IsA( UArrayProperty::StaticClass()) );
+	check( GPropAddr);
+	TArray<UObject*>& List = *(TArray<UObject*>*)GPropAddr;
+	if ( PackageName == TEXT(""))
+		return;
+
+	SafeEmpty(List);
+	UPackage* Package = (UPackage*)LoadPackage( NULL, *PackageName, LOAD_None);
+	if ( Package )
+	{
+		UObject::BeginLoad();
+		ULinkerLoad* Linker = GetPackageLinker( Package, *PackageName, 0, NULL, NULL);
+		UObject::EndLoad();
+		if ( Linker )
+		{
+			//We want a list of objects exported by the linker (these belong to the package)
+			if ( ListType )
+			{
+				for ( INT i=0 ; i<Linker->ExportMap.Num() ; i++ )
+					if ( Linker->ExportMap(i)._Object && Linker->ExportMap(i)._Object->IsA(ListType) )
+						List.AddItem( Linker->ExportMap(i)._Object);
+			}
+			*(UBOOL*)Result = 1;
+		}
+	}
+	unguard;
+}
+
 void UXC_CoreStatics::execMakeColor( FFrame& Stack, RESULT_DECL )
 {
 	Stack.Step( Stack.Object, (BYTE*)Result);
@@ -559,6 +600,7 @@ void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 		return;
 
 	INT NodeCount = 1; //Because EndPoint is already there!
+	EndPoint->nextOrdered = NULL;
 	while ( EndPoint->prevOrdered )
 	{
 		NodeCount++;
@@ -579,7 +621,11 @@ void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 			if ( Square(Delta.X)+Square(Delta.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)
 			&&	 Square(Delta.Z)                 < Square(EndPoint->CollisionHeight+P->CollisionHeight)
 			&&	 P->pointReachable(EndPoint->nextOrdered->Location) )
+			{
 				EndPoint = EndPoint->nextOrdered;
+				if ( NodeCount-- <= 0 )
+					break;
+			}
 			else
 				break;
 		}
