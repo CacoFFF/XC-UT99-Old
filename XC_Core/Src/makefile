@@ -21,7 +21,8 @@ SRCS = XC_CoreScript.cpp	\
 	Devices.cpp	\
 	CacusLibCompat.cpp	\
 	RouteMapper.cpp	\
-	Math.cpp
+	Math.cpp	\
+	Ticker.cpp
 
 OBJS = $(SRCS:%.cpp=$(OBJDIR)%.o)
 

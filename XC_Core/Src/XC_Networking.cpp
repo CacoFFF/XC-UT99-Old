@@ -11,6 +11,7 @@
 #include "XC_LZMA.h"
 #include "UnXC_Arc.h"
 #include "FCodec_XC.h"
+#include "CTickerEngine.h"
 
 #include "Cacus/CacusThread.h"
 #include "Cacus/AppTime.h"
@@ -81,6 +82,9 @@ INT UXC_ServerCommandlet::Main( const TCHAR* Parms)
 	DOUBLE SecondStartTime = OldTime;
 	INT TickCount = 0;
 
+	CTickerEngine Ticker;
+	Ticker.UpdateTimerResolution();
+	Ticker.TickNow();
 	while( GIsRunning && !GIsRequestingExit )
 	{
 		// Update the world.
@@ -98,10 +102,14 @@ INT UXC_ServerCommandlet::Main( const TCHAR* Parms)
 			TickCount = 0;
 		}
 		unguard;
-
+	
 		// Enforce optional maximum tick rate.
 		guard(EnforceTickRate);
-		FLOAT MaxTickRate = Engine->GetMaxTickRate();
+		double TickRate = Engine->GetMaxTickRate();
+		if ( TickRate < 4.0 )
+			TickRate = 200.0;
+		Ticker.TickInterval( 1.0 / TickRate, 0.25, 0.1 / 1000.0); // 0.1ms error allowed
+																						  /*		FLOAT MaxTickRate = Engine->GetMaxTickRate();
 		if( MaxTickRate>0.f )
 		{
 			FLOAT IdealDelta = 1.0f / MaxTickRate;
@@ -111,7 +119,7 @@ INT UXC_ServerCommandlet::Main( const TCHAR* Parms)
 			//Attempt to approach the ideal time sleep-by-sleep
 			while ( ((IdealDelta - (FPlatformTime::Seconds()-OldTime)) - 0.000005f) > 0.f )
 				appSleep( 0.f );
-		}
+		}*/
 		unguard;
 	}
 	GIsRunning = 0;

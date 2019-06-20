@@ -80,11 +80,10 @@ static int ActorsTouching( AActor* Check, AActor* Other)
 	return Square(Diff.X) + Square(Diff.Y) <= Square(NetRadius) && Square(Diff.Z) <= Square(NetHeight);
 }
 
-//============== Cleanup a NavigationPoint
+//============== Discard route mapper data
 //
-static void Cleanup( ANavigationPoint* N)
+static void RouteCleanup( ANavigationPoint* N)
 {
-	N->nextNavigationPoint = nullptr;
 	N->nextOrdered         = nullptr;
 	N->prevOrdered         = nullptr;
 	N->startPath           = nullptr;
@@ -92,6 +91,14 @@ static void Cleanup( ANavigationPoint* N)
 	N->OtherTag            = 0;
 	N->visitedWeight       = 0;
 	N->bestPathWeight      = 0;
+}
+
+//============== Cleanup a NavigationPoint
+//
+static void Cleanup( ANavigationPoint* N)
+{
+	N->nextNavigationPoint = nullptr;
+	RouteCleanup( N);
 	for ( int32 i=0; i<16; i++)
 	{
 		N->Paths[i]           = -1;
@@ -100,6 +107,7 @@ static void Cleanup( ANavigationPoint* N)
 		N->VisNoReachPaths[i] = nullptr;
 	}
 }
+
 
 //============== Counts amount of paths in array
 //
@@ -315,6 +323,11 @@ inline void FPathBuilderMaster::DefinePaths()
 	DefineSpecials();
 	BuildCandidatesLists();
 	ProcessCandidatesLists();
+
+	// Cleanup temporary data
+	for ( ANavigationPoint* N=Level->GetLevelInfo()->NavigationPointList ; N ; N=N->nextNavigationPoint )
+		RouteCleanup(N);
+
 	BuildResult += FString::Printf( TEXT("Created %i reachSpecs."), Level->ReachSpecs.Num() );
 }
 

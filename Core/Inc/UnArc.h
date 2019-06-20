@@ -116,10 +116,10 @@ public:
 	,	ArIsSaving		(0)
 	,   ArIsTrans		(0)
 	,	ArIsPersistent  (0)
+	,   ArIsError       (0)
 	,	ArForEdit		(1)
 	,	ArForClient		(1)
 	,	ArForServer		(1)
-	,   ArIsError       (0)
 	{}
 
 	// Status accessors.

@@ -271,7 +271,6 @@ void UXC_CoreStatics::StaticConstructor()
 {
 	UClass* TheClass = GetClass();
 	UXC_CoreStatics* DefaultObject = (UXC_CoreStatics*) &TheClass->Defaults(0);
-	DefaultObject->XC_Core_Version = 10;
 
 	StartTime = FPlatformTime::InitTiming();
 
@@ -282,6 +281,7 @@ void UXC_CoreStatics::StaticConstructor()
 	CStringBufferInit( 16 * 1024); //Only initialize a 16kb buffer
 	RegisterNames();
 
+	DefaultObject->XC_Core_Version = 10;
 	INT Dummy = 0;
 	UClassHack::InternalConstructor( &Dummy);
 	HackingClass = 1;
@@ -664,12 +664,11 @@ void UXC_CoreStatics::execBuildRouteCache( FFrame &Stack, RESULT_DECL)
 	if ( PawnHandleSpecial && EndPoint )
 	{
 		AActor* Special = HandleSpecial( PawnHandleSpecial, EndPoint);
-		if ( !Special )
+		if ( EndPoint->nextOrdered && (!Special || (Special == EndPoint)) )
 		{
 			FVector Delta = PawnHandleSpecial->Location - EndPoint->Location;
-			if ( EndPoint->nextOrdered
-			&&	Square(Delta.X)+Square(Delta.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)
-			&&	Square(Delta.Z)                 < Square(EndPoint->CollisionHeight+P->CollisionHeight) )
+			if  (Square(Delta.X)+Square(Delta.Y) < Square(EndPoint->CollisionRadius+P->CollisionRadius)
+			&&   Square(Delta.Z)                 < Square(EndPoint->CollisionHeight+P->CollisionHeight) )
 			{
 				EndPoint = EndPoint->nextOrdered;
 				if ( List == PawnHandleSpecial->RouteCache ) //Pop route cache as well
