@@ -20,6 +20,7 @@ SRCS = XC_CoreScript.cpp	\
 	XC_Generic.cpp	\
 	Devices.cpp	\
 	CacusLibCompat.cpp	\
+	PathBuilder.cpp	\
 	RouteMapper.cpp	\
 	Math.cpp	\
 	Ticker.cpp

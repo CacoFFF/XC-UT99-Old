@@ -32,40 +32,35 @@ UBOOL GMallocThreadSafe = 0;
 
 FOutputDeviceFileXC::FOutputDeviceFileXC( const TCHAR* InFilename  )
 {
-	CacusOut = (COutputDeviceFile*)ConstructOutputDevice( COUT_File_UTF8);
 	SetFilename( InFilename);
-	CacusOut->AutoFlush = 0;
+	CacusOut.AutoFlush = 0;
 }
 
 FOutputDeviceFileXC::~FOutputDeviceFileXC()
 {
-	DestructOutputDevice( CacusOut);
-	CacusOut = NULL;
+	CacusOut.Close();
 }
 
 void FOutputDeviceFileXC::SetFilename( const TCHAR* NewFilename)
 {
-	if ( CacusOut )
-	{
-		TCharBuffer<1024,char> Buf;
+	TCharBuffer<1024,char> Buf;
 #ifdef __LINUX_X86__
-        if ( !ParseParam(appCmdLine(),TEXT("nohomedir")))
-			Buf = CUserDir();
+       if ( !ParseParam(appCmdLine(),TEXT("nohomedir")))
+		Buf = CUserDir();
 #endif
-		Buf += TCHAR_TO_ANSI(NewFilename);
-		CacusOut->SetFilename( *Buf);
-	}
+	Buf += TCHAR_TO_ANSI(NewFilename);
+	CacusOut.SetFilename( *Buf);
 }
 
 void FOutputDeviceFileXC::WriteDataToArchive(const TCHAR* Data, EName Event)
 {
 	if ( Event != NAME_None )
 	{
-		CacusOut->Serialize( FName::SafeString(Event));
-		CacusOut->Serialize( ": ");
+		CacusOut.Serialize( FName::SafeString(Event));
+		CacusOut.Serialize( ": ");
 	}
-	CacusOut->Serialize( Data);
-	CacusOut->Serialize( "\r\n");
+	CacusOut.Serialize( Data);
+	CacusOut.Serialize( "\r\n");
 }
 
 void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
@@ -73,10 +68,10 @@ void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
 	static UBOOL Entry = 0;
 	if( !GIsCriticalError || Entry )
 	{
-		if( !CacusOut->Opened && !CacusOut->Dead )
+		if( !CacusOut.Opened && !CacusOut.Dead )
 		{
 			// This will be the first line
-			CacusOut->Open(32);
+			CacusOut.Open(32);
 			TCHAR Msg[256];
 			appSprintf( Msg, TEXT("Init: Log file open, %s"), appTimestamp() );
 			WriteDataToArchive( Msg, NAME_None );
@@ -94,7 +89,7 @@ void FOutputDeviceFileXC::Serialize( const TCHAR* Data, EName Event)
 				GForceLogFlush = ParseParam( appCmdLine(), TEXT("FORCELOGFLUSH")) || ParseParam( appCmdLine(), TEXT("LOGFLUSH"));
 			}
 			if( GForceLogFlush )
-					CacusOut->Flush();
+					CacusOut.Flush();
 		}
 		if( GLogHook )
 			GLogHook->Serialize( Data, Event );
@@ -156,7 +151,9 @@ FOutputDeviceInterceptor::~FOutputDeviceInterceptor()
 {
 	if ( CriticalOut )
 	{
-		DestructOutputDevice( CriticalOut);
+		CriticalOut->Close();
+		appFree( CriticalOut);
+//		DestructOutputDevice( CriticalOut);
 		CriticalOut = NULL;
 	}
 	if ( Next )
@@ -198,7 +195,7 @@ void FOutputDeviceInterceptor::ProcessMessage( FLogLine& Line)
 		{
 			INT Year, Month, DayOfWeek, Day, Hour, Min, Sec, MSec;
 			appSystemTime( Year, Month, DayOfWeek, Day, Hour, Min, Sec, MSec );
-			CriticalOut = (COutputDeviceFile*)ConstructOutputDevice( COUT_File_UTF8);
+			CriticalOut = new COutputDeviceFileUTF8();
 			CriticalOut->SetFilename( CSprintf("Crash__%i-%02d-%02d__%02d-%02d.log", Year, Month, Day, Hour, Min) );
 			CriticalOut->AutoFlush = 1;
 		}

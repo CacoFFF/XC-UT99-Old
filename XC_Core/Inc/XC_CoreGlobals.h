@@ -16,12 +16,12 @@ XC_CORE_API UProperty* FindScriptVariable( UStruct* InStruct, const TCHAR* PropN
 XC_CORE_API void SortStringsA( TArray<FString>* List);
 XC_CORE_API void SortStringsSA( FString* List, INT ArrayMax);
 
+XC_CORE_API FString PathsRebuild( class ULevel* Level, class APawn* ScoutReference, UBOOL bBuildAir);
 
 //Linux doesn't have a working editor
 #if _WINDOWS
 
 XC_CORE_API FString CleanupLevel( class ULevel* Level);
-XC_CORE_API FString PathsRebuild( class ULevel* Level, class APawn* ScoutReference, UBOOL bBuildAir);
 
 enum EBrushToMeshFlags
 {
@@ -35,8 +35,6 @@ XC_CORE_API void BrushToMesh( class ABrush* Brush, class UMesh* ApplyTo, DWORD F
 #else
 
 inline FString CleanupLevel( class ULevel* Level)
-{	return FString();	}
-inline FString PathsRebuild( class ULevel* Level, class APawn* ScoutReference, UBOOL bBuildAir)
 {	return FString();	}
 inline void BrushToMesh( class ABrush* Brush, class UMesh* ApplyTo, DWORD Flags)
 {}

@@ -65,7 +65,7 @@ inline FTime::FTime( float f)
 {
 	INT& High = ((INT*)&v)[1];
 	INT& Low = ((INT*)&v)[0];
-	High = appRound(f);
+	High = appFloor(f);
 	Low = appRound((f - (float)High)*FIXTIME);
 }
 
@@ -73,7 +73,7 @@ inline FTime::FTime( double d)
 {
 	INT& High = ((INT*)&v)[1];
 	INT& Low = ((INT*)&v)[0];
-	High = appRound(d);
+	High = appFloor(d);
 	Low = appRound( (d - (double)High)*FIXTIME);
 }
 

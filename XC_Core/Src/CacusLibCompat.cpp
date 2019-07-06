@@ -40,12 +40,6 @@ __asm__(".global CStringBufferInit\n" "CStringBufferInit:\n" "jmp *CStringBuffer
 static void* CSprintf_Func = 0;
 __asm__(".global CSprintf\n" "CSprintf:\n" "jmp *CSprintf_Func");
 
-static void* ConstructOutputDevice_Func = 0;
-__asm__(".global ConstructOutputDevice\n" "ConstructOutputDevice:\n" "jmp *ConstructOutputDevice_Func");
-
-static void* DestructOutputDevice_Func = 0;
-__asm__(".global DestructOutputDevice\n" "DestructOutputDevice:\n" "jmp *DestructOutputDevice_Func");
-
 static void* CThread_Cons = 0;
 __asm__(".global __7CThreadPFPv_UiPvUi\n" "__7CThreadPFPv_UiPvUi:\n" "jmp *CThread_Cons");
 
@@ -63,6 +57,17 @@ __asm__(".global WaitFinish__7CThreadf\n" "WaitFinish__7CThreadf:\n" "jmp *CThre
 
 static void* COutputDeviceFile_Open = 0;
 __asm__(".global Open__17COutputDeviceFileUi\n" "Open__17COutputDeviceFileUi:\n" "jmp *COutputDeviceFile_Open");
+
+static void* COutputDeviceFile_Close = 0;
+__asm__(".global Close__17COutputDeviceFile\n" "Close__17COutputDeviceFile:\n" "jmp *COutputDeviceFile_Close");
+
+static void* COutputDeviceFile_Dest = 0;
+__asm__(".global _._17COutputDeviceFile\n" "_._17COutputDeviceFile:\n" "jmp *COutputDeviceFile_Dest");
+
+static void* COutputDeviceFileUTF8_Cons = 0;
+__asm__(".global __21COutputDeviceFileUTF8PCc\n" "__21COutputDeviceFileUTF8PCc:\n" "jmp *COutputDeviceFileUTF8_Cons");
+
+
 
 
 //TODO:
@@ -88,14 +93,15 @@ static void SetupCacus()
 	GetV( CStrcat8_s_Func, hCacus, "CStrcat8_s");
 	GetV( CStringBufferInit_Func, hCacus, "CStringBufferInit");
 	GetV( CSprintf_Func, hCacus, "CSprintf");
-	GetV( ConstructOutputDevice_Func, hCacus, "ConstructOutputDevice");
-	GetV( DestructOutputDevice_Func, hCacus, "DestructOutputDevice");
 	GetV( CThread_Cons, hCacus, "_ZN7CThreadC2EPFmPvES0_m");
 	GetV( CThread_Run2, hCacus, "_ZN7CThread3RunEPFmPvES0_");
 	GetV( CThread_Dest, hCacus, "_ZN7CThreadD2Ev");
 	GetV( CThread_Detach, hCacus, "_ZN7CThread6DetachEv");
 	GetV( CThread_WaitFinish, hCacus, "_ZN7CThread10WaitFinishEf");
 	GetV( COutputDeviceFile_Open, hCacus, "_ZN17COutputDeviceFile4OpenEm");
+	GetV( COutputDeviceFile_Close, hCacus, "_ZN17COutputDeviceFile5CloseEv");
+	GetV( COutputDeviceFile_Dest, hCacus, "_ZN17COutputDeviceFileEv");
+	GetV( COutputDeviceFileUTF8_Cons, hCacus, "_ZN21COutputDeviceFileUTF8C2EPKc");
 //	printf("%s FUG\n",CUserDir());
 }
 static void ShutdownCacus()

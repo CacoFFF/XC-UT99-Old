@@ -22,6 +22,8 @@
 #include "XC_CoreGlobals.h"
 #include "API_FunctionLoader.h"
 
+#include "FPathBuilderMaster.h"
+
 #define MAX_DISTANCE 1000
 #define MAX_WEIGHT 10000000
 
@@ -65,6 +67,14 @@ static void CompactActors( TTransArray<AActor*>& Actors, int32 StartFrom)
 	Actors.ModifyAllItems();
 }
 
+//============== In Cylinder
+//
+static int InCylinder( const FVector& V, float R, float H)
+{
+	return Square(V.X) + Square(V.Y) <= Square(R)
+	    && Square(V.Z)               <= Square(H);
+}
+
 //============== Actors are touching
 //
 static int ActorsTouching( AActor* Check, AActor* Other)
@@ -77,7 +87,7 @@ static int ActorsTouching( AActor* Check, AActor* Other)
 		NetHeight += Other->CollisionHeight;
 	}
 	FVector Diff = Check->Location - Other->Location;
-	return Square(Diff.X) + Square(Diff.Y) <= Square(NetRadius) && Square(Diff.Z) <= Square(NetHeight);
+	return InCylinder( Diff, NetRadius, NetHeight);
 }
 
 //============== Discard route mapper data
@@ -128,6 +138,24 @@ static int FreePath( int32* PathArray)
 	return INDEX_NONE;
 }
 
+
+//============== Distance sorted Navigation point query list
+//
+struct FQueryResult
+{
+	ANavigationPoint* Owner;
+	float DistSq;
+	FQueryResult* Next;
+
+	FQueryResult( FQueryResult** Chain, ANavigationPoint* InOwner, float InDistSq )
+		: Owner(InOwner) , DistSq( InDistSq), Next(nullptr)
+	{
+		while( *Chain && ((*Chain)->DistSq < DistSq) )
+			Chain = &(*Chain)->Next;
+		Next = *Chain;
+		*Chain = this;
+	}
+};
 
 
 //============== Sorted linked list element
@@ -185,55 +213,7 @@ typedef TUpwardsSortableLinkedRef<FPathBuilderInfo> TPathInfoLink;
 
 //============== Engine.dll manual imports
 //
-class FPathBuilder;
-static int32 (FPathBuilder::*findScoutStart)( FVector) = 0;
-static void  (FPathBuilder::*getScout)(void) = 0;
 
-class ENGINE_API FPathBuilder
-{
-public:
-	ULevel*                  Level;
-	APawn*                   Scout;
-//	int32                    Pad[16];
-};
-
-
-class FPathBuilderMaster : public FPathBuilder
-{
-public:
-	float                    GoodDistance; //Up to 2x during lookup
-	float                    GoodHeight;
-	float                    GoodRadius;
-	float                    GoodJumpZ;
-	float                    GoodGroundSpeed;
-	int32                    Aerial;
-	UClass*                  InventorySpotClass;
-	UClass*                  WarpZoneMarkerClass;
-	int32                    TotalCandidates;
-	FString                  BuildResult;
-
-	FPathBuilderMaster();
-	void RebuildPaths();
-private:
-	void Setup();
-	void DefinePaths();
-	void UndefinePaths();
-
-	void AddMarkers();
-	void DefineSpecials();
-	void BuildCandidatesLists();
-	void ProcessCandidatesLists();
-
-	void HandleInventory( AInventory* Inv);
-	void HandleWarpZone( AWarpZoneInfo* Info);
-
-	void DefineFor( ANavigationPoint* A, ANavigationPoint* B);
-	FReachSpec CreateSpec( ANavigationPoint* Start, ANavigationPoint* End);
-	int AttachReachSpec( const FReachSpec& Spec, int32 bPrune=0);
-
-	void GetScout();
-	int FindStart( FVector V);
-};
 
 FString PathsRebuild( ULevel* Level, APawn* ScoutReference, UBOOL bBuildAir)
 {
@@ -280,10 +260,9 @@ inline void FPathBuilderMaster::RebuildPaths()
 //============== FPathBuilderMaster internals
 //============== Build steps
 //
-inline void FPathBuilderMaster::Setup()
+void FPathBuilderMaster::Setup()
 {
 	guard(FPathBuilderMaster::Setup)
-	debugf( NAME_DevPath, TEXT("Setting up builder..."));
 	if ( GoodDistance < 200 )	GoodDistance = 1000;
 	if ( GoodHeight <= 5 )		GoodHeight = 39;
 	if ( GoodRadius <= 5 )		GoodRadius = 17;
@@ -293,19 +272,51 @@ inline void FPathBuilderMaster::Setup()
 	if ( !WarpZoneMarkerClass )		WarpZoneMarkerClass = FindObjectChecked<UClass>( ANY_PACKAGE, TEXT("WarpZoneMarker") );
 	if ( InfoList.Num() > 0 )	InfoList.Empty();
 
-#if _WINDOWS
-	HMODULE hEngine = GetModuleHandleA( "Engine.dll");
-	Get( findScoutStart, hEngine, "?findScoutStart@FPathBuilder@@AAEHVFVector@@@Z");
-	Get( getScout      , hEngine, "?getScout@FPathBuilder@@AAEXXZ");
-#else
-	void* hGlobal = dlopen( NULL, RTLD_NOW | RTLD_GLOBAL);
-	Get( findScoutStart, hGlobal, "findScoutStart__12FPathBuilderG7FVector");
-	Get( getScout      , hGlobal, "getScout__12FPathBuilder");
-#endif
-	check( findScoutStart );
-	check( getScout );
 	TotalCandidates = 0;
 	unguard
+}
+
+
+static TArray<int> FreeReachSpecs;
+//============== Individual node definitor, useful for runtime definitions
+//
+void FPathBuilderMaster::AutoDefine( ANavigationPoint* NewPoint, AActor* AdjustTo)
+{
+	// Setup environment
+	SafeEmpty( FreeReachSpecs);
+	Level = NewPoint->GetLevel();
+	if ( !Scout ) //Create scout on demand
+		GetScout();
+	if ( AdjustTo )
+		AdjustToActor( NewPoint, AdjustTo);
+
+
+	// Find unused reachspecs
+	for ( int i=0 ; i<Level->ReachSpecs.Num() ; i++ )
+		if ( !Level->ReachSpecs(i).Start && !Level->ReachSpecs(i).End )
+			FreeReachSpecs.AddItem( i);
+
+	// Create sorted list of navigation points
+	FMemMark Mark(GMem);
+	FQueryResult* Results = nullptr;
+	float MaxDistSq = Square(GoodDistance);
+	for ( ANavigationPoint* N=NewPoint->Level->NavigationPointList ; N ; N=N->nextNavigationPoint )
+		if ( N != NewPoint )
+		{
+			float DistSq = (N->Location - NewPoint->Location).SizeSquared();
+			if ( (DistSq <= MaxDistSq) && Level->Model->FastLineCheck(NewPoint->Location, N->Location) )
+				new(GMem) FQueryResult( &Results, N, DistSq);
+		}
+
+	// Create links while reserving reachspecs
+	for ( ; Results && NewPoint->Paths[10] == INDEX_NONE && NewPoint->upstreamPaths[10] == INDEX_NONE ; Results=Results->Next )
+		DefineFor( NewPoint, Results->Owner);
+
+	// Cleanup
+	Mark.Pop();
+	if ( Scout )
+		Level->DestroyActor( Scout);
+	SafeEmpty( FreeReachSpecs);
 }
 
 
@@ -596,23 +607,57 @@ inline void FPathBuilderMaster::DefineFor( ANavigationPoint* A, ANavigationPoint
 	//Construct a list of nodes contained within prunable field (check formula)
 	float MaxPrunableDistance = (Distance * 1.1 + 32) * (PruneStrength / 100 + 1);
 	int32 MiddleCount = 0;
-	ANavigationPoint** Paths = new(GMem,InfoList.Num()) ANavigationPoint*;
-	for ( i=0 ; i<InfoList.Num() ; i++ )
+	ANavigationPoint** Paths;
+
+	//Editor
+	if ( InfoList.Num() ) 
 	{
-		if ( (InfoList(i).Owner == A) || (InfoList(i).Owner == B) )
-			continue; //Discard origins
+		Paths = new(GMem,InfoList.Num()) ANavigationPoint*;
+		for ( i=0 ; i<InfoList.Num() ; i++ )
+		{
+			ANavigationPoint* N = InfoList(i).Owner;
+			if ( N==A || N==B )
+				continue; //Discard origins
 
-		FVector ADelta = InfoList(i).Owner->Location - A->Location; //Dir . ADelta > 0 (req)
-		FVector BDelta = InfoList(i).Owner->Location - B->Location; //Dir . BDelta < 0 (req)
-		if ( ((ADelta | X) + 16.0) * ((BDelta | X) - 16.0) >= 0 )
-			continue; //Fast: Only consider nodes in the band between A and B (parallel planes)
+			FVector ADelta = N->Location - A->Location; //Dir . ADelta > 0 (req)
+			FVector BDelta = N->Location - B->Location; //Dir . BDelta < 0 (req)
+			if ( ((ADelta | X) + 16.0) * ((BDelta | X) - 16.0) >= 0 )
+				continue; //Fast: Only consider nodes in the band between A and B (parallel planes)
 
-		float ExistingDistance = ADelta.Size() + BDelta.Size();
-		if ( ExistingDistance > MaxPrunableDistance )
-			continue; //Slow: Only consider nodes in a 3d ellipsis around the points
+			float ExistingDistance = ADelta.Size() + BDelta.Size();
+			if ( ExistingDistance > MaxPrunableDistance )
+				continue; //Slow: Only consider nodes in a 3d ellipsis around the points
 
-		Paths[MiddleCount++] = InfoList(i).Owner;
-		InfoList(i).Owner->bestPathWeight = 1; //FLAG MIDDLE POINTS!
+			Paths[MiddleCount++] = N;
+			N->bestPathWeight = 1; //FLAG MIDDLE POINTS!
+		}
+	}
+	//Game (needs sorting, no cached list)
+	else
+	{
+		FQueryResult* Results = nullptr;
+		for ( ANavigationPoint* N=A->Level->NavigationPointList ; N ; N=N->nextNavigationPoint )
+		{
+			N->bestPathWeight = 0;
+			if ( N==A || N==B )
+				continue; //Discard origins
+
+			FVector ADelta = N->Location - A->Location; //Dir . ADelta > 0 (req)
+			FVector BDelta = N->Location - B->Location; //Dir . BDelta < 0 (req)
+			if ( ((ADelta | X) + 16.0) * ((BDelta | X) - 16.0) >= 0 )
+				continue; //Fast: Only consider nodes in the band between A and B (parallel planes)
+
+			float ExistingDistance = ADelta.Size() + BDelta.Size();
+			if ( ExistingDistance > MaxPrunableDistance )
+				continue; //Slow: Only consider nodes in a 3d ellipsis around the points
+
+			new(GMem) FQueryResult( &Results, N, ExistingDistance );
+			N->bestPathWeight = 1; //FLAG MIDDLE POINTS!
+			MiddleCount++;
+		}
+		Paths = new(GMem,MiddleCount+20) ANavigationPoint*;
+		for ( i=0 ; Results ; Results=Results->Next )
+			Paths[i++] = Results->Owner;
 	}
 
 	//Move middle points to their own list, release general path list
@@ -636,6 +681,7 @@ inline void FPathBuilderMaster::DefineFor( ANavigationPoint* A, ANavigationPoint
 		{
 			for ( i=0 ; i<MiddleCount ; i++ ) 
 				MiddlePoints[i]->visitedWeight = MAX_WEIGHT; //PREPARE MIDDLE POINTS
+			A->visitedWeight = B->visitedWeight = 0; //In-game requires this
 			#define FINISHED_QUERY 1
 			#define PENDING_QUERY 2
 			i = k = 0;
@@ -705,8 +751,8 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 	Spec.Init();
 	Spec.Start = Start;
 	Spec.End = End;
-	Spec.CollisionRadius = GoodRadius + 1;
-	Spec.CollisionHeight = GoodHeight + 1;
+	Spec.CollisionRadius = appRound(GoodRadius + 1);
+	Spec.CollisionHeight = appRound(GoodHeight + 1);
 	Scout->JumpZ = GoodJumpZ;
 	Scout->GroundSpeed = GoodGroundSpeed;
 	Scout->Physics = PHYS_Walking;
@@ -715,6 +761,8 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 	Scout->bCanJump = 1;
 	Scout->bCanFly = 0;
 	Scout->MaxStepHeight = 25;
+	FCollisionHashBase* Hash = Level->Hash;
+	Level->Hash = nullptr;
 
 	int Reachable = 0;
 
@@ -794,6 +842,7 @@ inline FReachSpec FPathBuilderMaster::CreateSpec( ANavigationPoint* Start, ANavi
 	else
 		Spec.Init();
 
+	Level->Hash = Hash;
 	return Spec;
 }
 
@@ -802,7 +851,15 @@ inline int FPathBuilderMaster::AttachReachSpec( const FReachSpec& Spec, int32 bP
 	ANavigationPoint* Start = (ANavigationPoint*)Spec.Start;
 	ANavigationPoint* End   = (ANavigationPoint*)Spec.End;
 
-	int32 SpecIdx = Level->ReachSpecs.AddItem( Spec);
+	int32 SpecIdx;
+	if ( FreeReachSpecs.Num() )
+	{
+		SpecIdx = FreeReachSpecs( FreeReachSpecs.Num()-1);
+		FreeReachSpecs.Remove( FreeReachSpecs.Num()-1);
+		Level->ReachSpecs(SpecIdx) = Spec;
+	}
+	else
+		SpecIdx = Level->ReachSpecs.AddItem( Spec);
 
 	int32 i = INDEX_NONE;
 	if ( bPrune )
@@ -831,25 +888,105 @@ inline int FPathBuilderMaster::AttachReachSpec( const FReachSpec& Spec, int32 bP
 
 //============== Physics utils
 //
-static int FlyTo( APawn* Scout, AActor* Other)
+static int IsVisible( AActor* From, AActor* To)
 {
+	if ( To->XLevel->Model->FastLineCheck( To->Location, From->Location) )
+		return 1;
+
+	int Result = 0;
+	FMemMark Mark(GMem);
+	FCheckResult* Hit = From->GetLevel()->MultiLineCheck( GMem, To->Location, From->Location, FVector(0,0,0), 1, To->Level, 0);
+	for ( ; Hit && (Hit->Actor != From->Level) ; Hit=Hit->GetNext() )
+	{
+		if ( Hit->Actor == To )
+		{
+			Result = 1;
+			break;
+		}
+	}
+	Mark.Pop();
+	return Result;
+}
+
+static int FlyTo( APawn* Scout, AActor* Other, UBOOL bVisible=0)
+{
+//	debugf( NAME_DevPath, TEXT("FlyTo %s, %i"), Other->GetName(), bVisible);
+	ULevel* Level = Scout->GetLevel();
 	float NetRadius = Scout->CollisionRadius;
 	float NetHeight = Scout->CollisionHeight;
-	if ( Other->bCollideActors )
+	if ( Other->bCollideActors && !Other->Brush )
 	{
 		NetRadius += Other->CollisionRadius;
 		NetHeight += Other->CollisionHeight;
 	}
+
+	FVector StartPos = Scout->Location;
+	FVector EndPos = Other->Location;
+	if ( bVisible || Other->Brush )
+	{
+		FVector Dir = (EndPos - StartPos).SafeNormal() * 5;
+		for ( int32 vLoops=0 ; vLoops<8 ; vLoops++ )
+		{
+			if ( Level->Model->FastLineCheck(StartPos, EndPos) )
+				break;
+			EndPos -= Dir;
+		}
+	}
+
 	for ( int32 Loops=0 ; Loops<8 ; Loops++ )
 	{
 		//Up and down 4 times each
+		FVector Moved = Scout->Location;
 		FVector Offset( 0, 0, Scout->MaxStepHeight * ((Loops&1) ? 1.0 : -1.0 ) );
 		Scout->moveSmooth( Offset);
-		Scout->moveSmooth( Other->Location - Scout->Location);
-		FVector Delta = Other->Location - Scout->Location;
-		if ( Square(Delta.X) + Square(Delta.Y) <= Square(NetRadius)
-			&& Square(Delta.Z) <= Square(NetHeight) )
+		Scout->moveSmooth( EndPos - Scout->Location);
+		FVector Delta = EndPos - Scout->Location;
+		//Adjust Scout to Mover
+		if ( Other->Brush )
+		{
+			Moved -= Scout->Location;
+			if ( (Moved.SizeSquared() < 5) && IsVisible( Scout, Other) )
+			{
+				if ( (StartPos.Z < Scout->Location.Z) && !Scout->Region.Zone->bWaterZone )
+				{
+					FVector GoodLocation = Scout->Location;
+					for ( Loops=0 ; Loops<8 && !Scout->Region.Zone->bWaterZone ; Loops++ )
+					{
+						FCheckResult Hit(1.0);
+						Level->MoveActor( Scout, FVector(0,0,-8), Scout->Rotation, Hit, 0, 1);
+						if ( (Scout->Location - GoodLocation).SizeSquared() < 4 )
+							Loops = 8;
+						Hit.Time = 1.0;
+						Level->MoveActor( Scout, EndPos - Scout->Location, Scout->Rotation, Hit, 0, 1);
+						if ( !IsVisible(Scout,Other) || !Level->Model->FastLineCheck(StartPos, Scout->Location) )
+							break;
+						GoodLocation = Scout->Location;
+					}
+					Level->FarMoveActor( Scout, GoodLocation, 0, 1);
+				}
+				return 1;
+			}
+		}
+		//Adjust Scout to cylinder
+		else if ( InCylinder( Delta, NetRadius, NetHeight) )
+		{
+			if ( (StartPos.Z < Scout->Location.Z) && !Scout->Region.Zone->bWaterZone )
+			{
+				FVector GoodLocation = Scout->Location;
+				for ( Loops=0 ; Loops<8 && !Scout->Region.Zone->bWaterZone ; Loops++ )
+				{
+					FCheckResult Hit(1.0);
+					Level->MoveActor( Scout, FVector(0,0,-8), Scout->Rotation, Hit, 0, 1);
+					if ( (Scout->Location - GoodLocation).SizeSquared() < 4 )
+						Loops = 8;
+					if ( !InCylinder(Scout->Location - Other->Location, NetRadius, NetHeight) || !Level->Model->FastLineCheck(StartPos, Scout->Location) )
+						break;
+					GoodLocation = Scout->Location;
+				}
+				Level->FarMoveActor( Scout, GoodLocation, 0, 1);
+			}
 			return 1;
+		}
 	}
 	return 0;
 }
@@ -970,34 +1107,17 @@ static void RegisterInfo( ANavigationPoint* N)
 	N->Level->NavigationPointList = N;
 }
 
-struct FQueryResult
-{
-	ANavigationPoint* Owner;
-	float DistSq;
-	FQueryResult* Next;
-
-	FQueryResult( FQueryResult** Chain, ANavigationPoint* InOwner, float InDistSq )
-		: Owner(InOwner) , DistSq( InDistSq), Next(nullptr)
-	{
-		while( *Chain && ((*Chain)->DistSq < DistSq) )
-			Chain = &(*Chain)->Next;
-		Next = *Chain;
-		*Chain = this;
-	}
-};
-
 static int TraverseTo( APawn* Scout, AActor* To, float MaxDistance, int Visible)
 {
-//	debugf( NAME_DevPath, TEXT("Traversing to %s"), To->GetName() );
+//	debugf( NAME_DevPath, TEXT("Traversing to %s (%i)"), To->GetName(), Visible );
 	FQueryResult* Results = nullptr;
 	MaxDistance = MaxDistance * MaxDistance;
 
 	FMemMark Mark(GMem);
-	for ( int32 i=0 ; i<InfoList.Num() ; i++ )
+	for ( ANavigationPoint* N=Scout->Level->NavigationPointList ; N ; N=N->nextNavigationPoint )
 	{
-		ANavigationPoint* N = InfoList(i).Owner;
 		float DistSq = (N->Location - To->Location).SizeSquared();
-		if ( (DistSq <= MaxDistance) && (!Visible || To->XLevel->Model->FastLineCheck(To->Location, N->Location))  )
+		if ( (DistSq <= MaxDistance) && (!Visible || IsVisible( N, To))  )
 		{
 			//Do not traverse from warp zones
 			if ( !N->Region.Zone->IsA(AWarpZoneInfo::StaticClass()) )
@@ -1007,8 +1127,10 @@ static int TraverseTo( APawn* Scout, AActor* To, float MaxDistance, int Visible)
 
 	int Found;
 	for ( Found=0 ; !Found && Results ; Results=Results->Next ) //Auto-sorted by distance
-		if ( To->GetLevel()->FarMoveActor( Scout, Results->Owner->Location) && FlyTo(Scout,To) )
+	{
+		if ( To->GetLevel()->FarMoveActor( Scout, Results->Owner->Location) && FlyTo(Scout,To,Visible) )
 			Found = 1;
+	}
 	Mark.Pop();
 	return Found;
 }
@@ -1076,11 +1198,33 @@ inline void FPathBuilderMaster::HandleWarpZone( AWarpZoneInfo* Info)
 	unguard
 }
 
+//============== Adjusts navigation point to touch actor
+//
+void FPathBuilderMaster::AdjustToActor( ANavigationPoint* N, AActor* Actor)
+{
+	if ( !N || !Actor )
+		return;
+
+//	debugf( NAME_DevPath, TEXT("AdjustToActor %s -> %s"), N->GetName(), Actor->GetName() );
+	
+	//Adjust Scout using player dims
+	int bOldCollideWorld = N->bCollideWorld;
+	N->bCollideWorld = 0;
+	Scout->SetCollisionSize( GoodRadius, GoodHeight);
+	if ( !Actor->Brush && !Actor->bBlockActors && FindStart(Actor->Location) )
+		Level->FarMoveActor( N, Scout->Location);
+	else if ( TraverseTo( Scout, Actor, GoodDistance * 1.5, 1) || TraverseTo( Scout, Actor, GoodDistance * 0.5, 0) )
+		Level->FarMoveActor( N, Scout->Location);
+	else
+		Level->FarMoveActor( N, Actor->Location);
+	N->bCollideWorld = bOldCollideWorld;
+}
+
 //============== FPathBuilder forwards
 //
 inline void FPathBuilderMaster::GetScout()
 {
-	(this->*getScout)();
+	FPathBuilder::getScout();
 	check( Scout );
 
 	Scout->GroundSpeed = GoodGroundSpeed;
@@ -1090,5 +1234,5 @@ inline void FPathBuilderMaster::GetScout()
 
 inline int FPathBuilderMaster::FindStart( FVector V)
 {
-	return (this->*findScoutStart)(V); 
+	return FPathBuilder::findScoutStart(V); 
 }

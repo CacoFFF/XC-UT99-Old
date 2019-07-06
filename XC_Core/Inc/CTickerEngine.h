@@ -16,7 +16,7 @@
 
 typedef int (*TickerCallback)(class CTickerEngine* Ticker);
 
-class CTickerEngine
+class XC_CORE_API CTickerEngine
 {
 protected:
 	double LastSleepExitTime; //Time at which native sleep ended
