@@ -12,6 +12,8 @@ event XC_Init()
 	local class<Actor> AC, DGC;
 	local string MapFile;
 
+	Spawn( class'PathsEnhancer');
+	
 	class'XC_CoreStatics'.static.FixName( "ClearArray", true); //Fix FerBotz bind
 	
 	//Server-only fixes
@@ -56,6 +58,7 @@ event XC_Init()
 	//****************
 	//TournamentPlayer
 	ReplaceFunction( class'TournamentPlayer', class'XC_Engine_TournamentPlayer', 'Summon', 'Summon');
+	ReplaceFunction( class'TournamentPlayer', class'XC_Engine_TournamentPlayer', 'SetMultiSkin', 'SetMultiSkin');
 		
 	//***
 	//Bot
@@ -87,11 +90,13 @@ event XC_Init()
 
 	//*****************
 	//Unreal - Monsters
-	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'SetEnemy', 'ScriptedPawn_SetEnemy');
+	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'AttitudeToCreature', 'AttitudeToCreature');
+	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'AttitudeTo', 'AttitudeTo');
+	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'SetEnemy', 'SetEnemy');
 	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'MeleeDamageTarget', 'ScriptedPawn_MeleeDamageTarget');
 	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'StartRoaming', 'ScriptedPawn_StartRoaming');
 	ReplaceFunction( class'ScriptedPawn', class'XC_Engine_ScriptedPawn', 'SetHome', 'StartUp_SetHome', 'StartUp');
-
+	
 	//Queen Teleport AI
 	ReplaceFunction( class'Queen', class'XC_Engine_Queen', 'ChooseDestination', 'QT_ChooseDestination', 'Teleporting');
 	ReplaceFunction( class'Queen', class'XC_Engine_Queen', 'Tick', 'QT_Tick', 'Teleporting');
@@ -129,7 +134,6 @@ event XC_Init()
 		FixSesmar();
 	else if ( MapFile ~= "DM-Barricade" )
 		FixBarricade();
-
 		
 	Destroy();
 }

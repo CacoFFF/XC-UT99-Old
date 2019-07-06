@@ -7,31 +7,16 @@ class XC_EditorLoader expands Object
 
 //*********************************************
 // Array opcodes
-native(640) static final function int Array_Length_Obj( out array<Object> Ar, optional int SetSize);
-native(641) static final function bool Array_Insert_Obj( out array<Object> Ar, int Offset, optional int Count );
-native(642) static final function bool Array_Remove_Obj( out array<Object> Ar, int Offset, optional int Count );
 
-native(640) static final function int Array_Length_Int( out array<int> Ar, optional int SetSize);
-native(641) static final function bool Array_Insert_Int( out array<int> Ar, int Offset, optional int Count );
-native(642) static final function bool Array_Remove_Int( out array<int> Ar, int Offset, optional int Count );
-
-native(640) static final function int Array_Length_Float( out array<float> Ar, optional int SetSize);
-native(641) static final function bool Array_Insert_Float( out array<float> Ar, int Offset, optional int Count );
-native(642) static final function bool Array_Remove_Float( out array<float> Ar, int Offset, optional int Count );
-
-native(640) static final function int Array_Length_Byte( out array<byte> Ar, optional int SetSize);
-native(641) static final function bool Array_Insert_Byte( out array<byte> Ar, int Offset, optional int Count );
-native(642) static final function bool Array_Remove_Byte( out array<byte> Ar, int Offset, optional int Count );
-
-native(640) static final function int Array_Length_Class( out array<class> Ar, optional int SetSize);
-native(641) static final function bool Array_Insert_Class( out array<class> Ar, int Offset, optional int Count );
-native(642) static final function bool Array_Remove_Class( out array<class> Ar, int Offset, optional int Count );
-
+native(640) static final function int Array_Length( out array<Object> Ar, optional int SetSize);
+native(641) static final function bool Array_Insert( out array<Object> Ar, int Offset, optional int Count );
+native(642) static final function bool Array_Remove( out array<Object> Ar, int Offset, optional int Count );
 
 //********************************************
 // XC_Core opcodes
 native(192) static final function Color MakeColor( byte R, byte G, byte B, optional byte A);
 native(238) static final function string Locs( string InStr );
+native(257) static final function bool LoadPackageContents( string PackageName, class<Object> ListType, out array<Object> PckContents );
 native(391) static final function name StringToName( string S );
 native(600) static final function Object FindObject( string ObjectName, class ObjectClass, optional Object ObjOuter ); //ObjOuter param incompatible with 227!!!
 native(601) static final function Class<Object> GetParentClass( Class<Object> ObjClass );

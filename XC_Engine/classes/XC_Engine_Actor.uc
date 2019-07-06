@@ -34,17 +34,26 @@ struct ReachSpec
 	var() byte bPruned;
 };
 var() ReachSpec DummyReachSpec;
-
-var() const editconst XC_Engine_Actor PreLoginHooks[12]; //PreLoginHooks can be any type of actor, but we use this to compile the PreLoginHook call
 var() editconst XC_Engine_Actor_CFG ConfigModule;
-
-
-//Function template for a standard PreLogin hook
-function PreLoginHook( string Options, string Address, out string Error, out string FailCode);
 
 //Numbered natives cannot be safely replaced with script functions
 native /*(532)*/ final function bool PlayerCanSeeMe_XC();
 native /*(539)*/ final function string GetMapName_XC( string NameEnding, string MapName, int Dir );
+
+
+/** ================ Other useful functions
+*/
+static final preoperator  bool  !  ( int N )
+{
+	return N == 0;
+}
+
+static final preoperator  bool  !  ( Object O )
+{
+	return O == none;
+}
+
+
 
 
 /** ================ Reach spec manipulation
@@ -70,32 +79,28 @@ native final function int FindReachSpec( Actor Start, Actor End); //-1 if not fo
 native final function CompactPathList( NavigationPoint N); //Also cleans up invalid paths (Start or End = NONE)
 native final function LockToNavigationChain( NavigationPoint N, bool bLock);
 native final function iterator AllReachSpecs( out ReachSpec R, out int Idx); //Idx can actually modify the starting index!!!
+native final function DefinePathsFor( NavigationPoint N, optional Actor AdjustTo, optional Pawn Reference, optional float MaxDistance); //N must have no connections!
 
+function ResetReachSpec( out ReachSpec R)
+{
+	R.Start = None;
+	R.End = None;
+	R.bPruned = 0;
+	R.Distance = 0;
+	R.CollisionHeight = 0;
+	R.CollisionRadius = 0;
+}
 
-//Find all reachspecs linking to/from N, clear and dereference
+//Find all reachspecs linking to/from N, clear and dereference (SLOW!)
 function CleanupNavSpecs( NavigationPoint N)
 {
-	local ReachSpec R;
+	local ReachSpec R, R_Empty;
 	local int i, RI;
 	local NavigationPoint NC[2];
 	
 	ForEach AllReachSpecs( R, RI)
-	{
 		if ( R.Start == N || R.End == N )
-		{
-			NC[0] = NavigationPoint(R.Start);
-			NC[1] = NavigationPoint(R.Start);
-			R.Start = None;
-			R.End = None;
-			R.bPruned = 0;
-			R.Distance = 0;
-			R.CollisionHeight = 0;
-			R.CollisionRadius = 0;
-			SetReachSpec( R, RI);
-			CompactPathList(NC[0]);
-			CompactPathList(NC[1]);
-		}
-	}
+			SetReachSpec( R_Empty, RI, true);
 }
 
 //EZ quick connect between both nodes
@@ -158,8 +163,8 @@ native(1719) final function bool IsInPackageMap( optional string PkgName, option
 native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI, optional Pawn StartAt);
 native(3541) final iterator function NavigationActors( class<NavigationPoint> NavClass, out NavigationPoint P, optional float Distance, optional vector VOrigin, optional bool bVisible);
 native(3542) final iterator function InventoryActors( class<Inventory> InvClass, out Inventory Inv, optional bool bSubclasses, optional Actor StartFrom); 
-native(3552) final iterator function CollidingActors( class<actor> BaseClass, out actor Actor, float Radius, optional vector Loc);
-native(3553) final iterator function DynamicActors( class<actor> BaseClass, out actor Actor, optional name MatchTag );
+native(3552) final iterator function CollidingActors( class<Actor> BaseClass, out actor Actor, float Radius, optional vector Loc);
+native(3553) final iterator function DynamicActors( class<Actor> BaseClass, out actor Actor, optional name MatchTag );
 native(3554) static final function iterator ConnectedDests( NavigationPoint Start, out Actor End, out int ReachSpecIdx, out int PathArrayIdx); //XC_Core
 
 
@@ -191,6 +196,22 @@ be restored to their original state prior to level switch.
 native(3560) static final function bool ReplaceFunction( class<Object> ReplaceClass, class<Object> WithClass, name ReplaceFunction, name WithFunction, optional name InState);
 native(3561) static final function bool RestoreFunction( class<Object> RestoreClass, name RestoreFunction, optional name InState);
 
+
+
+/** ================ XC_Init
+ *
+ * This event is the very first UnrealScript event in a XC_Engine server/standalone game
+ *
+ * This is the best place to replace functions, and the only one where it's possible to affect
+ * level initialization. You may create your own mutator-like plugins and load them via
+ * XC_Engine.ini in order to modify the behaviour of the game.
+ *
+ * Every single actor spawned within XC_Init will not have it's initial events called
+ * (PreBeginPlay, BeginPlay, PostBeginPlay, SetInitialState) and neither their base or zone will
+ * be set. This means that they are treated the same as other actors loaded with the level and
+ * affected by mutators spawned later by Level.Game.InitGame
+*/
+
 //Note: This is the only script event called before GameInfo.Init
 event XC_Init()
 {
@@ -201,19 +222,19 @@ event XC_Init()
 	local float Timed;
 	local string Str;
 
-	//Sample version check here
+	// Sample version check here
 //if ( int(ConsoleCommand("Get ini:Engine.Engine.GameEngine XC_Version")) < 19 )
 //		return;
-//	ConsoleCommand("PRELOGINHOOK "$name); //This is how you set an actor as PreLoginHook (needs the function defined above)
 
 	class'XC_EngineStatics'.static.ResetAll();
-	class'XC_CoreStatics'.static.Clock( Time);
 	bDirectional = true; //GetPropertyText helper
 
-	//Instantiate the CFG object here, but don't init yet
+	// Instantiate the CFG object here, but don't init yet
 	ConfigModule = New( Class.Outer, 'GeneralConfig') class'XC_Engine_Actor_CFG';
+	class'XC_Engine_Actor_CFG'.default.bEventChainAddon = ConfigModule.bEventChainAddon;
 
 	//Fixes
+	class'XC_CoreStatics'.static.Clock( Time);
 	ReplaceFunction( class'Object', class'XC_CoreStatics', 'DynamicLoadObject', 'DynamicLoadObject_Fix');
 	ReplaceFunction( class'Actor', class'XC_Engine_Actor', 'PlayerCanSeeMe', 'PlayerCanSeeMe_XC');
 	ReplaceFunction( class'Actor', class'XC_Engine_Actor', 'GetMapName', 'GetMapName_XC');
@@ -221,6 +242,8 @@ event XC_Init()
 	//Server-only fixes
 	if ( Level.NetMode == NM_ListenServer || Level.NetMode == NM_DedicatedServer )
 	{
+		Spawn( class'PreLoginHookAddon');
+		Spawn( class'PreLoginHookXCGE');
 		if ( ConfigModule.bFixBroadcastMessage )
 		{
 			ReplaceFunction( class'Actor', class'XC_Engine_Actor', 'BroadcastMessage', 'BroadcastMessage');
@@ -250,9 +273,6 @@ event XC_Init()
 			ReplaceFunction( class'XC_Engine_Mover', class'Mover', 'InterpolateTo_Org', 'InterpolateTo'); //Backup the function
 			ReplaceFunction( class'Mover', class'XC_Engine_Mover', 'InterpolateTo', 'InterpolateTo_MPFix'); //Apply the fix
 		}
-		RestoreFunction( class'GameInfo', 'PreLogin');
-		ReplaceFunction( class'XC_Engine_GameInfo', class'GameInfo', 'PreLogin_Org', 'PreLogin'); //Backup the function
-		ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'PreLogin', 'PreLogin');
 		ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'PostLogin', 'PostLogin');
 		ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'ForceFire', 'ForceFire'); //Unreal1 fire fix
 		ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'ForceAltFire', 'ForceAltFire'); //Unreal1 fire fix
@@ -301,42 +321,49 @@ event XC_Init()
 	ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'SpawnCopy', 'Weapon_SpawnCopy');
 	ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'SetHand', 'SetHand');
 	ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'WeaponChange', 'WeaponChange');
+	ReplaceFunction( class'LiftCenter', class'XC_Engine_LiftCenter', 'SpecialHandling', 'SpecialHandling');
+	ReplaceFunction( class'LiftExit', class'XC_Engine_LiftExit', 'SpecialHandling', 'SpecialHandling');
 	ReplaceFunction( class'Decoration', class'XC_Engine_Decoration', 'ZoneChange', 'ZoneChange');
 	ReplaceFunction( class'Decoration', class'XC_Engine_Decoration', 'Destroyed', 'Tw_Destroyed');
 	ReplaceFunction( class'Decoration', class'XC_Engine_Decoration', 'skinnedFrag', 'Tw_skinnedFrag');
 	ReplaceFunction( class'Decoration', class'XC_Engine_Decoration', 'Frag', 'Tw_Frag');
 
-	Log( "Engine function replacements done ("$class'XC_CoreStatics'.static.UnClock(Time)$" second)",'XC_Engine');
+	Log( "Engine script addons setup ("$class'XC_CoreStatics'.static.UnClock(Time)$" second)",'XC_Engine');
 	
 	//Init CFG here
 	ConfigModule.Setup(self);
-	Log( "Conditional function replacements loaded ("$class'XC_CoreStatics'.static.UnClock(Time)$" second)",'XC_Engine');
+	Log( "Other script addons setup ("$class'XC_CoreStatics'.static.UnClock(Time)$" second)",'XC_Engine');
 
-	FixLiftCenters();
 	AttachMenu();
 }
 
-//This event is called right after global PostBeginPlay
-event SetInitialState()
+event PreBeginPlay()
 {
-	local Mutator M;
-	
-	if ( Class != class'XC_Engine_Actor' || !Level.bStartup )
-		return;
-	
-	return; //Not needed now...
-	
-	if ( ConfigModule != None )
-	{
-		if ( Level.Game != None )
-		{
-			For ( M=Level.Game.BaseMutator ; M!=None ; M=M.nextMutator )
-			{
-			}
-		}
-	}
+//	Log("PRE "$Name);
+	Super.PreBeginPlay();
 }
 
+event PostBeginPlay()
+{
+//	Log("POST "$Name);
+}
+
+//This event is called right after global PostBeginPlay
+//Post-Initialize everything here
+event SetInitialState()
+{
+//	Log("SIS "$Name);
+
+	Super.SetInitialState();
+	if ( Class == class'XC_Engine_Actor' && Level.bStartup )
+	{
+		FixLiftCenters();
+		if ( ConfigModule.bEventChainAddon )
+			class'EventChainSystem'.static.StaticInit( self);
+	}	
+}
+
+//Called after LiftCenter finishes initializing
 final function bool FixLiftCenters()
 {
 	local Mover M;
@@ -345,31 +372,23 @@ final function bool FixLiftCenters()
 	local bool bFixed;
 	
 	ForEach NavigationActors ( class'LiftCenter', LC)
-	{
-		if ( LC.Class == class'LiftCenter' )
+		if ( (LC.Class == class'LiftCenter') && (LC.MyLift == None) )
 		{
 			M = Mover(LC.Trace( HitLocation, HitNormal, LC.Location - vect(0,0,80)) );
 			if ( M != None )
 			{
-				if ( M.Tag == '' || M.Tag == 'Mover' )
-				{
-					if ( !TaggedMover(M.Name) )
-						M.Tag = M.Name;
-					else
-						M.SetPropertyText("Tag","XC_Fix_"$M.Name);
-				}
-				
-				if ( LC.LiftTag == '' || !TaggedMover(LC.LiftTag) )
-					LC.LiftTag = M.Tag;
+				LC.MyLift = M;
+				M.MyMarker = LC;
+				LC.SetBase( M);
+				LC.LiftOffset = LC.Location - M.Location;
 			}
 		}
-	}
 }
 
 function bool TaggedMover( name MTag)
 {
 	local Mover M;
-	ForEach AllActors (class'Mover', M, MTag )
+	ForEach DynamicActors (class'Mover', M, MTag )
 		return true;
 }
 
@@ -401,6 +420,8 @@ event FindPathToward_Event( Pawn Seeker, array<NavigationPoint> StartAnchors)
 	local NavigationPoint N, Best;
 	local float Dist, BestDist;
 	
+	if ( Target == None ) //For some reason this was not set!! (GiantManta)
+		return;
 	Assert( Target != None);
 	
 	if ( NavigationPoint(Target) != None )

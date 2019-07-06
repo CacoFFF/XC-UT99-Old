@@ -1,36 +1,43 @@
-====================================
-Actor replication and relevancy loop
-====================================
+================
+Enhanced Netcode
+================
 
 For use with the new relevancy system, requires XC_GameEngine.bUseNewRelevancy=True
 The new relevancy system is a full rewrite of the actor prioritizator and visibility check system
 used to determine how and when actors are relevant to other clients over net play.
 It also affects in some cases how actor updates are done.
 
+Additionally, a lot of changes have been introduced to reduce bandwidth usage from
+server to client.
 
-================
-Global features:
 
-USERFLAG saturation addressed, players don't get more than 20 messages per second.
+=========
+Features:
+
 
 Visibility checks:
-- Go through translucent surfaces and are SSE optimized (they may go through whole solid BSP!!!)
+- Go through translucent surfaces and are SSE optimized.
 - Are performed to a random point in the actor's box instead of it's center point. (no more pesky CTF-Face invisible snipers)
+- Done with less frequency after a previous check passes.
 
-Actor channel handling:
-- Active discarding of less relevant actors in case of channel saturation.
-- Bandwidth saturation detection, artificially reduces relevancy framerate to half for non-owned actors.
-** Spectators are always in saturation mode, allows servers to hold more spectators.
+Dynamic Tickrate:
+- Bandwidth saturation detection, artificially reduces update rate of clients.
+** Spectators' dynamic tickrate is always set to half of normal players.
+** This makes increasing max server tickrate to higher values possible (limit=120).
+- On clients with XC_Engine v24 or greater, the dynamic tickrate is capped to the client's framerate.
 
 Actor prioritization:
+- Active discarding of less relevant actors in case of channel saturation.
 - Prevents servers from being inaccesible and allows players to see their inventory and nearby enemies.
 - Owned actor bursting, clients receive actors they own earlier and with higher priority.
 - Benefits replication of owned actors and low frequency info holders.
 
-Bandwidth saving in pawn replication:
-- Tries to calculate whether a client should receive a position update using velocity.
-- Also prevents sending unnecessary rotation, velocity updates caused by tiny changes.
+Bandwidth saving:
+- Simulated pawns don't have their location updated if moving in straight lines.
+- Unnecessary compressed Rotation, Velocity updates no longer sent.
 ** When compressing a small update, the old and new datas may be identical, therefore unnecessary to send.
+- USERFLAG saturation addressed, players don't get more than 20 messages per second.
+- Players receive less position adjustment updates at higher tickrates.
 
 
 =====================

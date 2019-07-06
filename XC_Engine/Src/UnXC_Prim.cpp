@@ -554,7 +554,7 @@ static UBOOL PMesh_CylLine_TriPass( const FVector4* Start, FVector4* End, const 
 			PseudoPlane.NormalizeXY();
 			PseudoPlane.W = PseudoPlane.Dot2( *rPoints[i] );
 			FLOAT Dist[4];
-			DoublePlaneDotA( &PseudoPlane, &CC, rPoints[k], Dist); //Test local start with opposite point of triangle [dS,dO]
+			DoublePlaneDotU( &PseudoPlane, &CC, rPoints[k], Dist); //Test local start with opposite point of triangle [dS,dO]
 			if ( bLog )
 			{
 				debugf( TEXT("_%i_ Point %i vs LocalStart: (%f,%f) [%i,%i,%i]"), LogEvery%200, k, Dist[0],Dist[1], appRound(rPoints[i]->X), appRound(rPoints[i]->Y), appRound(rPoints[i]->Z) );
@@ -568,7 +568,7 @@ static UBOOL PMesh_CylLine_TriPass( const FVector4* Start, FVector4* End, const 
 				*(INT*)&PseudoPlane.X ^= Mask; //Bitwise XOR, reverse sign bit if above is != 0
 				*(INT*)&PseudoPlane.Y ^= Mask; //Otherwise nothing happens
 				*(INT*)&PseudoPlane.W ^= Mask;
-				DoublePlaneDotA( &PseudoPlane, &CC, End, Dist);
+				DoublePlaneDotU( &PseudoPlane, &CC, End, Dist);
 				if ( bLog )
 					debugf( TEXT("PASS: %i,%i: plane %f to %f XY:(%f,%f,W:%f)"), i, j, Dist[0], Dist[1], PseudoPlane.X, PseudoPlane.Y, PseudoPlane.W);
 				if ( Dist[1] > Dist[0] ) //Tracing away from supposed front plane... we're way past the triangle
@@ -660,7 +660,7 @@ FCheckResult* AXC_PrimitiveMesh::ExtentCheck( FMemStack& Mem, FVector4* Start, F
 	for ( INT i=0 ; i<TPlanesCount ; i++ )
 	{
 		//Compute distance from trace ends to plane
-		DoublePlaneDotA( &TPlanes[i], Start, End, TempData.Dist);
+		DoublePlaneDotU( &TPlanes[i], Start, End, TempData.Dist);
 		
 		//Facing outwards = reject
 		if ( TempData.Dist[0] <= TempData.Dist[1] )
@@ -755,7 +755,7 @@ FCheckResult* AXC_PrimitiveMesh::ZeroExtentCheck( FMemStack& Mem, FVector4* Star
 	for ( INT i=0 ; i<TPlanesCount ; i++ )
 	{
 		FLOAT Dist[2];
-		DoublePlaneDotA( &TPlanes[i], Start, End, Dist);
+		DoublePlaneDotU( &TPlanes[i], Start, End, Dist);
 		//Cull:
 		// -Does not reach triangle (End adjustment will make this more powerful as loop count goes up)
 		// -Starts 'under' the triangle

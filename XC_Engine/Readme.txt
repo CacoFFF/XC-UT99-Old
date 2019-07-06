@@ -48,7 +48,7 @@ UnrealScript patcher for servers and offline play, allows replacement of code in
 - Server
 Moving Brush Tracker in Dedicated servers (movers block visibility checks), specific maps can be ignored.
 See "Server Exploits" for a list of patched exploits.
-See "Relevancy loop" for changes in relevancy netcode.
+See "Enhanced Netcode" for changes in server netcode.
 See "TravelManager" for info on coop server enhancements.
 Ability to send maps marked as 'no download' (Unreal SP content for example).
 Sliding player bug workaround for clients with S3TC textures.

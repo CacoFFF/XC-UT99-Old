@@ -8,6 +8,8 @@
 #include "XC_Engine.h"
 #include "UnXC_Script.h"
 #include "XC_CoreGlobals.h"
+#include "FPathBuilderMaster.h"
+#include "UnNet.h"
 
 //*************************************************
 //************* CONFIG FILE MANIPULATORS
@@ -461,6 +463,495 @@ void AXC_Engine_Actor::execGetMapName_XC( FFrame &Stack, RESULT_DECL)
 		while ( Engine->LastMapIdx < 0 )
 			Engine->LastMapIdx += Engine->MapCache.Num();
 		*(FString*)Result = Engine->MapCache( Engine->LastMapIdx );
+	}
+	unguard;
+}
+
+
+//========================================================================
+//======================== ReachSpec implementation ======================
+//========================================================================
+void AXC_Engine_Actor::execGetReachSpec( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execGetReachSpec);
+	GPropAddr = 0;
+	Stack.Step( Stack.Object, NULL); //Don't store reachspec info
+	BYTE* ReachAddr = GPropAddr;
+	P_GET_INT(Idx);
+	P_FINISH;
+
+	if ( ReachAddr && (Idx >= 0) && (Idx < GetLevel()->ReachSpecs.Num()) )
+	{
+		*(FReachSpec*)ReachAddr = GetLevel()->ReachSpecs(Idx);
+		*(UBOOL*)Result = true;
+	}
+	else
+		*(UBOOL*)Result = false;
+	unguard;
+}
+
+
+static void CompactSortSpecList( TArray<FReachSpec>& ReachSpecs, INT* Paths)
+{
+	guard(CompactSortSpecList);
+	INT i, j;
+	INT Count = 0;
+	// Cleanup
+	for ( i=0 ; i<16 ; i++ )
+		if ( Paths[i] >= 0 )
+		{
+			if ( Paths[i] >= ReachSpecs.Num() || !ReachSpecs(Paths[i]).Start || !ReachSpecs(Paths[i]).End )
+			{
+				debugf( NAME_DevPath, TEXT("CLEANUP IN %i(%i) [%i,%i,%i]"), i, Paths[i], ReachSpecs.Num(), ReachSpecs(Paths[i]).Start, ReachSpecs(Paths[i]).End );
+				Paths[i] = INDEX_NONE;
+			}
+			else
+				Count++;
+		}
+
+	// Compact (i=Base, j=Seek)
+	for ( i=j=0 ; i<Count ; i++, j++ )
+	{
+		while ( Paths[j] == INDEX_NONE )
+			j++;
+		if ( i != j )
+			Exchange( Paths[i], Paths[j]);
+	}
+
+	// Sort (selection sort)
+	for ( i=0 ; i<Count ; i++ )
+	{
+		INT Lowest = 0;
+		for ( j=i+1 ; j<Count ; j++ )
+			if ( ReachSpecs(Paths[j]).distance < ReachSpecs(Paths[Lowest]).distance )
+				Lowest = j;
+		if ( Lowest != i )
+			Exchange( Paths[i], Paths[Lowest]);
+	}
+	unguard;
+}
+
+static void UpdateSpec( FReachSpec& OldSpec, const FReachSpec& NewSpec, int Idx)
+{
+	ANavigationPoint *Start, *End;
+	//Unregister from start
+	if ( (Start=Cast<ANavigationPoint>(OldSpec.Start)) )
+	{
+		INT* Paths = OldSpec.bPruned ? Start->PrunedPaths : Start->Paths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == Idx )
+			{
+				Paths[i] = INDEX_NONE;
+				CompactSortSpecList( Start->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+	//Unregister from end
+	if ( !OldSpec.bPruned && (End=Cast<ANavigationPoint>(OldSpec.End)) )
+	{
+		INT* Paths = End->upstreamPaths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == Idx )
+			{
+				Paths[i] = INDEX_NONE;
+				CompactSortSpecList( End->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+	//Update (or register will fail)
+	OldSpec = NewSpec;
+
+	//Register in new start
+	if ( (Start=Cast<ANavigationPoint>(NewSpec.Start)) )
+	{
+		INT* Paths = NewSpec.bPruned ? Start->PrunedPaths : Start->Paths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == INDEX_NONE )
+			{
+				Paths[i] = Idx;
+				CompactSortSpecList( Start->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+	//Register in new end
+	if ( !NewSpec.bPruned && (End=Cast<ANavigationPoint>(NewSpec.End)) )
+	{
+		INT* Paths = End->upstreamPaths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == INDEX_NONE )
+			{
+				Paths[i] = Idx;
+				CompactSortSpecList( End->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+}
+
+void AXC_Engine_Actor::execSetReachSpec( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execSetReachSpec);
+	FReachSpec Spec;
+	Stack.Step( Stack.Object, &Spec);
+	P_GET_INT(Idx);
+	P_GET_UBOOL_OPTX(bAutoSet,false);
+	P_FINISH;
+
+	if ( GPropAddr && (Idx >= 0) && (Idx < GetLevel()->ReachSpecs.Num()) )
+	{
+		if ( bAutoSet )
+			UpdateSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
+		else
+			GetLevel()->ReachSpecs(Idx) = Spec;
+		*(UBOOL*)Result = true;
+	}
+	else
+		*(UBOOL*)Result = false;
+	unguard;
+}
+
+void AXC_Engine_Actor::execReachSpecCount( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execReachSpecCount);
+	P_FINISH;
+	*(INT*)Result = GetLevel()->ReachSpecs.Num();
+	unguard;
+}
+
+void AXC_Engine_Actor::execAddReachSpec( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execAddReachSpec);
+	FReachSpec Spec;
+	Stack.Step( Stack.Object, &Spec);
+	P_GET_UBOOL_OPTX(bAutoSet,false);
+	P_FINISH;
+
+	INT& Idx = *(INT*)Result;
+	Idx = GetLevel()->ReachSpecs.AddZeroed();
+	if ( bAutoSet )
+		UpdateSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
+	else
+		GetLevel()->ReachSpecs(Idx) = Spec;
+	unguard;
+}
+
+void AXC_Engine_Actor::execFindReachSpec( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execFindReachSpec);
+	P_GET_ACTOR( Start);
+	P_GET_ACTOR( End);
+	P_FINISH;
+
+	*(INT*)Result = -1;
+
+	INT iNum = GetLevel()->ReachSpecs.Num();
+	if ( iNum )
+	{
+		FReachSpec* Specs = (FReachSpec*) GetLevel()->ReachSpecs.GetData();
+		for ( INT i=0 ; i<iNum ; i++ )
+		{
+			if ( Specs[i].Start == Start && Specs[i].End == End )
+			{
+				*(INT*)Result = i;
+				break;
+			}
+		}
+	}
+	unguard;
+}
+
+void AXC_Engine_Actor::execCompactPathList( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execCompactPathList);
+	P_GET_NAVIG(N);
+	P_FINISH;
+
+	if ( !N )
+		return;
+
+	CompactSortSpecList( GetLevel()->ReachSpecs, N->Paths);
+	CompactSortSpecList( GetLevel()->ReachSpecs, N->upstreamPaths);
+	CompactSortSpecList( GetLevel()->ReachSpecs, N->PrunedPaths);
+	unguard;
+}
+
+void AXC_Engine_Actor::execLockToNavigationChain( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execLockToNavigationChain);
+	P_GET_NAVIG(nBase);
+	P_GET_UBOOL(bLock);
+	P_FINISH;
+
+	if ( !nBase )
+	{
+		GWarn->Log( TEXT("LockToNavigationChain called with null parameter") );
+		return;
+	}
+
+	ANavigationPoint** NR = &(Level->NavigationPointList);
+	//Find path in chain, unlock if present
+	while ( *NR )
+	{
+		if ( *NR == nBase )
+		{
+			if ( !bLock )
+			{
+				*NR = nBase->nextNavigationPoint;
+				nBase->nextNavigationPoint = NULL;
+			}
+			return;
+		}
+		NR = &((*NR)->nextNavigationPoint);
+	}
+	//If not found, lock if necessary
+	if ( bLock )
+	{
+		nBase->nextNavigationPoint = Level->NavigationPointList;
+		Level->NavigationPointList = nBase;
+	}
+	unguard;
+}
+
+
+void AXC_Engine_Actor::execAllReachSpecs( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execAllReachSpecs);
+
+	GPropAddr = 0;
+	Stack.Step( Stack.Object, NULL);
+	FReachSpec* RS = (FReachSpec*)GPropAddr;
+	P_GET_INT_REF( IdxRef);
+	P_FINISH;
+
+	if ( !RS )
+		return;
+
+	if ( *IdxRef < 0 )
+		*IdxRef = 0;
+	else if ( *IdxRef >= GetLevel()->ReachSpecs.Num() )
+		return;
+	*IdxRef -= 1;
+
+	PRE_ITERATOR;
+	*IdxRef += 1;
+	if ( *IdxRef >= GetLevel()->ReachSpecs.Num() )
+	{
+		Stack.Code = &Stack.Node->Script(wEndOffset + 1);
+		break;
+	}
+	*RS = GetLevel()->ReachSpecs(*IdxRef);
+	POST_ITERATOR;
+
+	unguard;
+}
+
+void AXC_Engine_Actor::execDefinePathsFor( FFrame& Stack, RESULT_DECL)
+{
+	P_GET_NAVIG( N);
+	P_GET_ACTOR_OPTX( AdjustTo, NULL);
+	P_GET_PAWN_OPTX( Reference, NULL);
+	P_GET_FLOAT_OPTX( MaxDistance, 1500);
+	P_FINISH;
+
+	if ( !N )
+		return;
+
+	CompactSortSpecList( N->GetLevel()->ReachSpecs, N->Paths);
+	CompactSortSpecList( N->GetLevel()->ReachSpecs, N->upstreamPaths);
+	CompactSortSpecList( N->GetLevel()->ReachSpecs, N->PrunedPaths);
+	if ( N->Paths[0] != INDEX_NONE || N->upstreamPaths[0] != INDEX_NONE || N->PrunedPaths[0] != INDEX_NONE )
+		return;
+
+
+//	FCollisionHashBase* Hash = N->GetLevel()->Hash;
+//	N->GetLevel()->Hash = NULL;
+
+//	UBOOL IsEditor = GIsEditor;
+//	GIsEditor = 1;
+
+	UBOOL bBegunPlay = N->Level->bBegunPlay;
+	N->Level->bBegunPlay = 0;
+
+	FPathBuilderMaster Builder;
+	if ( Reference )
+	{
+		Builder.GoodRadius      = Reference->CollisionRadius;
+		Builder.GoodHeight      = Reference->CollisionHeight;
+		Builder.GoodJumpZ       = Reference->JumpZ;
+		Builder.GoodGroundSpeed = Reference->GroundSpeed;
+		Builder.Aerial          = Reference->bCanFly;
+	}
+	Builder.GoodDistance = MaxDistance;
+	Builder.Level = N->GetLevel();
+	Builder.Setup();
+	Builder.AutoDefine( N, AdjustTo);
+
+//	N->GetLevel()->Hash = Hash;
+//	GIsEditor = IsEditor;
+	N->Level->bBegunPlay = bBegunPlay;
+}
+
+static UBOOL PCanSee( AActor* Seen, APlayerPawn* Other)
+{
+	guard( XC_Engine::PCanSee);
+	check( Other && Seen);
+	FVector aVec = Seen->Location - Other->Location;
+	if ( aVec.IsZero() )
+		return 0;
+	if ( aVec.SizeSquared() > 2560000 )
+		return 0;
+	if ( aVec.SizeSquared() > (aVec + Other->ViewRotation.Vector()).SizeSquared() )
+		return 0;
+	if ( !aVec.Normalize() )
+		return 0;
+	FLOAT aFov = Other->FovAngle / 114.6; //Real angle outside of the center
+	FLOAT aDot = aVec|Other->ViewRotation.Vector(); //This is the cosine of our angle
+	if ( aDot < appCos(aFov * 1.2) )
+		return 0;
+	FCheckResult Hit;
+	return Seen->XLevel->SingleLineCheck( Hit, Seen, Seen->Location, Other->Location + FVector(0,0,Other->BaseEyeHeight), TRACE_Level, FVector(0,0,0), 0|NF_NotVisBlocking);
+	unguard;
+}
+
+//Called mostly on Actor context
+void AXC_Engine_Actor::execPlayerCanSeeMe_XC(FFrame &Stack, RESULT_DECL)
+{
+	guard( XC_Engine::execPlayerCanSeeMe_XC);
+	P_FINISH;
+
+	*(UBOOL*)Result = 0;
+	if ( XLevel )
+	{
+		if ( XLevel->Engine->Client && XLevel->Engine->Client->Viewports.Num() && XLevel->Engine->Client->Viewports(0) && XLevel->Engine->Client->Viewports(0)->Actor ) //Local player
+			if ( PCanSee( this, XLevel->Engine->Client->Viewports(0)->Actor) )
+			{
+				*(UBOOL*)Result = 1;
+				return;
+			}
+		if ( XLevel->NetDriver && XLevel->NetDriver->ClientConnections.Num() ) //Clients
+		{
+			for ( INT ip=0 ; ip < XLevel->NetDriver->ClientConnections.Num() ; ip++ )
+				if ( XLevel->NetDriver->ClientConnections(ip) && XLevel->NetDriver->ClientConnections(ip)->Actor )
+					if ( PCanSee( this, XLevel->NetDriver->ClientConnections(ip)->Actor) )
+					{
+						*(UBOOL*)Result = 1;
+						return;
+					}
+		}
+	}
+
+	unguard;
+}
+
+
+
+//========================================================================
+//======================= PackageMap implementation ======================
+//========================================================================
+void AXC_Engine_Actor::execAddToPackagesMap( FFrame& Stack, RESULT_DECL )
+{
+	guard(AXC_Engine_Actor::execAddToPackagesMap);
+	ULinkerLoad* ToAdd = NULL;
+	UBOOL bSelfLinker = 1;
+	*(UBOOL*)Result = 0;
+	UXC_GameEngine* XC = (UXC_GameEngine*) XLevel->Engine;
+	if ( !XLevel->NetDriver || !XLevel->NetDriver->MasterMap )
+		XC->bCanEditPackageMap = false;
+	if ( *Stack.Code != EX_EndFunctionParms ) //Someone specified a package name
+	{
+		FString PackageName(0);
+		Stack.Step( Stack.Object, &PackageName);
+		bSelfLinker = 0;
+		if ( XC->bCanEditPackageMap )
+		{
+			BeginLoad();
+			ToAdd = GetPackageLinker( NULL, *PackageName, 0, NULL, NULL );
+			EndLoad();
+			if ( !ToAdd )
+				debugf( NAME_Warning, TEXT("AddToPackagesMap: Linker not found for %s"), *PackageName );
+		}
+	}
+	P_FINISH;
+
+	if ( !XC->bCanEditPackageMap )
+	{
+		if ( GetLevel()->NetDriver )
+			debugf( NAME_Warning, TEXT("AddToPackagesMap: Cannot edit the Master Map"));
+		return;
+	}
+
+	if ( bSelfLinker )
+	{
+		ToAdd = GetClass()->GetLinker();
+		if ( !ToAdd )
+			debugf( NAME_Warning, TEXT("AddToPackagesMap: Actor %s has no linker!"), GetName() );
+	}
+	if ( !ToAdd )
+		return;
+	INT OldNum = XLevel->NetDriver->MasterMap->List.Num();
+	XLevel->NetDriver->MasterMap->AddLinker( ToAdd );
+	if ( OldNum != XLevel->NetDriver->MasterMap->List.Num() ) //Linker was inserted, Compute
+	{
+		XLevel->NetDriver->MasterMap->Compute();
+		*(UBOOL*)Result = 1;
+	}
+	unguard;
+}
+
+void AXC_Engine_Actor::execIsInPackageMap( FFrame& Stack, RESULT_DECL)
+{
+	guard(AXC_Engine_Actor::execAddToPackagesMap);
+	FString PackageName(0);
+	ULinkerLoad* ToCheck = NULL;
+	Stack.Step( Stack.Object, &PackageName);
+	P_GET_UBOOL_OPTX( bServerPackagesOnly, 0);
+	P_FINISH;
+	*(UBOOL*)Result = 0;
+
+	if ( !XLevel->NetDriver || !XLevel->NetDriver->MasterMap ) //Not a net server
+		return;
+
+	if ( !PackageName.Len() ) //Package this actor was created from
+	{
+		PackageName = GetClass()->GetName();
+		ToCheck = GetClass()->GetLinker();
+	}
+
+	if ( bServerPackagesOnly )
+	{
+		UGameEngine* GameEngine = Cast<UGameEngine>(XLevel->Engine);
+		check( GameEngine);
+		TArray<FString>* SP = (TArray<FString>*)  (((DWORD) &GameEngine->ServerPackages) + XCGE_Defaults->b451Setup * 4 );
+		for ( INT i=0 ; i<SP->Num() ; i++ )
+			if ( (*SP)(i) == PackageName )
+			{
+				*(UBOOL*)Result = 1;
+				break;
+			}
+	}
+	else
+	{
+		if ( !ToCheck )
+		{
+			BeginLoad();
+			ToCheck = GetPackageLinker( NULL, *PackageName, 0, NULL, NULL );
+			EndLoad();
+			if ( !ToCheck )
+			{
+				debugf( NAME_Warning, TEXT("IsInPackageMap: Linker not found for %s"), *PackageName );
+				return;
+			}
+		}
+		TArray<FPackageInfo>* PList = &XLevel->NetDriver->MasterMap->List;
+		for ( INT i=0 ; i<PList->Num() ; i++ )
+			if ( (*PList)(i).Linker == ToCheck )
+			{
+				*(UBOOL*)Result = 1;
+				break;
+			}
 	}
 	unguard;
 }

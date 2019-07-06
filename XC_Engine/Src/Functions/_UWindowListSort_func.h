@@ -1,5 +1,7 @@
 //Find Sort in UWindowList and link it to c++ code
 
+// DEPRECATED
+
 //************************************
 //Precached variables go here
 
@@ -103,7 +105,7 @@ void UUWindowList::SortNative( FFrame& Stack, RESULT_DECL)
 	guard(SortNative);
 	
 	*(UUWindowList**)Result = this;
-
+	return;
 	//Higor: no need to split sort in various frames
 /*	if( bTreeSort )
 	{

@@ -18,6 +18,11 @@ var UWindowCheckbox LanPlayerHostCheck;
 var localized string LanPlayerHostText;
 var localized string LanPlayerHostHelp;
 
+// Any face on skin
+var UWindowCheckbox AnyFaceOnSkinCheck;
+var localized string AnyFaceOnSkinText;
+var localized string AnyFaceOnSkinHelp;
+
 // Developer logs
 var UWindowCheckbox DevLogsCheck;
 var localized string DevLogsText;
@@ -120,7 +125,14 @@ function Created()
 	LanPlayerHostCheck.SetHelpText(LanPlayerHostHelp);
 	LanPlayerHostCheck.SetFont(F_Normal);
 	LanPlayerHostCheck.Align = TA_Right;
-	// 2R = nothing here
+	// Any face on Skin // 2R
+	AnyFaceOnSkinCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlRight, ControlOffset, ControlWidth, 1));
+	if ( GetScriptConfig() )
+		AnyFaceOnSkinCheck.bChecked = ConfigModule.bAnyFaceOnSkin;
+	AnyFaceOnSkinCheck.SetText(AnyFaceOnSkinText);
+	AnyFaceOnSkinCheck.SetHelpText(AnyFaceOnSkinHelp);
+	AnyFaceOnSkinCheck.SetFont(F_Normal);
+	AnyFaceOnSkinCheck.Align = TA_Right;
 	ControlOffset += 25;
 
 	//=======
@@ -190,6 +202,9 @@ function BeforePaint(Canvas C, float X, float Y)
 	LanPlayerHostCheck.SetSize(ControlWidth, 1);
 	LanPlayerHostCheck.WinLeft = ControlLeft;
 
+	AnyFaceOnSkinCheck.SetSize(ControlWidth, 1);
+	AnyFaceOnSkinCheck.WinLeft = ControlRight;
+
 	DevLogsCheck.SetSize(ControlWidth, 1);
 	DevLogsCheck.WinLeft = ControlLeft;
 	
@@ -217,6 +232,9 @@ function Notify(UWindowDialogControl C, byte E)
 			break;
 		case LanPlayerHostCheck:
 			LanPlayerHostChecked();
+			break;
+		case AnyFaceOnSkinCheck:
+			AnyFaceOnSkinChecked();
 			break;
 		case DevLogsCheck:
 			DevLogsChecked();
@@ -272,6 +290,15 @@ function LanPlayerHostChecked()
 	}
 }
 
+function AnyFaceOnSkinChecked()
+{
+	if ( GetScriptConfig() )
+	{
+		ConfigModule.bAnyFaceOnSkin = AnyFaceOnSkinCheck.bChecked;
+		ConfigModule.SaveConfig();
+	}
+}
+
 function DevLogsChecked()
 {
 	GetPlayerOwner().ConsoleCommand("ToggleDebugLogs");
@@ -287,6 +314,8 @@ defaultproperties
 	DevLogsHelp="If checked, XC_Engine will print additional information to the game/server log."
 	LanPlayerHostText="LAN Host Skin"
 	LanPlayerHostHelp="If checked, LAN games hosts will have their player, skin and voice automatically setup for download."
+	AnyFaceOnSkinText="Any face on skin"
+	AnyFaceOnSkinHelp="If checked, it'll be possible to select any compatible face on a given skin."
 	FramerateText="Max Framerate"
 	FramerateHelp="Sets the game's maximum framerate (4 to 200). Make sure to disable any framerate limiter in the renderer!."
 	MapListText="Map List Sorting"

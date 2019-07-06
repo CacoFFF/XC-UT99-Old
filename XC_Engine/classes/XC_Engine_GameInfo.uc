@@ -31,6 +31,10 @@ event InitGame_Listen( string Options, out string Error )
 	pos = InStr(InOpt,".");
 	AddToPackageMap( Left(InOpt,pos));
 	
+	InOpt = ParseOption( Options, "Face" );
+	pos = InStr(InOpt,".");
+	AddToPackageMap( Left(InOpt,pos));
+	
 	InOpt = ParseOption( Options, "Voice" );
 	pos = InStr(InOpt,".");
 	AddToPackageMap( Left(InOpt,pos));
@@ -47,7 +51,7 @@ native(641) static final function bool Array_Insert_Tex( out array<Texture> Ar, 
 native(642) static final function bool Array_Remove_Tex( out array<Texture> Ar, int Offset, optional int Count );
 
 
-event PostLogin( playerpawn NewPlayer )
+event PostLogin( PlayerPawn NewPlayer )
 {
 	local Pawn P;
 	local array<Texture> TextureList;
@@ -71,8 +75,8 @@ event PostLogin( playerpawn NewPlayer )
 						For ( i=0 ; i<TLMax ; i++ )
 							if ( P.MultiSkins[j] == TextureList[i] )
 								Goto NEXT_SKIN;
+						TextureList[TLMax++] = P.MultiSkins[j];
 					}
-					TextureList[TLMax++] = P.MultiSkins[j];
 					NEXT_SKIN:
 				}
 			}
@@ -105,76 +109,6 @@ event PostLogin( playerpawn NewPlayer )
 		NewPlayer.ClientReplicateSkins( T[0], T[1], T[2]);
 	if ( TLMax > 0 )
 		Array_Length_Tex( TextureList, 0);
-}
-
-//***************************************
-// PreLogin hook - ported to UnrealScript
-//
-final function CheckPreLogins( string Options, string Address, out string Error, out string FailCode)
-{
-	local XC_Engine_Actor XCGEA;
-	local int i;
-	local string Parm;
-
-	Parm = ParseOption( Options, "Class");
-	if ( Parm == "" || (InStr(Parm,"%") >= 0) )
-	{
-		Error = "XCGE Denied, invalid class:" @ Parm;
-		return;
-	}
-
-	Parm = ParseOption( Options, "Name");
-	if ( Parm == "" )
-	{
-		Error = "XCGE Denied, invalid name";
-		return;
-	}
-
-	ForEach DynamicActors( class'XC_Engine_Actor', XCGEA) //Process registered pre-login hooks
-	{
-		Log("Check prelogins..."@XCGEA);
-		for ( i=0 ; i<12 ; i++ )
-			if ( XCGEA.PreLoginHooks[i] != none && !XCGEA.PreLoginHooks[i].bDeleteMe )
-				XCGEA.PreLoginHooks[i].PreLoginHook( Options, Address, Error, FailCode); //Pre-validated, won't crash
-		return;
-	}
-}
-
-final function PreLogin_Org( string Options, string Address, out string Error, out string FailCode);
-
-// Linux-safe replacement of PreLogin
-// Parameter count apparently cannot change so we call another 'final' function here
-event PreLogin( string Options, string Address, out string Error, out string FailCode)
-{
-	// Linux v451 likes crashing here
-	local string InPassword;
-	
-/*	Error="";
-	InPassword = ParseOption( Options, "Password" );
-	if( (Level.NetMode != NM_Standalone) && AtCapacity(Options) )
-		Error=MaxedOutMessage;
-	else
-	{
-		SaveConfig(); //Bad but necessary
-		if ( ConsoleCommand("get"@class@"GamePassword")!="" && caps(InPassword)!=caps(ConsoleCommand("get"@class@"GamePassword")) 
-		&& (ConsoleCommand("get"@class@"AdminPassword")=="" || caps(InPassword)!=caps(ConsoleCommand("get"@class@"AdminPassword"))) )
-		{
-			if( InPassword == "" )
-			{
-				Error = NeedPassword;
-				FailCode = "NEEDPW";
-			}
-			else
-			{
-				Error = WrongPassword;
-				FailCode = "WRONGPW";
-			}
-		}
-	}*/
-
-	PreLogin_Org( Options, Address, Error, FailCode);
-	if ( Error == "" ) //Default errors override XC_Engine behaviour
-		CheckPreLogins( Options, Address, Error, FailCode);
 }
 
 	

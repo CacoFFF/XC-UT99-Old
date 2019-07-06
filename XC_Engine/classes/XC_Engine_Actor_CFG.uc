@@ -10,6 +10,8 @@ var() config bool bListenServerPlayerRelevant;
 var() config bool bPatchUdpServerQuery;
 var() config bool bSpawnServerActor;
 var() config bool bFixMoverTimeMP; //Fix mover times in multiplayer
+var() config bool bAnyFaceOnSkin;
+var() config bool bEventChainAddon;
 var() config int LastVersion;
 
 native(640) static final function int Array_Length_Str( out array<string> Ar, optional int SetSize);
@@ -25,6 +27,7 @@ function Setup( XC_Engine_Actor Other)
 	local int i, k, ACount;
 	local string Parsed;
 	local class<XC_Engine_Actor> aClass;
+	local XC_Engine_Actor NewActor;
 	local Actor A;
 	local name ClassName;
 
@@ -101,7 +104,14 @@ function Setup( XC_Engine_Actor Other)
 		{
 			aClass = class<XC_Engine_Actor>( DynamicLoadObject( Parsed, class'class'));
 			if ( aClass != None && (aClass != Other.Class) )
-				Other.Spawn(aClass).XC_Init();
+			{
+				NewActor = Other.Spawn(aClass);
+				if ( NewActor != None )
+				{
+					NewActor.ConfigModule = self;
+					NewActor.XC_Init();
+				}
+			}
 		}
 	}
 	SaveConfig();
@@ -147,6 +157,8 @@ function UpgradeVersion()
 	if ( LastVersion < 24 )
 	{
 		AddConditionUnique( "PACKAGE:Predator:XC_UPakPredator.XC_UPakPredator");
+		AddConditionUnique( "XC_Engine.EventChainPack");
+		AddConditionUnique( "PACKAGE:Unreali:XC_Engine_UT99.UT99AddonsPack");
 	}
 	
 	LastVersion = 23;
@@ -181,5 +193,7 @@ defaultproperties
 	bPatchUdpServerQuery=True
 	bSpawnServerActor=True
 	bFixMoverTimeMP=True
+	bAnyFaceOnSkin=True
+	bEventChainAddon=True
 	LastVersion=21
 }

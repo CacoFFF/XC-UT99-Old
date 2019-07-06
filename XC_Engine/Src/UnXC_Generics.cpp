@@ -12,6 +12,8 @@
 #include "UnRender.h"
 #include "XC_CoreGlobals.h"
 
+#include "Cacus/AppTime.h"
+
 //**********************************************************
 // Level watcher, performs various tasks on the loaded level
 #include "UnXC_LevelWatcher.h"
@@ -217,8 +219,12 @@ UBOOL FXC_TimeManager::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 
 //**********************************************************
 // Server Processor, used to tweak connections and setup brush tracker
+// Netcode can be found in UnXC_NetServer.cpp
+
 #include "UnXC_ServerProc.h"
 FXC_ServerProc::FXC_ServerProc()
+	: Clients()
+	, TickTimeStamps()
 {}
 
 UBOOL FXC_ServerProc::IsTyped( const TCHAR* Type)
@@ -228,16 +234,30 @@ UBOOL FXC_ServerProc::IsTyped( const TCHAR* Type)
 
 INT FXC_ServerProc::Tick( FLOAT DeltaSeconds)
 {
+	UBOOL IsNetServer = Engine->Level() 
+		&&  Engine->Level()->NetDriver
+		&& !Engine->Level()->NetDriver->ServerConnection;
+
 	// This is a net server
-	if (  Engine->Level() 
-	  &&  Engine->Level()->NetDriver
-	  && !Engine->Level()->NetDriver->ServerConnection )
+	if ( IsNetServer )
 	{
+		// Update timestamp lists
+		INT TickRate = Clamp( appRound(Engine->GetMaxTickRate()), 4, 200);
+		INT i = TickTimeStamps.Num() - TickRate;
+		if ( i > 0 )
+			TickTimeStamps.Remove( 0, i);
+		TickTimeStamps.AddItem( FPlatformTime::Seconds() );
+
+		// Remove invalid clients
+		for ( i=0 ; i<Clients.Num() ; i++ )
+			if ( UObject::GetIndexedObject(Clients(i).ObjectIndex) != Clients(i).Connection )
+				Clients.Remove( i--);
+				
 		// Process faster upload feature
 		if ( Engine->bFasterUpload )
 		{
 			UNetDriver* NetDriver = Engine->Level()->NetDriver;
-			for ( int i=0 ; i<NetDriver->ClientConnections.Num() ; i++ )
+			for ( i=0 ; i<NetDriver->ClientConnections.Num() ; i++ )
 			{
 				UNetConnection* C = NetDriver->ClientConnections(i);
 				//This player is joining
@@ -252,9 +272,12 @@ INT FXC_ServerProc::Tick( FLOAT DeltaSeconds)
 					C->CurrentNetSpeed = Min(C->ConfiguredInternetSpeed, NetDriver->MaxClientRate);
 			}
 		}
-		return 1;
 	}
-	return 0;
+	else
+	{
+		SafeEmpty( Clients);
+	}
+	return IsNetServer;
 }
 
 

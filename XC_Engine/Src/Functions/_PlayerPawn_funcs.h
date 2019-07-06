@@ -6,6 +6,7 @@
 static INT NAMES_PlayerPawn_Funcs = 0;
 static FName NAME_PP_CanSpectate;
 static FName NAME_PP_BecomeViewTarget;
+static FName NAME_PP_CalcBehindView;
 
 //************************************
 //Definitions, classes and events go here
@@ -35,8 +36,29 @@ struct APlayerPawn_Dummy : public APlayerPawn
 	INT NameChanges;		// Used to track name changes
 
 	void ViewClass( UClass* aClass, UBOOL bQuiet=0);
+	void PlayerCalcView( AActor*& ViewActor, FVector& CameraLocation, FRotator& CameraRotation);
+
+
+	//Lets us call uscript 'CalcBehindView' //TODO: Also port to native
+	struct APlayerPawn_eventCalcBehindView_Parms
+	{
+		FVector CameraLocation;
+		FRotator CameraRotation;
+		float Dist;
+	};
+	void eventCalcBehindView( FVector& CameraLocation, FRotator& CameraRotation, float Dist)
+	{
+		APlayerPawn_eventCalcBehindView_Parms Params;
+		ProcessEvent( FindFunctionChecked(NAME_PP_CalcBehindView), &Params);
+		CameraLocation = Params.CameraLocation;
+		CameraRotation = Params.CameraRotation;
+	}
+
+	//UScript to Native interfaces
 	DECLARE_FUNCTION( execViewClass);
+	DECLARE_FUNCTION( execPlayerCalcView);
 };
+
 
 //************************************
 //Utilitary/common methods used by natives
@@ -133,6 +155,47 @@ void APlayerPawn_Dummy::ViewClass( UClass* aClass, UBOOL bQuiet )
 	unguard;
 }
 
+void APlayerPawn_Dummy::PlayerCalcView( AActor*& ViewActor, FVector& CameraLocation, FRotator& CameraRotation)
+{
+	if ( ViewTarget )
+	{
+		ViewTarget = ViewActor;
+		CameraLocation = ViewTarget->Location;
+		CameraRotation = ViewTarget->Rotation;
+		APawn* PTarget = Cast<APawn>(ViewTarget);
+		if ( PTarget )
+		{
+/*			if ( Level.NetMode == NM_Client ) //Cannot replace funcs on clients, no point in porting this
+			{
+				if ( PTarget.bIsPlayer )
+					PTarget.ViewRotation = TargetViewRotation;
+				PTarget.EyeHeight = TargetEyeHeight;
+				if ( PTarget.Weapon != None )
+					PTarget.Weapon.PlayerViewOffset = TargetWeaponViewOffset;
+			}*/
+			if ( PTarget->bIsPlayer )
+				CameraRotation = PTarget->ViewRotation;
+			if ( !bBehindView )
+				CameraLocation.Z += PTarget->EyeHeight;
+		}
+		if ( bBehindView )
+			eventCalcBehindView(CameraLocation, CameraRotation, 180);
+		return;
+	}
+	ViewActor = this;
+	CameraLocation = Location;
+
+	if( bBehindView ) //up and behind
+		eventCalcBehindView(CameraLocation, CameraRotation, 150);
+	else
+	{
+		// First-person view.
+		CameraRotation = ViewRotation;
+		CameraLocation.Z += EyeHeight;
+		CameraLocation += WalkBob;
+	}
+}
+
 
 //************************************
 //Natives go here
@@ -149,9 +212,9 @@ void APlayerPawn_Dummy::execViewClass( FFrame& Stack, RESULT_DECL)
 	guard(execViewclass);
 
 	//Register subnames
-	if ( !NAMES_PlayerPawn_Funcs )
+	if ( !(NAMES_PlayerPawn_Funcs & 0x00000001) )
 	{
-		NAMES_PlayerPawn_Funcs = 1;
+		NAMES_PlayerPawn_Funcs |= 0x00000001;
 		NAME_PP_CanSpectate			= FName(TEXT("CanSpectate"), FNAME_Intrinsic);
 		NAME_PP_BecomeViewTarget	= FName(TEXT("BecomeViewTarget"), FNAME_Intrinsic);
 	}
@@ -176,13 +239,50 @@ void APlayerPawn_Dummy::execViewClass( FFrame& Stack, RESULT_DECL)
 	unguard;
 }
 
+void APlayerPawn_Dummy::execPlayerCalcView( FFrame& Stack, RESULT_DECL)
+{
+	guard(execPlayerCalcView);
+
+	//Register subnames
+	if ( !(NAMES_PlayerPawn_Funcs & 0x00000002) )
+	{
+		NAMES_PlayerPawn_Funcs |= 0x00000002;
+		NAME_PP_CalcBehindView		= FName(TEXT("CalcBehindView"), FNAME_Intrinsic);
+	}
+
+	//Classify our node's execution stack
+	UFunction* F = Cast<UFunction>(Stack.Node);
+
+	//Called via ProcessEvent >>> Native to Script
+	if ( F && F->Func == (Native)&APlayerPawn_Dummy::execPlayerCalcView )
+	{
+		//PlayerCalcView( AActor*& ViewActor, FVector& CameraLocation, FRotator& CameraRotation); 
+		AActor**     ViewActorRef      = (AActor**)    (Stack.Locals + 0);
+		FVector*     CameraLocationRef = (FVector*)    (Stack.Locals + 4);
+		FRotator*    CameraRotationRef = (FRotator*)   (Stack.Locals + 16);
+		PlayerCalcView( *ViewActorRef, *CameraLocationRef, *CameraRotationRef);
+		return;
+	}
+
+	//Called via ProcessInternal >>> Script to Native
+	P_GET_ACTOR_REF( ViewActor);
+	P_GET_VECTOR_REF( CameraLocation);
+	P_GET_ROTATOR_REF( CameraRotation);
+	P_FINISH;
+	PlayerCalcView( *ViewActor, *CameraLocation, *CameraRotation);
+	unguard;
+}
+
+
 //
 // Manually register this native function so it gets associated with XC_Engine_PlayerPawn
 //
 #if _MSC_VER
 	extern "C" DLL_EXPORT Native intAXC_Engine_PlayerPawnexecViewClass = (Native)&APlayerPawn_Dummy::execViewClass;
+	extern "C" DLL_EXPORT Native intAXC_Engine_PlayerPawnexecPlayerCalcView = (Native)&APlayerPawn_Dummy::execPlayerCalcView;
 #else
 	extern "C" DLL_EXPORT { Native intAXC_Engine_PlayerPawnexecViewClass = (Native)&APlayerPawn_Dummy::execViewClass; }
+	extern "C" DLL_EXPORT { Native intAXC_Engine_PlayerPawnexecPlayerCalcView = (Native)&APlayerPawn_Dummy::execPlayerCalcView; }
 #endif
 //		static BYTE cls##func##Temp = GRegisterNative( num, int##cls##func );
 

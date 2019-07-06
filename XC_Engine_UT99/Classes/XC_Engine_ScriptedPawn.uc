@@ -1,8 +1,9 @@
 class XC_Engine_ScriptedPawn expands ScriptedPawn
 	abstract;
 
-native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI);
-native(3541) final iterator function NavigationActors( class<NavigationPoint> NavClass, out NavigationPoint P, optional float Distance, optional vector VOrigin, optional bool bVisible);
+const SP = class'XC_Engine_ScriptedPawn';
+	
+var bool bAttitudeQuery;
 
 function Pawn Pawn_PickTarget(out float bestAim, out float bestDist, vector FireDir, vector projStart)
 {
@@ -51,6 +52,9 @@ function Pawn Pawn_PickTarget(out float bestAim, out float bestDist, vector Fire
 	}
 	return Best;
 }
+
+
+
 
 function Gasbag_PlayRangedAttack()
 {
@@ -136,14 +140,70 @@ function SkaarjBerserker_WhatToDoNext(name LikelyState, name LikelyLabel)
 	Super(ScriptedPawn).WhatToDoNext( LikelyState, LikelyLabel);
 }
 
-function bool ScriptedPawn_SetEnemy( Pawn NewEnemy )
+//*****************************************************************************************
+// AttitudeToCreature ensures that both monsters agree on how to treat each other
+// If a pawn wants to treat as friend or follow me, i'll treat as friend as well
+function eAttitude AttitudeToCreature( Pawn Other)
+{
+	local eAttitude Attitude;
+	
+	if( Other.Class == Class )
+		Attitude = ATTITUDE_Friendly;
+	else if ( ClassIsChildOf( Other.Class, class'ScriptedPawn')	&& !SP.default.bAttitudeQuery )
+	{
+		SP.default.bAttitudeQuery = true;
+		Attitude = ScriptedPawn(Other).AttitudeToCreature( self);
+		SP.default.bAttitudeQuery = false;
+		if ( Attitude > ATTITUDE_Friendly )
+			Attitude = ATTITUDE_Friendly;
+		else if ( Attitude < ATTITUDE_Ignore )
+			Attitude = ATTITUDE_Ignore;
+	}
+	else
+		Attitude = ATTITUDE_Ignore;
+	return Attitude;
+}
+
+
+function eAttitude AttitudeTo( Pawn Other)
+{
+	if ( Other.bIsPlayer && (Other.PlayerReplicationInfo != None) )
+	{
+		if ( bIsPlayer && Level.Game.bTeamGame && (Team == Other.PlayerReplicationInfo.Team) )
+			return ATTITUDE_Friendly;
+		else if ( (Intelligence > BRAINS_None) && 
+			((AttitudeToPlayer == ATTITUDE_Hate) || (AttitudeToPlayer == ATTITUDE_Threaten) 
+				|| (AttitudeToPlayer == ATTITUDE_Fear)) ) //check if afraid 
+		{
+			if (RelativeStrength(Other) > Aggressiveness)
+				AttitudeToPlayer = AttitudeWithFear();
+			else if (AttitudeToPlayer == ATTITUDE_Fear)
+				AttitudeToPlayer = ATTITUDE_Hate;
+		}
+		return AttitudeToPlayer;
+	}
+	else if ( Hated == Other )
+	{
+		if (RelativeStrength(Other) >= Aggressiveness)
+			return AttitudeWithFear();
+		else 
+			return ATTITUDE_Hate;
+	}
+	else if ( (TeamTag != '') && (ScriptedPawn(Other) != None) && (TeamTag == ScriptedPawn(Other).TeamTag) )
+		return ATTITUDE_Friendly;
+	else	
+		return AttitudeToCreature(Other); 
+}
+
+
+function bool SetEnemy( Pawn NewEnemy )
 {
 	local bool result;
 	local eAttitude newAttitude, oldAttitude;
 	local bool noOldEnemy;
 	local float newStrength;
 
-	if ( (NewEnemy == Self) || (NewEnemy == None) || (NewEnemy.Health <= 0) )
+	if ( (NewEnemy == Self) || (NewEnemy == None) || (NewEnemy.Health <= 0) || Level.bStartup )
 		return false;
 	if ( !bCanWalk && !bCanFly && !NewEnemy.FootRegion.Zone.bWaterZone )
 		return false;
@@ -170,7 +230,7 @@ function bool ScriptedPawn_SetEnemy( Pawn NewEnemy )
 		{
 			if ( bIgnoreFriends )
 				return false;
-			if ( (NewEnemy.Enemy != None) && (NewEnemy.Enemy.Health > 0) ) 
+			if ( (NewEnemy.Enemy != None) && (NewEnemy.Enemy.Health > 0) && (NewEnemy.Enemy != self) ) 
 			{
 				if ( NewEnemy.Enemy.bIsPlayer && (NewEnemy.Enemy.PlayerReplicationInfo != None) && (NewEnemy.AttitudeToPlayer < AttitudeToPlayer) )
 					AttitudeToPlayer = NewEnemy.AttitudeToPlayer;
@@ -228,12 +288,12 @@ function bool ScriptedPawn_SetEnemy( Pawn NewEnemy )
 		if (bIgnoreFriends)
 			return false;
 
-		if ( (NewEnemy.Enemy != None) && (NewEnemy.Enemy.Health > 0) ) 
+		if ( (NewEnemy.Enemy != None) && (NewEnemy.Enemy.Health > 0) && (NewEnemy.Enemy != self) ) 
 		{
 			result = true;
 			//log("his enemy is my enemy");
 			Enemy = NewEnemy.Enemy;
-			if (Enemy.bIsPlayer)
+			if ( Enemy.bIsPlayer && (Enemy.PlayerReplicationInfo != None) )
 				AttitudeToPlayer = ScriptedPawn(NewEnemy).AttitudeToPlayer;
 			else if ( (ScriptedPawn(NewEnemy) != None) && (ScriptedPawn(NewEnemy).Hated == Enemy) )
 				Hated = Enemy;

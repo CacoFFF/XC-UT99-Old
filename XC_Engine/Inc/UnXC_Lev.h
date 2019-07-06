@@ -31,6 +31,8 @@ class XC_ENGINE_API UXC_Level : public ULevel
 	//UXC_Level interface
 	virtual INT ServerTickClients( FLOAT DeltaSeconds );
 
+	static INT XC_Init;
+
 	DECLARE_CLASS(UXC_Level,ULevel,0,XC_Engine);
 };
 

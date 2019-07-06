@@ -663,9 +663,11 @@ function ServerMove
 		MoveAutonomous(DeltaTime, NewbRun, NewbDuck, NewbPressedJump, DodgeMove, Accel, DeltaRot);
 
 	// Accumulate movement error.
-	if ( Level.TimeSeconds - LastUpdateTime > 500.0/Player.CurrentNetSpeed )
+	// Higor: game speed fix, mandatory update takes twice as long, netspeed effect capped to 10000
+	DeltaTime = (Level.TimeSeconds - LastUpdateTime) / Level.TimeDilation;
+	if ( DeltaTime > 1000.0/FMin(Player.CurrentNetSpeed,10000) )
 		ClientErr = 10000;
-	else if ( Level.TimeSeconds - LastUpdateTime > 180.0/Player.CurrentNetSpeed )
+	else if ( DeltaTime > 180.0/FMin(Player.CurrentNetSpeed,10000) )
 	{
 		LocDiff = Location - ClientLoc;
 		ClientErr = LocDiff Dot LocDiff;
