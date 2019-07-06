@@ -8,11 +8,35 @@
 #include "Cacus/Atomics.h"
 #include "Cacus/CacusString.h"
 
+#include <wchar.h>
+
 #if UNICODE
-	#define CacusBufferSprintf CWSprintf
+//	#define CacusBufferSprintf(...) CWSprintf(__VA_ARGS__)
+	#define CacusBufferSprintf(...) \
+		NULL; \
+		if ( scwprintf ) \
+		{	ModMsg = CharBuffer<TCHAR>( (*scwprintf)(__VA_ARGS__) + 1 ); \
+			appSprintf( ModMsg, __VA_ARGS__); }
 #else
-	#define CacusBufferSprintf CSprintf
+	#define CacusBufferSprintf(...) CSprintf(__VA_ARGS__)
 #endif
+
+typedef int (__cdecl *scwprintf_t)( const TCHAR*, ...);
+static scwprintf_t scwprintf = NULL;
+
+#if defined _NO_CRT_STDIO_INLINE
+	;
+#else
+{
+	int _Result;
+	va_list _ArgList;
+	__crt_va_start(_ArgList, _Format);
+	_Result = _vscwprintf_l(_Format, NULL, _ArgList);
+	__crt_va_end(_ArgList);
+	return _Result;
+}
+#endif
+
 
 /*-----------------------------------------------------------------------------
 	FFeedbackContextCmd.
@@ -43,6 +67,8 @@ public:
 	{
 		if ( (StdIn == INVALID_HANDLE_VALUE) || (StdOut == INVALID_HANDLE_VALUE) )
 		{
+			HMODULE MSVCRT = GetModuleHandleA("msvcrt.dll");
+			scwprintf = (scwprintf_t)GetProcAddress(MSVCRT,"_scwprintf");
 			StdIn  = GetStdHandle( STD_INPUT_HANDLE );
 			StdOut = GetStdHandle( STD_OUTPUT_HANDLE );
 			return (StdIn != INVALID_HANDLE_VALUE) && (StdOut != INVALID_HANDLE_VALUE);
@@ -120,17 +146,24 @@ public:
 			// CacusBufferSprintf will return nullptr is the resulting string is larger than the buffer
 			// So all we need to do is not print ModMsg if 'nullptr'
 			CStringBufferInit( 16 * 1024); //Lazy init buffer (16kb)
-			const TCHAR* ModMsg = nullptr; 
+			TCHAR* ModMsg = nullptr; 
 
 			// Handle events
+			StdInit();
 			if ( Event == NAME_Heading )
+			{
 				ModMsg = CacusBufferSprintf( TEXT("--------------------%s--------------------"), Msg);
+			}
 			else if( Event==NAME_SubHeading )
+			{
 				ModMsg = CacusBufferSprintf( TEXT("%s..."), Msg);
+			}
 			else if( Event==NAME_Error || Event==NAME_Warning || Event==NAME_ExecWarning || Event==NAME_ScriptWarning )
 			{
 				if( Context )
+				{
 					ModMsg = CacusBufferSprintf( TEXT("%s : %s, %s"), *Context->GetContext(), *FName(Event), Msg);
+				}
 				WarningCount++;
 			}
 

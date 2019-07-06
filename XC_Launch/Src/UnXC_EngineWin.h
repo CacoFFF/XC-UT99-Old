@@ -12,6 +12,7 @@ Revision history:
 #define XC_CORE_API DLL_IMPORT
 
 #include "Cacus/AppTime.h"
+#include "CTickerEngine.h"
 
 /*-----------------------------------------------------------------------------
 	Splash screen.
@@ -760,7 +761,7 @@ static UEngine* InitEngine()
 //
 static INT MainLoop( UEngine* Engine )
 {
-	INT LoopCount = 0;
+	CTickerEngine Ticker;
 	guard(XC_MainLoop);
 	check(Engine);
 
@@ -777,6 +778,8 @@ static INT MainLoop( UEngine* Engine )
 	DOUBLE OldTime = FPlatformTime::Seconds();
 	DOUBLE SecondStartTime = OldTime;
 
+	Ticker.UpdateTimerResolution();
+	Ticker.TickNow();
 	INT TickCount = 0;
 	while( GIsRunning && !GIsRequestingExit )
 	{
@@ -799,7 +802,11 @@ static INT MainLoop( UEngine* Engine )
 
 		// Enforce maximum tick rate using QueryPerformanceCounter
 		guard(EnhancedTickRate);
-		FLOAT MaxTickRate = Engine->GetMaxTickRate();
+		double TickRate = Engine->GetMaxTickRate();
+		if ( TickRate < 4.0 )
+			TickRate = 200.0;
+		Ticker.TickInterval( 1.0 / TickRate, 0.25, 0.1 / 1000.0); // 0.1ms error allowed
+/*		FLOAT MaxTickRate = Engine->GetMaxTickRate();
 		DOUBLE IdealDelta = (MaxTickRate > 0.f) ? (1.0 / MaxTickRate) : (1.0/200.0);
 		while ( true )
 		{
@@ -807,7 +814,7 @@ static INT MainLoop( UEngine* Engine )
 			if ( Delta - 0.000005 < 0.f )
 				break;
 			appSleep( Clamp<FLOAT>( Delta-0.0005, 0.f, IdealDelta) ); //This can reduce sleep timing by 1ms
-		}
+		}*/
 		unguard;
 
 		// Handle all incoming messages.
@@ -852,7 +859,6 @@ static INT MainLoop( UEngine* Engine )
 			HadFocus = HasFocus;
 			unguard;
 		}*/
-		LoopCount++;
 	}
 	GIsRunning = 0;
 
@@ -864,7 +870,7 @@ static INT MainLoop( UEngine* Engine )
 	unguard;
 
 	unguard;
-	return LoopCount;
+	return (int32)Ticker.GetTickCount();
 }
 #endif
 

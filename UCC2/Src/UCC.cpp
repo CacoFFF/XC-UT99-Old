@@ -164,7 +164,7 @@ TCHAR* MakeLogFilename( TCHAR* CmdLine)
 
 int main( int argc, char* argv[] )
 {
-	#if __STATIC_LINK
+#if __STATIC_LINK
 	// Clean lookups.
 	for (INT k=0; k<ARRAY_COUNT(GNativeLookupFuncs); k++)
 	{
