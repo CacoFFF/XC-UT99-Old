@@ -35,7 +35,7 @@ bool ActorInfo::Init( AActor* InActor)
 	if ( InActor->Brush )
 	{
 		GridBox = (cg::Box) InActor->Brush->GetCollisionBoundingBox( InActor);
-		GridBox.ExpandBounds( cg::Vector( 8.f, 8.f, 8.f, 0)); //Obscure bug makes encroachment checks fail
+		GridBox.ExpandBounds( cg::Vector( 2.1f, 2.1f, 2.1f, 0)); //Just in case
 		Flags.bUseCylinder = 0;
 		Flags.bIsMovingBrush = InActor->IsMovingBrush() != 0;
 	}

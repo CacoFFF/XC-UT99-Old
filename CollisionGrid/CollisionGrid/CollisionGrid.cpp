@@ -7,10 +7,19 @@
 #include "API.h"
 #include "GridTypes.h"
 #include "GridMem.h"
+#include "GridMath.h"
 
 ActorInfoHolder* G_AIH = nullptr;
 MiniTreeHolder* G_MTH = nullptr;
 GenericMemStack* G_Stack = nullptr;
+
+
+namespace cg
+{
+	const Integers Vector::MASK_3D  ( 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000);
+	const Integers Vector::MASK_SIGN( 0x80000000, 0x80000000, 0x80000000, 0x80000000);
+	const Integers Vector::MASK_ABS ( 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF);
+};
 
 //
 // Grid container, UE interface

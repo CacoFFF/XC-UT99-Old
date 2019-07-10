@@ -20,6 +20,7 @@ enum EUnsafe  { E_Unsafe=0 };
 #define SMALL_NUMBER		(1.e-8f)
 #define KINDA_SMALL_NUMBER	(1.e-4f)
 
+struct Integers;
 struct FVector;
 
 inline float appSqrt( float F)
@@ -78,6 +79,8 @@ struct DE Integers
 		:	i(ii),	j(jj),	k(kk),	l(ll)	{}
 	Integers( EZero )
 	{	_mm_storeu_si128( mm(), _mm_setzero_si128() );	}
+	Integers( __m128i reg)
+	{	_mm_storeu_si128( (__m128i*)&i, reg);	}
 
 	const TCHAR* String() const;
 
@@ -119,14 +122,12 @@ struct DE Integers
 	//Basic logic operators
 	Integers operator+(const Integers& I) const
 	{
-		__m128i _V = _mm_add_epi32( _mm_loadu_si128( mm()), _mm_loadu_si128(I.mm()));
-		return *(Integers*)&_V;
+		return _mm_add_epi32( _mm_loadu_si128( mm()), _mm_loadu_si128(I.mm()));
 	}
 
 	Integers operator-(const Integers& I) const
 	{
-		__m128i _V = _mm_sub_epi32( _mm_loadu_si128( mm()), _mm_loadu_si128(I.mm()));
-		return *(Integers*)&_V;
+		return _mm_sub_epi32( _mm_loadu_si128( mm()), _mm_loadu_si128(I.mm()));
 	}
 
 };
@@ -150,10 +151,14 @@ struct DE Vector
 		_mm_storeu_ps( &X, _mm_loadu_ps(f));
 	}
 
+	Vector( const Vector& V)
+	{
+		_mm_storeu_ps( &X, _mm_loadu_ps(&V.X));
+	}
+
 	Vector( const FVector& V, EUnsafe)
 	{
-		const Integers Mask( 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000);
-		_mm_storeu_ps( &X, _mm_and_ps(_mm_loadu_ps((float*)&V), Mask));
+		_mm_storeu_ps( &X, _mm_and_ps(_mm_loadu_ps((float*)&V), MASK_3D));
 	}
 
 	Vector( float U, EStatic3D)
@@ -165,9 +170,9 @@ struct DE Vector
 		_mm_storeu_ps( &X, _mm_setzero_ps());
 	}
 
-	Vector( const __m128& V)
+	Vector( __m128 reg)
 	{
-		_mm_storeu_ps( &X, V);
+		_mm_storeu_ps( &X, reg);
 	}
 
 
@@ -183,36 +188,17 @@ struct DE Vector
 
 	const TCHAR* String() const;
 
-	inline operator __m128() const
+	operator __m128() const
 	{
 		return _mm_loadu_ps( &X);
 	}
 
 	//*********************
 	//Basic arithmetic and logic operators
-	Vector operator+(const Vector& V) const
-	{
-		__m128 _V = _mm_add_ps( *this, V );
-		return *(Vector*)&_V;
-	}
-
-	Vector operator-(const Vector& V) const
-	{
-		__m128 _V = _mm_sub_ps( *this, V );
-		return *(Vector*)&_V;
-	}
-
-	Vector operator*(const Vector& V) const
-	{
-		__m128 _V = _mm_mul_ps( *this, V );
-		return *(Vector*)&_V;
-	}
-
-	Vector operator/(const Vector& V) const
-	{
-		__m128 _V = _mm_div_ps( *this, V );
-		return *(Vector*)&_V;
-	}
+	Vector operator+( const Vector& V) const	{	return _mm_add_ps( *this, V );	}
+	Vector operator-( const Vector& V) const	{	return _mm_sub_ps( *this, V );	}
+	Vector operator*( const Vector& V) const	{	return _mm_mul_ps( *this, V );	}
+	Vector operator/( const Vector& V) const	{	return _mm_div_ps( *this, V );	}
 
 	float operator|(const Vector& V) const //DOT4
 	{
@@ -229,26 +215,22 @@ struct DE Vector
 
 	Vector operator*(const float F) const
 	{
-		__m128 _V = _mm_mul_ps( *this, _mm_load_ps1(&F) );
-		return *(Vector*)&_V;
+		return _mm_mul_ps( *this, _mm_load_ps1(&F) );
 	}
 
 	Vector operator/(const float F) const
 	{
-		__m128 _V = _mm_div_ps( *this, _mm_load_ps1(&F) );
-		return *(Vector*)&_V;
+		return _mm_div_ps( *this, _mm_load_ps1(&F) );
 	}
 
 	Vector operator&(const Integers& I) const
 	{
-		__m128 _V = _mm_and_ps( *this, I );
-		return *(Vector*)&_V;
+		return _mm_and_ps( *this, I );
 	}
 
 	Vector operator&(const Vector& V) const
 	{
-		__m128 _V = _mm_and_ps( *this, V );
-		return *(Vector*)&_V;
+		return _mm_and_ps( *this, V );
 	}
 
 	//********************************
@@ -256,10 +238,7 @@ struct DE Vector
 
 	Vector operator-() const
 	{
-		const Integers Mask( 0x80000000, 0x80000000, 0x80000000, 0x80000000);
-//		static const __m128 SIGNMASK = _mm_castsi128_ps(_mm_set1_epi32(0x80000000));
-		__m128 _V = _mm_xor_ps( Mask, *this);
-		return *(Vector*)&_V;
+		return _mm_xor_ps( MASK_SIGN, *this);
 	}
 
 	Vector operator=(const Vector& V)
@@ -268,17 +247,11 @@ struct DE Vector
 		return *this;
 	}
 
-	Vector operator+=(const Vector& V)
-	{	return (*this = *this + V);	}
-
-	Vector operator-=(const Vector& V)
-	{	return (*this = *this - V);	}
-
-	Vector operator*=(const Vector& V)
-	{	return (*this = *this * V);	}
-
-	Vector operator*=(const float F)
-	{	return (*this = *this * F);	}
+	Vector operator+=(const Vector& V)	{	return (*this = *this + V);	}
+	Vector operator-=(const Vector& V)	{	return (*this = *this - V);	}
+	Vector operator*=(const Vector& V)	{	return (*this = *this * V);	}
+	Vector operator/=(const Vector& V)	{	return (*this = *this / V);	}
+	Vector operator*=(const float F)	{	return (*this = *this * F);	}
 
 
 	//**************************
@@ -291,8 +264,7 @@ struct DE Vector
 
 	Vector operator<<(const Vector& V) const //Bitmask of coordinates where A < B
 	{
-		__m128 _V = _mm_cmplt_ps( *this, V);
-		return *(Vector*)&_V;
+		return _mm_cmplt_ps( *this, V);
 	}
 
 
@@ -317,7 +289,7 @@ struct DE Vector
 	{
 		__m128i cmp = _mm_castps_si128( _mm_cmpge_ps( *this , _mm_setzero_ps() ) );
 		cmp = _mm_srli_epi32( cmp, 31);
-		return *(Integers*)&cmp;
+		return cmp;
 	}
 
 	//**************************
@@ -382,9 +354,7 @@ struct DE Vector
 
 	Vector Absolute() const
 	{
-		const Integers Mask( 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF);
-		__m128 _V = _mm_and_ps( _mm_loadu_ps( (const float*)&Mask.i ), *this );
-		return *(Vector*)&_V;
+		return _mm_and_ps( _mm_loadu_ps( (const float*)&MASK_ABS ), *this );
 	}
 
 	//Truncate to 4 integers
@@ -410,7 +380,7 @@ struct DE Vector
 		 //Need conditional to prevent this from jumping to infinite
 		b = _mm_shuffle_ps( b, b, 0b00000000); //Populate YZW with X
 		a = _mm_mul_ps( a, b); //Normalized vector
-		return *(Vector*)&a;
+		return a;
 //		return *this * (1.f/sqrtf(X*X+Y*Y+Z*Z));
 	}
 
@@ -427,7 +397,7 @@ struct DE Vector
 										 //Need conditional to prevent this from jumping to infinite
 		b = _mm_shuffle_ps( b, b, 0b00000000); //Populate YZW with X
 		a = _mm_mul_ps( a, b); //Normalized vector
-		return *(Vector*)&a;
+		return a;
 		//		return *this * (1.f/sqrtf(X*X+Y*Y+Z*Z));
 	}
 
@@ -438,7 +408,7 @@ struct DE Vector
 		__m128 x = *this;
 		__m128 z = _mm_rcp_ps(x); //z = 1/x estimate
 		__m128 _V = _mm_sub_ps( _mm_add_ps( z, z), _mm_mul_ps( x, _mm_mul_ps( z, z))); //2z-xzz
-		return *(Vector*)&_V; //~= 1/x to 0.000012%
+		return _V; //~= 1/x to 0.000012%
 	}
 
 	//Transform by a normalized XY dir vector
@@ -464,33 +434,22 @@ struct DE Vector
 		opvec = _mm_add_ps( opvec, y); //ox*dx+oy*dy, ox*-dy+oy*dx
 		opvec = _mm_shuffle_ps( opvec, org, 0b11100100); //Mix X,Y of OPVEc and Z,W of ORG
 
-		return *(Vector*)&opvec;
+		return opvec;
 	}
+
+	static const Integers MASK_3D;
+	static const Integers MASK_SIGN;
+	static const Integers MASK_ABS;
 };
 //**************
 
-inline Vector Min( const Vector& A, const Vector& B)
-{
-	__m128 _V = _mm_min_ps( A, B );
-	return *(Vector*) &_V;
-}
-
-inline Vector Max( const Vector& A, const Vector& B)
-{
-	__m128 _V = _mm_max_ps( A, B );
-	return *(Vector*) &_V;
-}
-
-inline Vector Clamp( const Vector& Sample, const Vector& Min, const Vector& Max)
-{
-	__m128 _V = _mm_min_ps( _mm_max_ps( Sample, Min), Max);
-	return *(Vector*) &_V;
-}
+inline Vector Min( const Vector& A, const Vector& B)	{	return _mm_min_ps( A, B );	}
+inline Vector Max( const Vector& A, const Vector& B)	{	return _mm_max_ps( A, B );	}
+inline Vector Clamp( const Vector& V, const Vector& Min, const Vector& Max)		{	return _mm_min_ps( _mm_max_ps( V, Min), Max);	}
 
 inline Vector Vectorize( const Integers& i)
 {
-	__m128 _V = _mm_cvtepi32_ps( _mm_loadu_si128(i.mm()) ); //Load and truncate to integer
-	return *(Vector*)&_V;
+	return _mm_cvtepi32_ps( _mm_loadu_si128(i.mm()) ); //Load and truncate to integer
 }
 
 //
@@ -534,7 +493,7 @@ struct DE Box
 	//Construct a box containing all of Unreal vectors in the list
 	Box( FVector* VList, int32 VNum)
 	{
-		const uint32 imask = 0xFFFFFFFF;
+//		const uint32 imask = 0xFFFFFFFF;
 		const float boundmin = -32768.f;
 		const float boundmax = 32768.f; //Unreal bounds
 		float* fArray = (float*)VList;
@@ -559,8 +518,8 @@ struct DE Box
 		mb = _mm_load_ps1( &boundmax);
 		ma = _mm_min_ps( ma, mb);
 		//Set W=0
-		__m128 mask = _mm_load_ss( (const float*)&imask);
-		mask = _mm_pshufd_ps( mask, 0b11000000); //m,m,m,0
+		__m128 mask = _mm_load_ps( (const float*) &Vector::MASK_3D); //m,m,m,0
+//		mask = _mm_pshufd_ps( mask, 0b11000000); 
 		mi = _mm_and_ps( mi, mask);
 		ma = _mm_and_ps( ma, mask);
 		//Save

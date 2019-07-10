@@ -114,25 +114,31 @@ FCheckResult* Grid::LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags)
 	GSBaseMarker Marker;
 	FCheckResult* Result = nullptr;
 
-	//Get start/end grid coordinates
-	cg::Vector Start = (Ray.Org - Ray.Extent) - Box.Min;
-	cg::Vector End   = (Ray.End + Ray.Extent) - Box.Min;
-	//FAILS IF TRACE ORIGINATES OR ENDS OUTSIDE OF GRID!!!
+	cg::Vector OuterExtent( &Ray.Extent.X);
+	if ( Ray.Org.X < Ray.End.X )		OuterExtent.X *= -1.f;
+	if ( Ray.Org.Y < Ray.End.Y )		OuterExtent.Y *= -1.f;
+	if ( Ray.Org.Z < Ray.End.Z )		OuterExtent.Z *= -1.f;
+
 	cg::Integers iS;
 	cg::Integers iE;
 	{
+		//Get start/end grid coordinates
+		cg::Vector Start = (Ray.Org - OuterExtent) - Box.Min;
+		cg::Vector End   = (Ray.End + OuterExtent) - Box.Min;
+		Start *= Grid_Mult;
+		End   *= Grid_Mult;
+		//FAILS IF TRACE ORIGINATES OR ENDS OUTSIDE OF GRID!!!
 		cg::Vector Max = cg::Vectorize( Size - XYZi_One);
-		cg::Vector fS = Clamp(Start * Grid_Mult, cg::Vector(E_Zero), Max);
-		cg::Vector fE = Clamp(End   * Grid_Mult, cg::Vector(E_Zero), Max);
-		iS = fS.Truncate32();
-		iE = fE.Truncate32();
+		iS = Clamp(Start, cg::Vector(E_Zero), Max).Truncate32();
+		iE = Clamp(End  , cg::Vector(E_Zero), Max).Truncate32();
 	}
+	//Calc directions
 	int32 iD[3];
 	for ( uint32 i=0 ; i<3 ; i++ )
 	{
 		int32 j = iE.coord(i)-iS.coord(i);
 		iD[i] = (j>0) - (j<0); //Does this kill the branches?
-	}	
+	}
 
 	//Check globals
 	Ray.QueryContainer( Actors, Result);
@@ -246,10 +252,10 @@ PrecomputedRay::PrecomputedRay( const FVector& TraceStart, const FVector& TraceE
 	//HACK: Since parameters are on the stack (ActorLineCheck call)
 	//It 'should' be safe to grab XYZ vectors from it using packed SSE instructions
 	{
-		cg::Vector& V3Mask = (cg::Vector&)Vector3Mask;
-		Extent = cg::Vector( & TraceExtent.X) & V3Mask;
-		End    = cg::Vector( & TraceEnd.X   ) & V3Mask;
-		Org    = cg::Vector( & TraceStart.X ) & V3Mask;
+		cg::Vector V3Mask( cg::Vector::MASK_3D);
+		Extent = cg::Vector( &TraceExtent.X) & V3Mask;
+		End    = cg::Vector( &TraceEnd.X   ) & V3Mask;
+		Org    = cg::Vector( &TraceStart.X ) & V3Mask;
 		if ( !Extent.IsValid() || !End.IsValid() || !Org.IsValid() )
 			return_invalid_helper;
 	}
