@@ -27,6 +27,7 @@ function SpawnHandlers()
 	Spawn( class'ElevatorReachspecHandler');
 	Spawn( class'EngineTriggersHandler');
 	Spawn( class'EngineMoversHandler');
+	Spawn( class'EngineInventoryHandler');
 }
 
 

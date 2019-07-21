@@ -7,6 +7,7 @@
 
 #include "XC_Engine.h"
 #include "UnXC_Script.h"
+#include "UnXC_Lev.h"
 #include "XC_CoreGlobals.h"
 #include "FPathBuilderMaster.h"
 #include "UnNet.h"
@@ -491,106 +492,6 @@ void AXC_Engine_Actor::execGetReachSpec( FFrame& Stack, RESULT_DECL)
 }
 
 
-static void CompactSortSpecList( TArray<FReachSpec>& ReachSpecs, INT* Paths)
-{
-	guard(CompactSortSpecList);
-	INT i, j;
-	INT Count = 0;
-	// Cleanup
-	for ( i=0 ; i<16 ; i++ )
-		if ( Paths[i] >= 0 )
-		{
-			if ( Paths[i] >= ReachSpecs.Num() || !ReachSpecs(Paths[i]).Start || !ReachSpecs(Paths[i]).End )
-			{
-				debugf( NAME_DevPath, TEXT("CLEANUP IN %i(%i) [%i,%i,%i]"), i, Paths[i], ReachSpecs.Num(), ReachSpecs(Paths[i]).Start, ReachSpecs(Paths[i]).End );
-				Paths[i] = INDEX_NONE;
-			}
-			else
-				Count++;
-		}
-
-	// Compact (i=Base, j=Seek)
-	for ( i=j=0 ; i<Count ; i++, j++ )
-	{
-		while ( Paths[j] == INDEX_NONE )
-			j++;
-		if ( i != j )
-			Exchange( Paths[i], Paths[j]);
-	}
-
-	// Sort (selection sort)
-	for ( i=0 ; i<Count ; i++ )
-	{
-		INT Lowest = 0;
-		for ( j=i+1 ; j<Count ; j++ )
-			if ( ReachSpecs(Paths[j]).distance < ReachSpecs(Paths[Lowest]).distance )
-				Lowest = j;
-		if ( Lowest != i )
-			Exchange( Paths[i], Paths[Lowest]);
-	}
-	unguard;
-}
-
-static void UpdateSpec( FReachSpec& OldSpec, const FReachSpec& NewSpec, int Idx)
-{
-	ANavigationPoint *Start, *End;
-	//Unregister from start
-	if ( (Start=Cast<ANavigationPoint>(OldSpec.Start)) )
-	{
-		INT* Paths = OldSpec.bPruned ? Start->PrunedPaths : Start->Paths;
-		for ( INT i=0 ; i<16 ; i++ )
-			if ( Paths[i] == Idx )
-			{
-				Paths[i] = INDEX_NONE;
-				CompactSortSpecList( Start->GetLevel()->ReachSpecs, Paths);
-				break;
-			}
-	}
-
-	//Unregister from end
-	if ( !OldSpec.bPruned && (End=Cast<ANavigationPoint>(OldSpec.End)) )
-	{
-		INT* Paths = End->upstreamPaths;
-		for ( INT i=0 ; i<16 ; i++ )
-			if ( Paths[i] == Idx )
-			{
-				Paths[i] = INDEX_NONE;
-				CompactSortSpecList( End->GetLevel()->ReachSpecs, Paths);
-				break;
-			}
-	}
-
-	//Update (or register will fail)
-	OldSpec = NewSpec;
-
-	//Register in new start
-	if ( (Start=Cast<ANavigationPoint>(NewSpec.Start)) )
-	{
-		INT* Paths = NewSpec.bPruned ? Start->PrunedPaths : Start->Paths;
-		for ( INT i=0 ; i<16 ; i++ )
-			if ( Paths[i] == INDEX_NONE )
-			{
-				Paths[i] = Idx;
-				CompactSortSpecList( Start->GetLevel()->ReachSpecs, Paths);
-				break;
-			}
-	}
-
-	//Register in new end
-	if ( !NewSpec.bPruned && (End=Cast<ANavigationPoint>(NewSpec.End)) )
-	{
-		INT* Paths = End->upstreamPaths;
-		for ( INT i=0 ; i<16 ; i++ )
-			if ( Paths[i] == INDEX_NONE )
-			{
-				Paths[i] = Idx;
-				CompactSortSpecList( End->GetLevel()->ReachSpecs, Paths);
-				break;
-			}
-	}
-
-}
-
 void AXC_Engine_Actor::execSetReachSpec( FFrame& Stack, RESULT_DECL)
 {
 	guard(AXC_Engine_Actor::execSetReachSpec);
@@ -603,7 +504,7 @@ void AXC_Engine_Actor::execSetReachSpec( FFrame& Stack, RESULT_DECL)
 	if ( GPropAddr && (Idx >= 0) && (Idx < GetLevel()->ReachSpecs.Num()) )
 	{
 		if ( bAutoSet )
-			UpdateSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
+			UXC_Level::UpdateReachSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
 		else
 			GetLevel()->ReachSpecs(Idx) = Spec;
 		*(UBOOL*)Result = true;
@@ -632,7 +533,7 @@ void AXC_Engine_Actor::execAddReachSpec( FFrame& Stack, RESULT_DECL)
 	INT& Idx = *(INT*)Result;
 	Idx = GetLevel()->ReachSpecs.AddZeroed();
 	if ( bAutoSet )
-		UpdateSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
+		UXC_Level::UpdateReachSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
 	else
 		GetLevel()->ReachSpecs(Idx) = Spec;
 	unguard;
@@ -672,9 +573,9 @@ void AXC_Engine_Actor::execCompactPathList( FFrame& Stack, RESULT_DECL)
 	if ( !N )
 		return;
 
-	CompactSortSpecList( GetLevel()->ReachSpecs, N->Paths);
-	CompactSortSpecList( GetLevel()->ReachSpecs, N->upstreamPaths);
-	CompactSortSpecList( GetLevel()->ReachSpecs, N->PrunedPaths);
+	UXC_Level::CompactSortReachSpecList( GetLevel()->ReachSpecs, N->Paths);
+	UXC_Level::CompactSortReachSpecList( GetLevel()->ReachSpecs, N->upstreamPaths);
+	UXC_Level::CompactSortReachSpecList( GetLevel()->ReachSpecs, N->PrunedPaths);
 	unguard;
 }
 
@@ -759,9 +660,9 @@ void AXC_Engine_Actor::execDefinePathsFor( FFrame& Stack, RESULT_DECL)
 	if ( !N )
 		return;
 
-	CompactSortSpecList( N->GetLevel()->ReachSpecs, N->Paths);
-	CompactSortSpecList( N->GetLevel()->ReachSpecs, N->upstreamPaths);
-	CompactSortSpecList( N->GetLevel()->ReachSpecs, N->PrunedPaths);
+	UXC_Level::CompactSortReachSpecList( N->GetLevel()->ReachSpecs, N->Paths);
+	UXC_Level::CompactSortReachSpecList( N->GetLevel()->ReachSpecs, N->upstreamPaths);
+	UXC_Level::CompactSortReachSpecList( N->GetLevel()->ReachSpecs, N->PrunedPaths);
 	if ( N->Paths[0] != INDEX_NONE || N->upstreamPaths[0] != INDEX_NONE || N->PrunedPaths[0] != INDEX_NONE )
 		return;
 

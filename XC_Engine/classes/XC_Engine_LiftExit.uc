@@ -2,8 +2,6 @@ class XC_Engine_LiftExit expands LiftExit;
 
 const XCS = class'XC_EngineStatics';
 
-native(3571) static final function float HSize( vector A);
-
 // Special handling portion using FerBotz AI
 // If this returns something, then it'll override SpecialHandling
 final function Actor EnhancedHandling( Pawn Other)

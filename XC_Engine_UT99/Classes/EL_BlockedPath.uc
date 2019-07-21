@@ -41,19 +41,19 @@ function DefineAttractor()
 	
 	if ( Unlocker != None )
 	{
-		if ( Unlocker.AIMarker == None ) //TODO: MAKE AI MARKER SELF-DESTRUCT
+		if ( Unlocker.DeferTo() == None )
 		{
 			Unlocker.bDestroyMarker = true;
 			Unlocker.CreateAIMarker();
 		}
 
 			
-		if ( Unlocker.AIMarker != None )
+		if ( (Unlocker.DeferTo() != None) && (Unlocker.DeferTo().Paths[15] == -1) )
 		{
 			Scout = Spawn( class'FV_Scout');
 			if ( Scout == None )
 				return;
-			MapRoutes_ELBP( Scout, Unlocker.AIMarker);
+			MapRoutes_ELBP( Scout, Unlocker.DeferTo());
 			Scout.Destroy();
 		
 			//Not ready
@@ -63,11 +63,11 @@ function DefineAttractor()
 
 
 			AIMarker = Spawn( class'SimpleObjectiveAttractor', self, 'SimpleObjectiveAttractor',
-				Unlocker.AIMarker.Location + vect(0,0,10) + Normal(Unlocker.Owner.Location - Unlocker.AIMarker.Location) * 5 );
+				Unlocker.DeferTo().Location + vect(0,0,10) + Normal(Unlocker.Owner.Location - Unlocker.DeferTo().Location) * 5 );
 			SimpleObjectiveAttractor(AIMarker).AttractTo = Unlocker.Owner;
 			LockToNavigationChain( AIMarker, true);
 
-			R.Start = Unlocker.AIMarker;
+			R.Start = Unlocker.DeferTo();
 			R.End = AIMarker;
 			R.Distance = 1;
 			R.ReachFlags = R_SPECIAL | R_PLAYERONLY;

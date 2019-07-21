@@ -23,7 +23,6 @@ function int CreateReachSpec( optional ReachSpec R)
 		rIdx = AddReachSpec( R, true);
 	else	
 		SetReachSpec( R, rIdx, true);
-	Log("Creating"@R.Start@R.End@"at"@rIdx);
 	return rIdx;
 }
 

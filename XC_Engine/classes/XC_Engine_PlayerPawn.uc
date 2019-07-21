@@ -10,16 +10,6 @@ exec native function ViewClass( class<actor> aClass, optional bool bQuiet );
 native event PlayerCalcView( out Actor ViewActor, out vector CameraLocation, out rotator CameraRotation);
 
 
-native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI, optional Pawn StartAt);
-native(3541) final iterator function NavigationActors( class<NavigationPoint> NavClass, out NavigationPoint P, optional float Distance, optional vector VOrigin, optional bool bVisible);
-native(3542) final iterator function InventoryActors( class<Inventory> InvClass, out Inventory Inv, optional bool bSubclasses, optional Actor StartFrom); 
-native(3552) final iterator function CollidingActors( class<actor> BaseClass, out actor Actor, float Radius, optional vector Loc);
-native(3553) final iterator function DynamicActors( class<actor> BaseClass, out actor Actor, optional name MatchTag );
-//native(3555) static final operator(22) Object | (Object A, skip Object B);
-native(3571) static final function float HSize( vector A);
-native(3572) static final function float InvSqrt( float C);
-
-
 final function bool CanGWSpam()
 {
 	if ( class'XC_Engine_PlayerPawn'.default.GW_TimeSeconds != Level.TimeSeconds ) //Antispam, fixes bandwidth exploit
@@ -680,6 +670,8 @@ function ServerMove
 			ClientLoc = Location - Base.Location;
 		else
 			ClientLoc = Location;
+		if ( Base != None && Base != Level )
+			ClientLoc.Z += float(int(Base.Location.Z + 0.9)) - Base.Location.Z;
 		//log("Client Error at "$TimeStamp$" is "$ClientErr$" with acceleration "$Accel$" LocDiff "$LocDiff$" Physics "$Physics);
 		LastUpdateTime = Level.TimeSeconds;
 		ClientAdjustPosition

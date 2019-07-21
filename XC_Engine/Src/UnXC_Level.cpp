@@ -31,6 +31,40 @@ inline void* operator new( size_t Size, void* Loc, EPlace Tag )
 }
 
 
+//
+// Result list of actors based on their position
+//
+struct FDirectionalActorList : public FIteratorActorList
+{
+	// Variables.
+	FLOAT PlaneDist;
+
+	// Functions.
+	FDirectionalActorList()
+	{}
+	FDirectionalActorList( FDirectionalActorList* InNext, AActor* InActor, FVector& Dir )
+		:	FIteratorActorList	(InNext, InActor)
+		,	PlaneDist			(InActor ? InActor->Location | Dir : 0)
+	{}
+
+	FDirectionalActorList*& GetNext()
+	{
+		return (FDirectionalActorList*&) Next;
+	}
+
+	FDirectionalActorList* RetrieveHighest( FDirectionalActorList** Ptr)
+	{
+		FDirectionalActorList** PtrHighest = Ptr;
+		for ( FDirectionalActorList** PtrLink = &(*Ptr)->GetNext() ; *PtrLink ; PtrLink = &(*PtrLink)->GetNext() )
+			if ( PtrLink[0]->PlaneDist > PtrHighest[0]->PlaneDist )
+				PtrHighest = PtrLink;
+		FDirectionalActorList* Result = *PtrHighest;
+		*PtrHighest = Result->GetNext();
+		return Result;
+	}
+};
+
+
 
 struct FBatch
 {
@@ -599,9 +633,10 @@ AActor* UXC_Level::SpawnActor
 	Actor->SetFlags( RF_Transactional );
 
 	// Set base actor properties.
+	ALevelInfo* LevelInfo = GetLevelInfo();
 	Actor->Tag		= SpawnClass->GetFName();
-	Actor->Region	= FPointRegion( GetLevelInfo() );
-	Actor->Level	= GetLevelInfo();
+	Actor->Region	= FPointRegion( LevelInfo );
+	Actor->Level	= LevelInfo;
 	Actor->bTicked  = !Ticked;
 	Actor->XLevel	= this;
 
@@ -621,9 +656,9 @@ AActor* UXC_Level::SpawnActor
 		Hash->AddActor( Actor );
 
 	// Init the actor's zone.
-	Actor->Region = FPointRegion(GetLevelInfo());
+	Actor->Region = FPointRegion( LevelInfo);
 	if( Actor->IsA(APawn::StaticClass()) )
-		((APawn*)Actor)->FootRegion = ((APawn*)Actor)->HeadRegion = FPointRegion(GetLevelInfo());
+		((APawn*)Actor)->FootRegion = ((APawn*)Actor)->HeadRegion = Actor->Region;
 
 	// Set owner/instigator
 	Actor->SetOwner( Owner );
@@ -674,12 +709,12 @@ AActor* UXC_Level::SpawnActor
 	}
 
 
+	// Spawn notification (returns none if scripting is disabled, so don't call if that's the case)
 	static UBOOL InsideNotification = 0;
-	if( !InsideNotification )
+	if( !InsideNotification && LevelInfo->bBegunPlay )
 	{
 		InsideNotification = 1;
-		// Spawn notification
-		for( ASpawnNotify* N = GetLevelInfo()->SpawnNotify; N; N = N->Next )
+		for( ASpawnNotify* N=LevelInfo->SpawnNotify ; N ; N=N->Next )
 		{
 			if( N->ActorClass && Actor->IsA(N->ActorClass) )
 				Actor = N->eventSpawnNotification( Actor );
@@ -689,6 +724,31 @@ AActor* UXC_Level::SpawnActor
 
 	return Actor;
 	unguardf(( TEXT("(%s)"), SpawnClass->GetName() ));
+}
+
+UBOOL UXC_Level::DestroyActor( AActor* Actor, UBOOL bNetForce)
+{
+	guard( UXC_Level::DestroyActor);
+	UBOOL Result = Super::DestroyActor( Actor, bNetForce);
+
+	// Actor in game destruction queue
+	if ( Result && !GIsEditor )
+	{
+		// Cleanup reachSpecs, unlink from chain
+		if ( Actor->IsA( ANavigationPoint::StaticClass()) )
+		{
+			FreeReachSpecs( (ANavigationPoint*)Actor);
+			for ( ANavigationPoint** N=&Actor->Level->NavigationPointList ; *N ; N=&(*N)->nextNavigationPoint )
+				if ( *N == Actor )
+				{
+					*N = ((ANavigationPoint*)Actor)->nextNavigationPoint;
+					break;
+				}
+		}
+	}
+
+	return Result;
+	unguard;
 }
 
 void UXC_Level::SetActorCollision( UBOOL bCollision )
@@ -752,12 +812,155 @@ void UXC_Level::Destroy()
 }
 
 
+void UXC_Level::FreeReachSpecs( ANavigationPoint* Path)
+{
+	guard(UXC_Level::FreeReachSpecs)
+	check(Path);
+
+	FReachSpec Prototype;
+	appMemzero( &Prototype, sizeof(Prototype));
+
+	// Fast unlink from this actor, slow from other Start/End
+	INT i, rIdx;
+	for ( i=0 ; i<16 ; i++ )
+	{
+		rIdx = Path->Paths[i];
+		if ( (rIdx >= 0) && (rIdx < ReachSpecs.Num()) && (ReachSpecs(rIdx).Start == Path) )
+		{
+			ReachSpecs(rIdx).Start = NULL;
+			UpdateReachSpec( ReachSpecs(rIdx), Prototype, rIdx);
+		}
+		Path->Paths[i] = INDEX_NONE;
+	}
+	for ( i=0 ; i<16 ; i++ )
+	{
+		rIdx = Path->PrunedPaths[i];
+		if ( (rIdx >= 0) && (rIdx < ReachSpecs.Num()) && (ReachSpecs(rIdx).Start == Path) )
+		{
+			ReachSpecs(rIdx).Start = NULL;
+			UpdateReachSpec( ReachSpecs(rIdx), Prototype, rIdx);
+		}
+		Path->PrunedPaths[i] = INDEX_NONE;
+	}
+	for ( i=0 ; i<16 ; i++ )
+	{
+		rIdx = Path->upstreamPaths[i];
+		if ( (rIdx >= 0) && (rIdx < ReachSpecs.Num()) && (ReachSpecs(rIdx).End == Path) )
+		{
+			ReachSpecs(rIdx).End = NULL;
+			UpdateReachSpec( ReachSpecs(rIdx), Prototype, rIdx);
+		}
+		Path->upstreamPaths[i] = INDEX_NONE;
+	}
+
+	unguard;
+}
+
+void UXC_Level::CompactSortReachSpecList( TArray<FReachSpec>& ReachSpecs, INT* Paths)
+{
+	guard(UXC_Level::CompactSortReachSpecList);
+	INT i, j;
+	INT Count = 0;
+	// Cleanup
+	for ( i=0 ; i<16 ; i++ )
+		if ( Paths[i] >= 0 )
+		{
+			if ( Paths[i] >= ReachSpecs.Num() || !ReachSpecs(Paths[i]).Start || !ReachSpecs(Paths[i]).End )
+				Paths[i] = INDEX_NONE;
+			else
+				Count++;
+		}
+
+	// Compact (i=Base, j=Seek)
+	for ( i=j=0 ; i<Count ; i++, j++ )
+	{
+		while ( Paths[j] == INDEX_NONE )
+			j++;
+		if ( i != j )
+			Exchange( Paths[i], Paths[j]);
+	}
+
+	// Sort (selection sort)
+	for ( i=0 ; i<Count ; i++ )
+	{
+		INT Lowest = 0;
+		for ( j=i+1 ; j<Count ; j++ )
+			if ( ReachSpecs(Paths[j]).distance < ReachSpecs(Paths[Lowest]).distance )
+				Lowest = j;
+		if ( Lowest != i )
+			Exchange( Paths[i], Paths[Lowest]);
+	}
+	unguard;
+}
+
+void UXC_Level::UpdateReachSpec( FReachSpec& OldSpec, const FReachSpec& NewSpec, int Idx)
+{
+	ANavigationPoint *Start, *End;
+	//Unregister from start
+	if ( (Start=Cast<ANavigationPoint>(OldSpec.Start)) )
+	{
+		INT* Paths = OldSpec.bPruned ? Start->PrunedPaths : Start->Paths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == Idx )
+			{
+				Paths[i] = INDEX_NONE;
+				CompactSortReachSpecList( Start->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+	//Unregister from end
+	if ( !OldSpec.bPruned && (End=Cast<ANavigationPoint>(OldSpec.End)) )
+	{
+		INT* Paths = End->upstreamPaths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == Idx )
+			{
+				Paths[i] = INDEX_NONE;
+				CompactSortReachSpecList( End->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+	//Update (or register will fail)
+	OldSpec = NewSpec;
+
+	//Register in new start
+	if ( (Start=Cast<ANavigationPoint>(NewSpec.Start)) )
+	{
+		INT* Paths = NewSpec.bPruned ? Start->PrunedPaths : Start->Paths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == INDEX_NONE )
+			{
+				Paths[i] = Idx;
+				CompactSortReachSpecList( Start->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+	//Register in new end
+	if ( !NewSpec.bPruned && (End=Cast<ANavigationPoint>(NewSpec.End)) )
+	{
+		INT* Paths = End->upstreamPaths;
+		for ( INT i=0 ; i<16 ; i++ )
+			if ( Paths[i] == INDEX_NONE )
+			{
+				Paths[i] = Idx;
+				CompactSortReachSpecList( End->GetLevel()->ReachSpecs, Paths);
+				break;
+			}
+	}
+
+}
+
+
+
 //
 //
 // DEBUGGING CODE
 //
 //
-/*
+
 UBOOL UXC_Level::MoveActor
 (
 	AActor*			Actor,
@@ -792,7 +995,7 @@ UBOOL UXC_Level::MoveActor
 	// Set up.
 	Hit = FCheckResult(1.0);
 	NumMoves++;
-	clock(MoveCycles);
+	clock(MoveCycles); //TODO: USE APPCYCLES
 	FMemMark Mark(GMem);
 	FLOAT DeltaSize;
 	FVector DeltaDir;
@@ -870,7 +1073,39 @@ UBOOL UXC_Level::MoveActor
 	// Move the based actors (before encroachment checking).
 	if( Actor->StandingCount && !bTest )
 	{
-		for( int i=0; i<Actors.Num(); i++ )
+		//XC: Create list of [DYNAMIC] actors attached to ACTOR
+		FDirectionalActorList* Attached = NULL;
+		for ( INT i=iFirstDynamicActor ; i<Actors.Num() ; i++ )
+		{
+			AActor* Other = Actors(i);
+			if ( Other && Other->Base == Actor )
+				Attached = new(GMem) FDirectionalActorList( Attached, Other, DeltaDir);
+		}
+
+		//XC: Move actors that are ahead first
+		while ( Attached )
+		{
+			AActor* Other = Attached->RetrieveHighest( &Attached)->Actor;
+
+			// Move base.
+			FVector   RotMotion( 0, 0, 0 );
+			FRotator DeltaRot ( 0, NewRotation.Yaw - Actor->Rotation.Yaw, 0 );
+			if( NewRotation != Actor->Rotation )
+			{
+				// Handle rotation-induced motion.
+				FRotator ReducedRotation = FRotator( 0, ReduceAngle(NewRotation.Yaw) - ReduceAngle(Actor->Rotation.Yaw), 0 );
+				FVector   Pointer         = Actor->Location - Other->Location;
+				RotMotion                 = Pointer - Pointer.TransformVectorBy( GMath.UnitCoords * ReducedRotation );
+			}
+			FCheckResult Hit(1.0);
+			MoveActor( Other, FinalDelta + RotMotion, Other->Rotation + DeltaRot, Hit, 0, 0, 1 );
+
+			// Update pawn view.
+			if( Other->IsA(APawn::StaticClass()) )
+				((APawn*)Other)->ViewRotation += DeltaRot;
+		}
+
+/*		for( int i=iFirstDynamicActor ; i<Actors.Num() ; i++ )
 		{
 			AActor* Other = Actors(i);
 			if( Other && Other->Base==Actor )
@@ -892,12 +1127,13 @@ UBOOL UXC_Level::MoveActor
 				if( Other->IsA(APawn::StaticClass()) )
 					((APawn*)Other)->ViewRotation += DeltaRot;
 			}
-		}
+		}*/
 	}
 
 	// Abort if encroachment declined.
 	if( !bTest && !bNoFail && !Actor->IsA(APawn::StaticClass()) && CheckEncroachment( Actor, Actor->Location + FinalDelta, NewRotation, 0 ) )
 	{
+		Mark.Pop();
 		unclock(MoveCycles);
 		return 0;
 	}
@@ -948,7 +1184,7 @@ UBOOL UXC_Level::MoveActor
 	unclock(MoveCycles);
 	return Hit.Time>0.0;
 	unguard;
-}*/
+}
 /*
 FCheckResult* UXC_Level::MultiLineCheck
 (

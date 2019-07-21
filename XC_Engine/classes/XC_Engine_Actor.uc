@@ -67,6 +67,9 @@ prefferable to reutilize unused reachspecs (Start=None,End=None)
  AddReachSpec and SetReachSpec will automatically add the reachspec
 index to both Start.Paths and End.upstreamPaths if bAutoSet is True
 
+ Note: you don't need to cleanup reachspecs or unlink a navigation
+point if you're destroying it, XC_Engine will deal with the cleanup
+tasks internally. (not on Net Clients)
 */
 
 

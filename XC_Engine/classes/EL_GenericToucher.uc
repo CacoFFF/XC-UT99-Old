@@ -1,4 +1,4 @@
-class EL_GenericPropagator expands EL_GenericEvent;
+class EL_GenericToucher expands EL_GenericEvent;
 
 function Update()
 {
@@ -9,8 +9,7 @@ function Update()
 		return;
 	}
 	
-	bRoot = false;
-	bActive = true;
+	bRoot = Owner.bCollideActors;
+	bActive = Owner.bCollideActors;
 	bInProgress = false;
 }
-

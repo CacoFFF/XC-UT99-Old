@@ -4,10 +4,6 @@ const XCS = class'XC_EngineStatics';
 
 var vector OffsetDirs[4];
 
-native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI, optional Pawn StartAt);
-native(3541) final iterator function NavigationActors( class<NavigationPoint> NavClass, out NavigationPoint P, optional float Distance, optional vector VOrigin, optional bool bVisible);
-native(3553) final iterator function DynamicActors( class<actor> BaseClass, out actor Actor, optional name MatchTag );
-
 
 //Auto-connect //TODO: Add to event chain handler
 event PreBeginPlay()

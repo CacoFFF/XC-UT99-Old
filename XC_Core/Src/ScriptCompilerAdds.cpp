@@ -58,6 +58,12 @@ static void EncodeCall( uint8* At, uint8* To)
 //***************
 // Hook resources 
 
+
+typedef int (*CompileScripts_Func)( TArray<UClass*>&, class FScriptCompiler_XC*, UClass*);
+static CompileScripts_Func CompileScripts;
+static UBOOL CompileScripts_Proxy( TArray<UClass*>& ClassList, FScriptCompiler_XC* Compiler, UClass* Class );
+
+
 class FPropertyBase_XC
 {
 public:
@@ -114,10 +120,17 @@ public:
 	UFunction* Array_Insert;
 	UFunction* Array_Remove;
 
-
 	ScriptCompilerHelper_XC_CORE()
 		: bInit(0), LastProperty(nullptr), Array_Length(nullptr), Array_Insert(nullptr), Array_Remove(nullptr)
 	{}
+
+	void Reset()
+	{
+		bInit = 0;
+		ActorFunctions.Empty();
+		ObjectFunctions.Empty();
+		StaticFunctions.Empty();
+	}
 
 	UFunction* AddFunction( UStruct* InStruct, const TCHAR* FuncName)
 	{
@@ -133,6 +146,7 @@ public:
 		}
 		return F;
 	}
+
 };
 static ScriptCompilerHelper_XC_CORE Helper; //Makes C runtime init construct this object
 
@@ -167,6 +181,10 @@ int StaticInitScriptCompiler()
 	Tmp = EditorBase + 0xA4490; //Get FPropertyBase::FPropertyBase( UProperty*) --- real ---
 	ForceAssign( Tmp, FPropertyBase_XC::FPropertyBase_UProp);
 
+	ForceAssign( CompileScripts_Proxy, Tmp); //Proxy CompileScripts initial call
+	EncodeCall( EditorBase + 0xB57A6, Tmp);
+	CompileScripts = (CompileScripts_Func)(EditorBase + 0xB6070); //Get CompileScripts global/static
+
 	ForceAssign( FScriptCompiler_XC::FindField, Tmp); //Trampoline FScriptCompiler::FindField into our version
 	EncodeJump( EditorBase + 0xA17A0, Tmp);
 
@@ -175,6 +193,38 @@ int StaticInitScriptCompiler()
 
 	ForceAssign( FPropertyBase_XC::ConstructorProxy_UProp, Tmp); //Middleman FPropertyBase::FPropertyBase( UProperty*) using it's jumper
 	EncodeJump( EditorBase + 0x1131, Tmp);
+
+}
+
+
+static UBOOL CompileScripts_Proxy( TArray<UClass*>& ClassList, FScriptCompiler_XC* Compiler, UClass* Class )
+{
+	// Top call
+	UBOOL Result = 1;
+	if ( Class == UObject::StaticClass() )
+	{
+		TArray<UClass*> ImportantClasses;
+		static const TCHAR* ImportantClassNames[] = { TEXT("XC_Engine_Actor"), TEXT("XC_EditorLoader")};
+
+		for ( int i=0 ; i<ClassList.Num() ; i++ )
+		for ( int j=0 ; j<ARRAY_COUNT(ImportantClassNames) ; j++ )
+			if ( !appStricmp( ClassList(i)->GetName(), ImportantClassNames[j]) )
+			{
+				if ( j==0 ) //Needs Actor!
+					ImportantClasses.AddUniqueItem( AActor::StaticClass() );
+				ImportantClasses.AddUniqueItem( ClassList(i) );
+				break;
+			}
+
+		if ( ImportantClasses.Num() )
+		{
+			Result = (*CompileScripts)(ImportantClasses,Compiler,Class); //UObject
+			Helper.Reset();
+		}
+		if ( Result )
+			Result = (*CompileScripts)(ClassList,Compiler,Class);
+	}
+	return Result;
 }
 
 

@@ -6,10 +6,6 @@ class XC_NavigationPoint expands NavigationPoint;
 
 #exec Texture Import File=Textures\S_Pickup_G.pcx Name=S_Pickup_G Mips=Off Flags=2
 
-native(3553) final iterator function DynamicActors( class<Actor> BaseClass, out actor Actor, optional name MatchTag );
-
-//TODO: AUTO PATH USING SCOUT!!!
-
 function bool ReservePath( optional int MinDistance)
 {
 	local int i, Highest;
@@ -37,32 +33,6 @@ function bool ReservePath( optional int MinDistance)
 	XCGEA.SetReachSpec( XCGEA.DummyReachSpec, Paths[15], true); //Automatic unlink
 	return true;
 }
-
-
-event Destroyed()
-{
-	local XC_Engine_Actor XCGEA;
-	
-	ForEach DynamicActors( class'XC_Engine_Actor', XCGEA)
-		break;
-	Log("Destroying"@Name@XCGEA);
-	if ( XCGEA != None )
-	{
-		XCGEA.ResetReachSpec( XCGEA.DummyReachSpec);
-		XCGEA.CompactPathList( self);
-		while ( Paths[0] != -1 )
-		{
-			Log("Destroying reachspec"@Paths[0]);
-			XCGEA.SetReachSpec( XCGEA.DummyReachSpec, Paths[0], true);
-		}
-		while ( PrunedPaths[0] != -1 )
-			XCGEA.SetReachSpec( XCGEA.DummyReachSpec, PrunedPaths[0], true);
-		while ( UpstreamPaths[0] != -1 )
-			XCGEA.SetReachSpec( XCGEA.DummyReachSpec, UpstreamPaths[0], true);
-		XCGEA.LockToNavigationChain( Self, false);
-	}
-}
-
 
 
 

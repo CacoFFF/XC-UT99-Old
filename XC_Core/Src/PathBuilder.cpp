@@ -282,6 +282,12 @@ static TArray<int> FreeReachSpecs;
 //
 void FPathBuilderMaster::AutoDefine( ANavigationPoint* NewPoint, AActor* AdjustTo)
 {
+	if ( NewPoint->IsA( ALiftCenter::StaticClass()) )
+	{
+		debugf( NAME_DevPath, TEXT("Cannot auto define paths for %s (LiftCenter subtype)"), NewPoint->GetName());
+		return;
+	}
+
 	// Setup environment
 	SafeEmpty( FreeReachSpecs);
 	Level = NewPoint->GetLevel();
@@ -301,7 +307,7 @@ void FPathBuilderMaster::AutoDefine( ANavigationPoint* NewPoint, AActor* AdjustT
 	FQueryResult* Results = nullptr;
 	float MaxDistSq = Square(GoodDistance);
 	for ( ANavigationPoint* N=NewPoint->Level->NavigationPointList ; N ; N=N->nextNavigationPoint )
-		if ( N != NewPoint )
+		if ( (N != NewPoint) && !N->IsA(ALiftCenter::StaticClass()) )
 		{
 			float DistSq = (N->Location - NewPoint->Location).SizeSquared();
 			if ( (DistSq <= MaxDistSq) && Level->Model->FastLineCheck(NewPoint->Location, N->Location) )

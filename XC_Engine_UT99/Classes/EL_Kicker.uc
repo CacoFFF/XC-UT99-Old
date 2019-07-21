@@ -1,18 +1,4 @@
-class EL_Kicker expands EL_GenericPropagator;
-
-function Update()
-{
-	// Is this propagator still relevant?
-	if ( Owner == None )
-	{
-		Destroy();
-		return;
-	}
-		
-	bRoot = Owner.bCollideActors;
-	bActive = Owner.bCollideActors;
-	bInProgress = false;
-}
+class EL_Kicker expands EL_GenericToucher;
 
 //Actor can initiate event chain by interacting with owner
 function bool CanFireEvent( Actor Other)

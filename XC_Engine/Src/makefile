@@ -24,6 +24,8 @@ SRCS = UnXC_Game.cpp	\
 
 OBJS = $(SRCS:%.cpp=$(OBJDIR)%.o)
 
+DEPS = $(SRCS:%.cpp=$(OBJDIR)%.d)
+
 .PHONY: all
 all: $(OUTPUT)
 
@@ -33,17 +35,19 @@ $(OUTPUT) : $(OBJS)
 	strip --strip-all --discard-all $(OUTPUT)
 
 #Compile
-$(OBJS): $(OBJDIR)%.o : %.cpp
+$(OBJS) : $(OBJDIR)%.o : %.cpp
 	$(CXX) -c $(CXXFLAGS) $(INCLUDES) -o $@ $< > $(OBJDIR)$*.lst
 
 
 #Generate dependancies
-%.d : %.cpp
+#%.d : %.cpp
+$(DEPS) : $(OBJDIR)%.d : %.cpp
 	@echo $(@:%.d=%.o) $@ : \\ > $@
 	@/bin/sh -ec '$(CXX) -MM $(CXXFLAGS) $< | \
 		sed -e '\''s/.*://'\'' >> $@'
 
 #include $(SRCS:.cpp=.d)
+include $(DEPS)
 
 .PHONY: clean
 clean:

@@ -15,7 +15,7 @@ event XC_Init()
 	AC = class<Actor>( class'XC_CoreStatics'.static.FindObject( "SCFActor", class'Class'));
 	if ( AC != None )
 	{
-		ForEach AllActors( AC, A)
+		ForEach DynamicActors( AC, A)
 		{
 			A.SetPropertyText("bFixNetDriver","0");
 			A.SetPropertyText("bFixExec","0");

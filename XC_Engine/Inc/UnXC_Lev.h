@@ -16,9 +16,10 @@ class XC_ENGINE_API UXC_Level : public ULevel
 
 	//ULevel interface
 //	virtual FCheckResult* MultiLineCheck( FMemStack& Mem, FVector End, FVector Start, FVector Size, UBOOL bCheckActors, ALevelInfo* LevelInfo, BYTE ExtraNodeFlags );
-//	virtual UBOOL MoveActor( AActor *Actor, FVector Delta, FRotator NewRotation, FCheckResult &Hit, UBOOL Test=0, UBOOL IgnorePawns=0, UBOOL bIgnoreBases=0, UBOOL bNoFail=0 );
+	virtual UBOOL MoveActor( AActor *Actor, FVector Delta, FRotator NewRotation, FCheckResult &Hit, UBOOL Test=0, UBOOL IgnorePawns=0, UBOOL bIgnoreBases=0, UBOOL bNoFail=0 );
 	virtual void TickNetServer( FLOAT DeltaSeconds );
 	virtual AActor* SpawnActor( UClass* Class, FName InName=NAME_None, AActor* Owner=NULL, class APawn* Instigator=NULL, FVector Location=FVector(0,0,0), FRotator Rotation=FRotator(0,0,0), AActor* Template=NULL, UBOOL bNoCollisionFail=0, UBOOL bRemoteOwned=0 );
+	virtual UBOOL DestroyActor( AActor* Actor, UBOOL bNetForce=0 );
 	virtual void CleanupDestroyed( UBOOL bForce );
 	virtual void SetActorCollision( UBOOL bCollision );
 	virtual void WelcomePlayer( UNetConnection* Connection, TCHAR* Optional=TEXT("") );
@@ -30,6 +31,10 @@ class XC_ENGINE_API UXC_Level : public ULevel
 
 	//UXC_Level interface
 	virtual INT ServerTickClients( FLOAT DeltaSeconds );
+	virtual void FreeReachSpecs( ANavigationPoint* Path);
+
+	static void UpdateReachSpec( FReachSpec& OldSpec, const FReachSpec& NewSpec, int Idx);
+	static void CompactSortReachSpecList( TArray<FReachSpec>& ReachSpecs, INT* Paths);
 
 	static INT XC_Init;
 

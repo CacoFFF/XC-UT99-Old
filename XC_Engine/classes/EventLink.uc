@@ -21,7 +21,6 @@ var int AnalysisDepth;
 var EventLink AnalysisRoot;
 var XC_NavigationPoint AIMarker;
 
-var() bool bDestroying;
 var() bool bRoot; //Can emit 'Trigger' notifications by direct action
 var() bool bActive; //Can receive 'Trigger' notifications
 var() bool bInProgress; //Is in the middle of scripted action
@@ -116,6 +115,12 @@ function DestroyAIMarker()
 		AIMarker.Destroy();
 		AIMarker = None;
 	}
+}
+
+//Optional AI marker to defer to
+function NavigationPoint DeferTo()
+{
+	return AIMarker;
 }
 
 

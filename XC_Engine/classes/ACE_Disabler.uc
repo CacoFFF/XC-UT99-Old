@@ -10,7 +10,7 @@ event XC_Init()
 {
 	local Actor A;
 	
-	ForEach AllActors( class'Actor', A)
+	ForEach DynamicActors( class'Actor', A)
 		if ( A.IsA('IACECommon') || A.IsA('ACEM_Actor') )
 		{
 			Log( "Removing"@A.Name@", not supposed to run on gametype"@Level.Game.Class, 'XC_Engine');
