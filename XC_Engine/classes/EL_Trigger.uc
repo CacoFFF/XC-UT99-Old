@@ -1,22 +1,29 @@
-class EL_Trigger expands EL_GenericPropagator;
+class EL_Trigger expands EL_GenericToucher;
 
 var bool bAICheck;
 
 function Update()
 {
 	local Trigger T;
+	local float WaitTime;
+	local name TState;
 	
 	// Is this trigger still relevant?
 	T = Trigger(Owner);
-	if ( (T == None) || !T.bCollideActors )
+	if ( (T == None) || !T.bCollideActors || (T.IsInState('OtherTriggerTurnsOff') && !T.bInitiallyActive) )
 	{
 		Destroy();
 		return;
 	}
 	
-	bRoot = T.bInitiallyActive;
-	bActive = T.bInitiallyActive;
+	bRootEnabled = T.bInitiallyActive;
+	TState = class'XC_EngineStatics'.static.GetState( T);
+	bLink = (TState == 'OtherTriggerTurnsOn' && !T.bInitiallyActive)
+		|| (TState == 'OtherTriggerTurnsOff' && T.bInitiallyActive)
+		|| (TState == 'OtherTriggerToggles');
 	bInProgress = (T.ReTriggerDelay > 0) && (Level.TimeSeconds - T.TriggerTime < T.ReTriggerDelay);
+	if ( bInProgress )
+		SetTimer( T.ReTriggerDelay - (Level.TimeSeconds - T.Triggertime) + 0.001, false);
 	
 	if ( NeedsMarker() )
 		CreateAIMarker();
@@ -48,4 +55,26 @@ function bool NeedsMarker()
 	return false;
 }
 
+//A pawn is at location or approaching us
+function AIQuery( Pawn Seeker, NavigationPoint Nav)
+{
+	if ( (Trigger(Owner) != None) && (Trigger(Owner).TriggerType == TT_Shoot) )
+	{
+		Seeker.SpecialGoal = self;
+		if ( Seeker.bCanDoSpecial && (Seeker.Weapon != None) )
+		{
+			Seeker.Target = self;
+			Seeker.ViewRotation = rotator( Owner.Location - (Seeker.Location + vect(0,0,1)*Seeker.BaseEyeHeight));
+			Seeker.Weapon.Fire( 1.0);
+			Seeker.bFire = 0;
+			Seeker.bAltFire = 0;
+			if ( Trigger(Owner).DamageThreshold <= 50 )
+				Owner.TakeDamage( 50, Seeker, Owner.Location, vect(0,0,0), 'shot');
+		}
+	}
+}
 
+defaultproperties
+{
+     bLinkEnabled=True
+}

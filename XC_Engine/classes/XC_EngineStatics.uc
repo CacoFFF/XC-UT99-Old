@@ -98,6 +98,39 @@ static final function bool Allow_Mutate( PlayerPawn Sender)
 	return true;
 }
 
+//*********************************** GetCurrentPath - get bot's current NavigationPoint
+static final function NavigationPoint GetCurrentPath( Pawn Other)
+{
+	local NavigationPoint N, BestN;
+	local vector V;
+	local vector Position;
+	local float Weight, BestWeight;
+	
+	//Setup path lookup variables
+	V.X = Other.CollisionRadius;
+	V.Y = Other.CollisionHeight;
+	V.Z = 100;
+	if ( V.X < 60 ) V.X += (60 - Other.CollisionHeight) * 0.5;
+	if ( V.Y < 40 ) V.Y += (40 - Other.CollisionRadius) * 0.5;
+	Position = Other.Location;
+	if ( (Other.Physics == PHYS_Walking) && (Other.CollisionHeight < 60) )
+		Position.Z += (60 - Other.CollisionHeight) * 0.5;
+	
+	//Enumerate and select
+	BestWeight = 99999;
+	BestN = NavigationPoint(Other.MoveTarget); //Default option
+	ForEach Other.NavigationActors( class'NavigationPoint', N, VSize(V), Position)
+	{
+		if ( (Other.Physics == PHYS_Walking) && InCylinder( N.Location - Position, V.X, V.Y) )
+			Weight = HSize( N.Location - Position);
+		else
+			Weight = VSize( N.Location - Position);
+			
+		if ( Weight < BestWeight )
+			BestN = N;
+	}
+	return BestN;
+}
 
 //*********************** NearestMoverKeyFrame - Finds nearest keyframe to a point
 static final function int NearestMoverKeyFrame( Mover M, vector TargetPoint, out vector MarkerPosition)
@@ -192,8 +225,133 @@ static final function float Phys_FreeFallVelocity( float FallDelta, float ZGrav)
 	return ZGrav * Time;
 }
 
+//****************** Phys_CanJumpTo
+static function bool Phys_CanJumpTo( vector Origin, vector Destination, float ZGravity, float ZVel, float MaxHVel)
+{
+	local float DeltaT;
+	local float disc;
+	local float HDist, HVel;
+	local vector DeltaPosition;
+
+	if ( ZGravity >= -0.1 )
+		return False;
+
+	DeltaPosition = Destination - Origin;
+	disc = ZVel*ZVel - 4 * (-DeltaPosition.Y) * (ZGravity * 0.5); //b^2 - 4*c*a
+	if ( disc < 0 ) //Can't reach Z
+		return False;
+
+	disc = sqrt(disc);
+
+	//Free fall time
+	DeltaT = (-ZVel - disc) / ZGravity; //b - disc    /  2*a
+	if ( DeltaT < 0 )
+		return False;
+	
+	HDist = HSize( DeltaPosition);
+	HVel = HDist / DeltaT;
+	return HVel <= MaxHVel * 1.02;
+}
+
 //************************ InCylinder
 static final function bool InCylinder( vector V, float EX, float EZ)
 {
 	return (Abs(V.Z) < EZ) && (HSize(V) < EX);
+}
+
+//************************ ActorsTouchingValid - sees if both actors are touching 
+static final function bool ActorsTouchingValid( Actor A, Actor B)
+{
+	return (A != None) && (B != none) && A.bCollideActors && B.bCollideActors
+		&& InCylinder( A.Location - B.Location, A.CollisionRadius+B.CollisionRadius, A.CollisionHeight+B.CollisionHeight);
+}
+
+//************************ MoverInOperation - mover is active (delaying or moving)
+static final function bool MoverInOperation( Mover M)
+{
+	local EventLink EL;
+	
+	if ( M.bDelaying || M.bInterpolating || M.LatentFloat > 0.125 ) //DO NOT LOWER
+		return true;
+	if ( class'XC_Engine_Actor_CFG'.default.bEventChainAddon )
+	{
+		ForEach M.DynamicActors( class'EventLink', EL, M.Tag)
+			if ( EL.Owner == M && EL.bLink && EL.ChainInProgress(true) )
+				return true;
+	}
+	return false;
+}
+
+//************************ GetState - Gets state name of an actor
+static final function Name GetState( Actor A)
+{
+	local Name StateName;
+	
+	StateName = A.GetStateName();
+	if ( StateName == A.Class.Name || StateName == '' )
+	{
+		if ( A.Level.bStartup )
+			StateName = A.InitialState; //auto state not implemented!!!
+		else
+			StateName = '';
+	}
+	return StateName;
+}
+
+//************************* GetNearestTrigger - Gets an Actor's nearest 'Event' trigger (prioritizes colliding actors)
+static final function Actor GetNearestTrigger( Actor Other, optional name Event, optional float MaxDistance, optional bool bReachable)
+{
+	local float Distance;
+	local Actor A, Best;
+	
+	Assert( Other != None );
+	if ( Event == '' )
+		Event = Other.Tag;
+	if ( MaxDistance <= 0 )
+		MaxDistance = 999999;
+	if ( !Other.bIsPawn )
+		bReachable = false;
+		
+	ForEach Other.RadiusActors( class'Actor', A, MaxDistance)
+		if ( A.Event == Event )
+		{
+			if ( Mover(A) != None && (Mover(A).bInterpolating || Mover(A).bDelaying || Mover(A).KeyNum != 0) )
+				continue;
+			Distance = VSize( A.Location - Other.Location);
+			if ( A.bCollideActors || A.Brush != None )
+				Distance -= 1000;
+			if ( Distance < MaxDistance && (!bReachable || Pawn(Other).ActorReachable(A)) || (Other.bProjTarget && Pawn(Other).LineOfSightTo(A)) )
+			{
+				MaxDistance = Distance;
+				Best = A;
+			}
+		}
+	return Best;
+}
+
+//************************* GetNearestTagged - Gets an Actor's nearest tagged actor
+static final function Actor GetNearestTagged( Actor Other, name Tag, optional float MaxDistance, optional bool bReachable)
+{
+	local float Distance;
+	local Actor A, Best;
+	
+	if ( Tag == '' )
+		return None;
+	
+	Assert( Other != None );
+	if ( MaxDistance <= 0 )
+		MaxDistance = 999999;
+	if ( !Other.bIsPawn )
+		bReachable = false;
+		
+	ForEach Other.AllActors( class'Actor', A, Tag)
+	{
+		Distance = VSize( A.Location - Other.Location);
+		if ( Distance < MaxDistance && (!bReachable || Pawn(Other).ActorReachable(A)) )
+		{
+			MaxDistance = Distance;
+			Best = A;
+		}
+	}
+	return Best;
 }

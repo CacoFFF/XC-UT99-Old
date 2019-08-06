@@ -67,8 +67,8 @@ static function bool IsMoverBumpRelevant( Mover M)
 	
 	if ( M != None )
 	{
-		EventCount += int((M.BumpEvent != '') && ((M.BumpEvent != M.Tag) || IsUniqueTagged(M)));
-		EventCount += int((M.PlayerBumpEvent != '') && ((M.PlayerBumpEvent != M.Tag) || IsUniqueTagged(M)));
+		EventCount += int((M.BumpEvent != '') && ((M.BumpEvent != M.Tag) || !IsUniqueTagged(M)));
+		EventCount += int((M.PlayerBumpEvent != '') && ((M.PlayerBumpEvent != M.Tag) || !IsUniqueTagged(M)));
 	}
 	return EventCount > 0;
 }
@@ -77,7 +77,7 @@ static function bool IsUniqueTagged( Actor Other)
 {
 	local Actor A;
 
-	if ( A.Tag == '' )
+	if ( Other.Tag == '' )
 		return false;
 	ForEach Other.AllActors( class'Actor', A, Other.Tag)
 		if ( (A != Other) && (EventLink(A) == None) )
@@ -96,8 +96,24 @@ static function bool IsUniqueTagged( Actor Other)
 
 function ScriptPatcherInit()
 {
+	if ( Class == class'EngineMoversHandler' )
+	{
+		ReplaceFunction( Class, class'Mover', 'HandleTriggerDoor_Original', 'HandleTriggerDoor');
+		ReplaceFunction( class'Mover', Class, 'HandleTriggerDoor', 'HandleTriggerDoor_Proxy');
+	}
 }
 
+final function EL_Mover GetEventLink( Mover M)
+{
+	local EL_Mover EL;
+	if ( M != None )
+	{
+		ForEach DynamicActors( class'EL_Mover', EL)
+			if ( EL.Owner == M )
+				break;
+	}
+	return EL;
+}
 
 final function bool HandleTriggerDoor_Original( Pawn Other);
 function bool HandleTriggerDoor_Proxy( Pawn Other)
@@ -105,23 +121,31 @@ function bool HandleTriggerDoor_Proxy( Pawn Other)
 	local Mover M;
 	local Actor A;
 	local bool bHandle;
+	local NavigationPoint OldPath;
+	
 	
 	A = self;
 	M = Mover(A);
+	OldPath = NavigationPoint(Other.MoveTarget);
+	if ( OldPath == None )
+		OldPath = Other.RouteCache[0];
+	if ( EventModifierPath(OldPath) != None )
+		OldPath = EventModifierPath(OldPath).TargetPath;
 	bHandle = HandleTriggerDoor_Original( Other);
 	
-	//Case 1: handle with unreachable MoveTarget
-	if ( bHandle && (Other.MoveTarget == M.TriggerActor || Other.MoveTarget == M.TriggerActor2) && !Other.ActorReachable(Other.MoveTarget) )
+	// I am not a lift
+	if ( M.MyMarker == None )
 	{
-		//Action: establish EventLink then temporarily block reachspecs leading through the mover.
+		//Case 1: handle with unreachable MoveTarget (force this one on re-router)
+		if ( bHandle && (Other.MoveTarget == M.TriggerActor || Other.MoveTarget == M.TriggerActor2) && !Other.ActorReachable(Other.MoveTarget) )
+			RerouteEndPoint( GetEventLink(M), OldPath, Other, Other.MoveTarget);
+		//Case 2: unable to handle, find an enabler
+		if ( !bHandle && (M.TriggerActor == None) )
+			RerouteEndPoint( GetEventLink(M), OldPath, Other);
 	}
-	//Case 2: unable to handle, no trigger actor
-	if ( !bHandle && (M.TriggerActor == None) )
-	{
-		//Action: find trigger, if unreachable create EventLink (as new TriggerActor) then block reacspecs leading through the mover.
-	}
+
+//	Log( "MOVER"@Other.PlayerReplicationInfo.PlayerName @ bHandle @ OldPath @ Other.MoveTarget);
 	return bHandle;
 }
-
 
 

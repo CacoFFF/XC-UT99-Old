@@ -4,6 +4,8 @@ const XCS = class'XC_EngineStatics';
 
 var vector OffsetDirs[4];
 
+native(3555) static final operator(22) Actor | (Actor A, skip Actor B);
+
 
 //Auto-connect //TODO: Add to event chain handler
 event PreBeginPlay()
@@ -74,71 +76,147 @@ event PreBeginPlay()
 
 // Special handling portion using FerBotz AI
 // If this returns something, then it'll override SpecialHandling
-final function Actor EnhancedHandling( Pawn Other)
+static final function Actor EnhancedHandling( Pawn Other, Mover Lift, optional NavigationPoint Marker)
 {
 	local vector StandPosition;
 	local NavigationPoint CurrentPath, NextPath;
 	local Pawn P;
 	local int StandingCount, StandingIdx;
+	local Actor Best;
 
-	local bool bHeadedToPawn;
+	local bool bLocalKeyframe, bBasedOnLift, bTriggered, bHandleNow;
 
+	if ( Marker == None )
+		Marker = Lift.myMarker;
+	if ( Marker == None )
+		return None;
+
+	Other.SpecialGoal = None;
+	Other.SpecialPause = 0;
+	CurrentPath = XCS.static.GetCurrentPath( Other);
 	NextPath = Other.RouteCache[0];
-	if ( NextPath == self )
+	if ( (NextPath == Marker) && (CurrentPath == Marker) )
 		NextPath = Other.RouteCache[1];
 	
 	// Lift is moving
-	if ( MyLift.bInterpolating || MyLift.bDelaying )
+	if ( XCS.static.MoverInOperation( Lift) )
 	{
 		//And bot is standing in elevator
-		if ( (Other.Base != None) && (Other.Base == MyLift || Other.Base.Base == MyLift) )
+		if ( (Other.Base != None) && (Other.Base == Lift || Other.Base.Base == Lift) )
 		{
 			//Find standing order
-			ForEach PawnActors( class'Pawn', P, 400)
-				if ( P.Base != None && (P.Base == MyLift || P.Base.Base == MyLift) )
+			ForEach Other.PawnActors( class'Pawn', P, 400)
+				if ( P.Base != None && (P.Base == Lift || P.Base.Base == Lift) )
 				{
 					if ( P == Other )
 						StandingIdx = StandingCount;
 					StandingCount++;
 				}
 				
-			StandPosition = AdjustedPosition() + CrowdedOffset(StandingIdx,StandingCount);
-			if ( XCS.static.InCylinder( Other.Location-StandPosition, Other.CollisionRadius, Other.CollisionHeight) )
+			Other.SpecialGoal = class'LiftMarkerOffset'.static.Setup( Marker, Other, CrowdedOffset(StandingIdx,StandingCount));
+			if ( XCS.static.InCylinder( Other.Location-Other.SpecialGoal.Location, Other.CollisionRadius * 0.5, Other.CollisionHeight) )
 			{
 				Other.SpecialPause = 0.5;
 				Other.SpecialGoal = Other;
 				return Other;
 			}
-			SetLocation( StandPosition);
-			return self;
+			return Other.SpecialGoal;
 		}
 		//Bot is above elevator
-		if ( Other.Location.Z > Location.Z )
+		if ( Other.Location.Z > Marker.Location.Z )
 		{
-			if ( XCS.static.AI_SafeToDropTo( Other, self) )
-				return self;
+			if ( XCS.static.AI_SafeToDropTo( Other, Marker) )
+				return Marker;
 		}
 		//Elevator is about to move
-		if ( MyLift.bDelaying )
+		if ( !Lift.bInterpolating )
 		{
-			if ( XCS.static.ToNearestMoverKeyFrame( MyLift, Other.Location) || Other.PointReachable(Location) )
-				return self;
+			if ( XCS.static.ToNearestMoverKeyFrame( Lift, Other.Location) || Other.PointReachable(Marker.Location) )
+				return Marker;
 		}
-		return NearestInboundPathTo( Other);
+		Other.SpecialGoal = NearestInboundPathTo( Other, Marker);
+		if ( Other.SpecialGoal == CurrentPath )
+			Other.SpecialPause = 0.3;
+		return Other.SpecialGoal;
 	}
 	
-	//Bot is standing on stationary elevator
-	if ( (Other.Base != None) && (Other.Base == MyLift || Other.Base.Base == MyLift) )
+	//Stationary elevator
+	if ( (Other.Base != None) && (Other.Base == Lift || Other.Base.Base == Lift) )
 	{
-		if ( (InStr( MyLift.GetStateName(), "Trigger") != -1) && (RecommendedTrigger == None) ) //Triggered lift without marked trigger
-		{
-			if ( (MyLift.SavedTrigger == None) || MyLift.IsInState('TriggerToggle') )
-				return NearestInboundPathTo( Other, true); //Go back to Exit and attempt to trigger the lift
-		}
-		//Handle?
+		bLocalKeyframe = true;
+		bBasedOnLift = true;
 	}
+	else if ( Other.Base != None )
+	{
+		bLocalKeyframe = XCS.static.ToNearestMoverKeyFrame( Lift, Other.Location);
+	}
+	bTriggered = InStr( Lift.GetStateName(), "Trigger") != -1;
 	
+	//Lift is accesible
+	if ( bLocalKeyframe )
+	{
+		if ( bTriggered ) 
+			Goto FIND_TRIGGER;
+		else
+		{
+			if ( !bBasedOnLift ) 
+				return Marker; //Enter lift now
+		}
+	}
+	//Lift is inaccesible
+	else
+	{
+		if ( bTriggered ) 
+			Goto CHECK_BEFORE_TRIGGER;
+	}
+	Goto DO_NOT_OVERRIDE;
 	
+CHECK_BEFORE_TRIGGER:
+	if ( ((Other.Location.Z < Marker.Location.Z + 100) || XCS.static.AI_SafeToDropTo( Other, Marker))
+		&& Other.PointReachable( Marker.Location) )
+		return Marker;
+
+FIND_TRIGGER:
+	//Mapper wanted to force these triggers
+	if ( LiftExit(CurrentPath) != None )
+	{
+		Best = LiftExit(CurrentPath).RecommendedTrigger
+			| XCS.static.GetNearestTagged( Other, LiftExit(CurrentPath).LiftTrigger, 2000, true)
+			| XCS.static.GetNearestTagged( Other, LiftExit(CurrentPath).LiftTrigger, 2000);
+		bHandleNow = (Best != None);
+	}
+	else if ( LiftCenter(CurrentPath) != None )
+	{
+		Best = Best | LiftCenter(CurrentPath).RecommendedTrigger
+			| XCS.static.GetNearestTagged( Other, LiftCenter(CurrentPath).LiftTrigger, 2000, true)
+			| XCS.static.GetNearestTagged( Other, LiftCenter(CurrentPath).LiftTrigger, 2000);
+	}
+	//Generic find nearest trigger
+	Best = Best | XCS.static.GetNearestTrigger( Other, Lift.Tag, 1500, true);
+	if ( Best != None )
+	{
+		if ( Best.bCollideActors && (Best.Brush == None) && XCS.static.ActorsTouchingValid(Other,Best) )
+		{
+			Best.UnTouch(Other);
+			Best.Touch(Other);
+			return None;
+		}
+		bHandleNow = bHandleNow || (NextPath == None) || !Other.PointReachable(NextPath.Location);
+		if ( bHandleNow )
+		{
+			Other.SpecialGoal = Best.SpecialHandling(Other) | Best;
+			if ( Other.SpecialGoal == Other )
+				Other.SpecialPause = fMax( 0.3, Other.SpecialPause);
+			return Other.SpecialGoal;
+		}
+		else 
+			return Marker;
+	}
+
+	//No trigger - leave lift if in it.
+	if ( bBasedOnLift && (CurrentPath == Marker) && ((Lift.SavedTrigger == None) || Lift.IsInState('TriggerToggle')) )
+		return NearestInboundPathTo( Other, Marker, true); //Go back to Exit and attempt to trigger the lift
+DO_NOT_OVERRIDE:
 	return None;
 }
 
@@ -153,10 +231,18 @@ function Actor SpecialHandling( Pawn Other)
 
 	if ( MyLift == None )
 		return self;
-
-	EnhancedOverride = EnhancedHandling( Other);
+		
+//	Log("SpecialHandling "@Name@Level.TimeSeconds);
+		
+	Move( AdjustedPosition() - Location);
+	
+	EnhancedOverride = EnhancedHandling( Other, MyLift, self);
 	if ( EnhancedOverride != None )
+	{
+//		Log("Overriding: "@EnhancedOverride.Name);
+		Other.SpecialGoal = EnhancedOverride;
 		return EnhancedOverride;
+	}
 		
 	bHeadedToPawn = XCS.static.ToNearestMoverKeyFrame( MyLift, Other.Location);
 
@@ -238,16 +324,16 @@ final function vector AdjustedPosition()
 	return MyLift.Location + (LiftOffset >> (MyLift.Rotation - MyLift.BaseRot));
 }
 
-//******************* CrowdedOffset - offsets lift position
-final function vector CrowdedOffset( int idx, int total)
+//************************** CrowdedOffset - offsets lift position
+static final function vector CrowdedOffset( int idx, int total)
 {
 	if ( total > 1 )
 		return class'XC_Engine_LiftCenter'.default.OffsetDirs[idx & 0x03] * float((idx >> 2) * 45 + 25);
 	return vect(0,0,0);
 }
 
-//**************************** NearestInboundPathTo - get nearest point to Other that leads here, flags not considered
-final function NavigationPoint NearestInboundPathTo( Pawn Other, optional bool bRequireReachable)
+//*********************************** NearestInboundPathTo - get nearest point to Other that leads to N, flags not considered
+static final function NavigationPoint NearestInboundPathTo( Pawn Other, NavigationPoint N, optional bool bRequireReachable)
 {
 	local int i, ReachFlags, Distance;
 	local Actor Start, End;
@@ -255,10 +341,10 @@ final function NavigationPoint NearestInboundPathTo( Pawn Other, optional bool b
 	local float Dist, BestDist;
 	
 	BestDist = 99999;
-	for ( i=0 ; i<16 && upstreamPaths[i]>=0 ; i++ )
+	for ( i=0 ; i<16 && N.upstreamPaths[i]>=0 ; i++ )
 	{
-		describeSpec( upstreamPaths[i], Start, End, ReachFlags, Distance);
-		if ( (NavigationPoint(Start) != None) && (End == self) )
+		N.describeSpec( N.upstreamPaths[i], Start, End, ReachFlags, Distance);
+		if ( (NavigationPoint(Start) != None) && (End == N) )
 		{
 			Dist = VSize( Other.Location - Start.Location);
 			if ( Dist < BestDist && (!bRequireReachable || Other.PointReachable(Start.Location)))
@@ -273,14 +359,15 @@ final function NavigationPoint NearestInboundPathTo( Pawn Other, optional bool b
 
 
 
+
 defaultproperties
 {
     bGameRelevant=True
     bStatic=False
 	bNoDelete=False
+	bCollideWhenPlacing=False
 	OffsetDirs(0)=(X=1)
 	OffsetDirs(1)=(X=-1)
 	OffsetDirs(2)=(Y=1)
 	OffsetDirs(3)=(Y=-1)
-	
 }

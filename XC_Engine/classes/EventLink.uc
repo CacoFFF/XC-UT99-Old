@@ -9,8 +9,6 @@
 //=============================================================================
 class EventLink expands EventChainSystem;
 
-const XCS = class'XC_CoreStatics';
-
 var() string EventList;
 
 var EventChainHandler Handler;
@@ -18,51 +16,69 @@ var EventLink NextEvent;
 var EventChainTriggerNotify NotifyList;
 var int ReachCount;
 var int AnalysisDepth;
+var int PathModifiers;
+var int QueryTag;
 var EventLink AnalysisRoot;
 var XC_NavigationPoint AIMarker;
 
+var bool bStaticCleanup;
+var bool bDestroying;
+var bool bCleanupPending;
 var() bool bRoot; //Can emit 'Trigger' notifications by direct action
-var() bool bActive; //Can receive 'Trigger' notifications
+var() bool bRootEnabled;
+var() bool bLink; //Can receive 'Trigger' notifications
+var() bool bLinkEnabled;
 var() bool bInProgress; //Is in the middle of scripted action
 var() bool bDestroyMarker;
-
 
 event XC_Init();
 
 
-singular event Destroyed() //Singular is important to prevent reentrancy
+event Destroyed()
 {
+	local EventModifierPath Modifier;
+	local EventLink EL;
+
+	if ( bDestroying )
+		return;
+	bDestroying = true;
+		
 	while ( NotifyList != None )
 	{
 		NotifyList.Destroy();
 		NotifyList = NotifyList.NextNotify;
 	}
-	
+		
 	if ( (AIMarker != None) && (AIMarker.upstreamPaths[0] == -1 || AIMarker.Paths[0] == -1 || bDestroyMarker) ) //Useless marker
 		DestroyAIMarker();
-	
-	ResetEvents();
-	AnalyzedBy( none);
+		
+	CleanupEvents();
+		
+	if ( PathModifiers > 0 )
+	{
+		ForEach DynamicActors( class'EventModifierPath', Modifier)
+			if ( Modifier.OwnerEvent == self || Modifier.EnablerEvent == self )
+				Modifier.Destroy();
+	}
 }
 
 //========================== Notifications
 //
-function Reset()
+
+event Timer()
 {
-	AnalysisDepth = 0;
-	ReachCount = 0;
-	AnalysisRoot = none;
+	Update();
 }
 
-function BeginEvent()
+event Trigger( Actor Other, Pawn EventInstigator)
 {
-	bActive = true;
-	bInProgress = true;
+	SetTimer( 0.001, false);
 }
 
-function EndEvent()
+event Actor SpecialHandling( Pawn Other)
 {
-	bInProgress = false;
+	if ( Owner != None )
+		return Owner.SpecialHandling( Other);
 }
 
 
@@ -78,7 +94,7 @@ function AnalyzedBy( EventLink Other);
 //Actor can initiate event chain by interacting with owner
 function bool CanFireEvent( Actor Other)
 {
-	return false;
+	return bRoot && bRootEnabled && (Other != None);
 }
 
 //Analysis wants to register this trigger notify (for Update notifications)
@@ -94,6 +110,9 @@ function TriggerNotify( name aEvent)
 	Update();
 }
 
+//A pawn is at location or approaching us
+function AIQuery( Pawn Seeker, NavigationPoint Nav);
+
 //Creates a NavigationPoint to mark this event
 function CreateAIMarker()
 {
@@ -102,7 +121,9 @@ function CreateAIMarker()
 		AIMarker = Spawn( class'XC_NavigationPoint', self, 'AIMarker');
 		LockToNavigationChain( AIMarker, true);
 		DefinePathsFor( AIMarker, Owner);
-		AIMarker.Move( Normal(Location - AIMarker.Location) * 5);
+		AIMarker.Move( Normal(Location - AIMarker.Location) * 4 );
+		if ( Owner.Brush != None ) //More!
+			AIMarker.Move( Normal(Location - AIMarker.Location) * 4 );
 	}
 }
 
@@ -111,7 +132,6 @@ function DestroyAIMarker()
 {
 	if ( AIMarker != None )
 	{
-		LockToNavigationChain( AIMarker, false);
 		AIMarker.Destroy();
 		AIMarker = None;
 	}
@@ -121,6 +141,28 @@ function DestroyAIMarker()
 function NavigationPoint DeferTo()
 {
 	return AIMarker;
+}
+
+//Detractor wants this EventLink to grab paths leading to its marked TargetPath and redirect them
+//SAMPLE FUNCTION: GRAB ALL REACHSPECS
+function DetractorUpdate( EventDetractorPath EDP)
+{
+	local int i, iReach;
+	local ReachSpec R;
+	
+	if ( EDP == None || EDP.TargetPath == None )
+		return;
+
+	CompactPathList(EDP.TargetPath);
+	For ( i=0 ; i<16 && EDP.TargetPath.upstreamPaths[i]>=0 ; i++ )
+		if ( GetReachSpec( R, EDP.TargetPath.upstreamPaths[i]) 
+		&& (R.End == EDP.TargetPath) && (EventDetractorPath(R.Start) == None)
+		/*&& ADDITIONAL CONDITIONS*/ )
+		{
+			R.End = EDP;
+			SetReachSpec( R, EDP.TargetPath.upstreamPaths[i--], true);
+		}
+
 }
 
 
@@ -137,35 +179,85 @@ final function bool HasEvent( name InEvent)
 	return InStr( EventList, ";" $ string(InEvent) $ ";") >= 0;
 }
 
-final function bool ResetEvents()
+final function bool RemoveEvent( name InEvent)
 {
-	local string NextEvent;
+	local int i;
+	
+	i = InStr( EventList, string(InEvent) $ ";");
+	if ( i > 0 )
+	{
+		EventList = Left(EventList,i) $ Mid(EventList,i+Len(string(InEvent))+1);
+		return true;
+	}
+}
+
+final function CleanupEvents()
+{
 	local EventLink E;
 	local int i;
-	local name aEvent;
+	local name TmpEvent;
+	local bool bRootCleanup;
+
+
+	if ( bCleanupPending )
+		return;
+	bCleanupPending = true;
 	
-	Reset();
-	AnalysisDepth++;
-	while ( EventList != "" )
+	bRootCleanup = !class'EventLink'.default.bStaticCleanup;
+	class'EventLink'.default.bStaticCleanup = true;
+	
+	// Mark events related to self to be cleaned up.
+	while ( (EventList != "") && bRootCleanup )
 	{
 		EventList = Mid( EventList, 1);
 		i = InStr( EventList, ";");
 		if ( i > 0 )
 		{
-			aEvent = XCS.static.StringToName( Left(EventList,i) );
-			if ( aEvent != '' )
+			TmpEvent = XCS.static.StringToName( Left(EventList,i) );
+			if ( TmpEvent != '' )
 			{
-				ForEach DynamicActors( class'EventLink', E, aEvent)
-					if ( E != self )
-					{
-						E.Reset();
-						E.Update();
-					}
+				ForEach DynamicActors( class'EventLink', E, TmpEvent)
+					E.CleanupEvents();
 			}
 		}
 	}
-	AnalysisDepth--;
 	EventList = ";";
+	
+	// Queue single root for cleanup
+	if ( AnalysisRoot != None )
+	{
+		ReachCount--;
+		AnalysisRoot.CleanupEvents();
+		AnalysisRoot = None;
+	}
+
+	// Workaround until CleanupDestroyed patch: queue all remaining roots
+	if ( ReachCount > 0 )
+	{
+		ForEach DynamicActors( class'EventLink', E)
+			if ( E.HasEvent(Tag) && (E != self) )
+				E.CleanupEvents();
+	}
+	
+	//Last step, done once
+	if ( bRootCleanup )
+	{
+		ForEach DynamicActors( class'EventLink', E)
+			if ( !E.bDestroying && E.bCleanupPending )
+			{
+				E.Update();
+				if ( !E.bDeleteMe )
+				{
+					E.AnalysisRoot = None;
+					E.ReachCount = 0;
+					E.AnalysisDepth = 0;
+					E.AnalyzedBy( None);
+				}
+			}
+		ForEach DynamicActors( class'EventLink', E)
+			E.bCleanupPending = false;
+		class'EventLink'.default.bStaticCleanup = false;
+	}
 }
 
 final function AcquireEvents( EventLink From)
@@ -187,27 +279,23 @@ final function AnalyzeEvent( name aEvent)
 {
 	local EventLink E, ERoot;
 
-	if ( (aEvent != '') && !HasEvent(aEvent) )
+	if ( bDeleteMe || bDestroying )
+		return;
+
+	AnalysisDepth++;
+	if ( (aEvent != '') && !HasEvent(aEvent) ) //Link events
 	{
 		AddEvent( aEvent);
-		if ( !bDeleteMe )
-		{
-			ERoot = self;
-			AutoRegisterNotify( aEvent);
-		}
-		AnalysisDepth++;
+		AutoRegisterNotify( aEvent);
 		ForEach DynamicActors( class'EventLink', E, aEvent)
 		{
-			E.AnalysisRoot = ERoot;
+			E.AnalysisRoot = self;
 			E.ReachCount++;
 			if ( E.AnalysisDepth == 0 ) //Never self
-			{
-				E.AnalyzedBy( ERoot);
-				AcquireEvents( E);
-			}
+				E.AnalyzedBy( self);
 		}
-		AnalysisDepth--;
 	}
+	AnalysisDepth--;
 }
 
 final function RegisterNotify( name aEvent)
@@ -222,28 +310,68 @@ final function RegisterNotify( name aEvent)
 	NotifyList.NextNotify = N;
 }
 
-final function EventLink GetLastRoot()
+final function EventLink GetFurthestRoot()
 {
-	local EventLink Link;
-	For ( Link=AnalysisRoot ; Link!=None && Link.AnalysisRoot!=None ; Link=Link.AnalysisRoot )	{}
-	return Link;
-}
-
-final function bool RootInProgress()
-{
-	local EventLink Link;
-	local bool bRootInProgress;
+	local EventLink Link, LastValid;
 	
-	//Coded for minimum unrealscript iteration count
-	For ( Link=AnalysisRoot ; Link!=None && !bRootInProgress ; Link=Link.AnalysisRoot )
-		bRootInProgress = Link.bInProgress;
-			
-	return bRootInProgress;
+	StartQuery();
+	For ( Link=AnalysisRoot ; Link!=None && Link.ValidQuery() ; Link=Link.AnalysisRoot )
+		LastValid = Link;
+	return LastValid;
 }
 
+final function EventLink GetEnabledRoot()
+{
+	local EventLink Link;
+	
+	StartQuery();
+	For ( Link=self ; Link!=None && Link.ValidQuery() ; Link=Link.AnalysisRoot )
+		if ( Link.bRoot && Link.bRootEnabled )
+			return Link;
+	return None;
+}
+
+final function bool ChainInProgress( optional bool bNearestRootOnly)
+{
+	local EventLink Link;
+	
+	StartQuery();
+	For ( Link=self ; Link!=None && Link.ValidQuery() ; Link=Link.AnalysisRoot )
+	{
+		if ( Link.bInProgress )
+			return true;
+		if ( bNearestRootOnly && Link.bRoot && (Link != self) )
+			break;
+	}
+	return false;
+}
+
+final function bool RootIsEnabled()
+{
+	local EventLink Link;
+
+	StartQuery();
+	For ( Link=AnalysisRoot ; Link!=None && Link.ValidQuery() ; Link=Link.AnalysisRoot )
+		if ( Link.bRoot )
+			return Link.bRootEnabled;
+	return false;
+}
+
+//Query macros
+final function StartQuery()
+{
+	class'EventLink'.default.QueryTag++;
+}
+final function bool ValidQuery()
+{
+	local int OldTag;
+	
+	OldTag = QueryTag;
+	QueryTag = class'EventLink'.default.QueryTag;
+	return OldTag != QueryTag;
+}
 
 defaultproperties
 {
      EventList=";"
-     bActive=True
 }

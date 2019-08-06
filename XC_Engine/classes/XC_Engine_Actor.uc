@@ -22,6 +22,8 @@ const R_JUMP       = 0x00000008; //jumping required
 const R_DOOR       = 0x00000010;
 const R_SPECIAL    = 0x00000020;
 const R_PLAYERONLY = 0x00000040;
+
+const XCS = class'XC_EngineStatics';
 	
 struct ReachSpec
 {
@@ -75,23 +77,25 @@ tasks internally. (not on Net Clients)
 
 //Natives that are exclusive to this actor type and are safe to call in clients.
 native final function bool GetReachSpec( out ReachSpec R, int Idx);
-native final function bool SetReachSpec( ReachSpec R, int Idx, optional bool bAutoSet);
+native final function bool SetReachSpec( ReachSpec R, int Idx, optional bool bAutoSet); //[Idx -1] forces auto-set and stores on any available ReachSpec slot
 native final function int ReachSpecCount();
 native final function int AddReachSpec( ReachSpec R, optional bool bAutoSet); //Returns index of newle created ReachSpec
 native final function int FindReachSpec( Actor Start, Actor End); //-1 if not found, useful for finding unused specs (actor = none)
-native final function CompactPathList( NavigationPoint N); //Also cleans up invalid paths (Start or End = NONE)
-native final function LockToNavigationChain( NavigationPoint N, bool bLock);
 native final function iterator AllReachSpecs( out ReachSpec R, out int Idx); //Idx can actually modify the starting index!!!
 native final function DefinePathsFor( NavigationPoint N, optional Actor AdjustTo, optional Pawn Reference, optional float MaxDistance); //N must have no connections!
 
-function ResetReachSpec( out ReachSpec R)
+//Natives that can be called from anywhere and are safe to call in clients.
+native static final function CompactPathList( NavigationPoint N); //Also cleans up invalid paths (Start or End = NONE)
+native static final function LockToNavigationChain( NavigationPoint N, bool bLock);
+
+static function ResetReachSpec( out ReachSpec R)
 {
 	R.Start = None;
 	R.End = None;
 	R.bPruned = 0;
 	R.Distance = 0;
-	R.CollisionHeight = 0;
-	R.CollisionRadius = 0;
+	R.CollisionHeight = 60;
+	R.CollisionRadius = 60;
 }
 
 //Find all reachspecs linking to/from N, clear and dereference (SLOW!)
@@ -104,6 +108,40 @@ function CleanupNavSpecs( NavigationPoint N)
 	ForEach AllReachSpecs( R, RI)
 		if ( R.Start == N || R.End == N )
 			SetReachSpec( R_Empty, RI, true);
+}
+
+//Find all outgoing paths from this NavigationPoint (no unsafe operations)
+function CleanupNavOutgoing( NavigationPoint N)
+{
+	local int i;
+	local ReachSpec R, RClean;
+	
+	CompactPathList( N); //Stabilizes list and following algorithm
+	while ( i<16 && N.Paths[i] >= 0 )
+	{
+		if ( GetReachSpec( R, N.Paths[i]) && (R.Start == N) )
+			SetReachSpec( RClean, N.Paths[i], true);
+		else
+			i++;
+	}
+}
+
+//Creates a special connection with a single call
+function SpecialConnectNavigationPoints( NavigationPoint Start, NavigationPoint End, optional int Distance, optional int ReachFlags)
+{
+	local ReachSpec R;
+	
+	if ( Start != None && End != None )
+	{
+		R.Distance = Max( 1, Distance);
+		R.Start = Start;
+		R.End = End;
+		R.CollisionRadius = 100;
+		R.CollisionHeight = 100;
+		R.ReachFlags = ReachFlags;
+		R.bPruned = 0;
+		SetReachSpec( R, -1);
+	}
 }
 
 //EZ quick connect between both nodes
@@ -229,7 +267,7 @@ event XC_Init()
 //if ( int(ConsoleCommand("Get ini:Engine.Engine.GameEngine XC_Version")) < 19 )
 //		return;
 
-	class'XC_EngineStatics'.static.ResetAll();
+	XCS.static.ResetAll();
 	bDirectional = true; //GetPropertyText helper
 
 	// Instantiate the CFG object here, but don't init yet
@@ -302,7 +340,7 @@ event XC_Init()
 	ReplaceFunction( class'Mover', class'XC_Engine_Mover', 'Trigger', 'TC_Trigger', 'TriggerControl');
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'TeamSay', 'TeamSay');
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewClass', 'ViewClass'); //Native version
-	//ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerCalcView', 'PlayerCalcView'); //Native version //BUG
+	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerCalcView', 'PlayerCalcView'); //Native version //BUG
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewPlayer', 'ViewPlayer_Fast'); //Partial name search
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'GetWeapon', 'GetWeapon');
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PrevItem', 'PrevItem');
@@ -310,14 +348,18 @@ event XC_Init()
 		ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerTick', 'PlayerTick_CF', 'CheatFlying'); //Spectators go thru teles
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'PlayerTick', 'PlayerTick_FD', 'FeigningDeath'); //Multiguning fix
 	ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'AnimEnd', 'AnimEnd_FD', 'FeigningDeath');
+	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'BaseChange', 'BaseChange');
 	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'FindInventoryType', 'FindInventoryType_Fast');
 	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'TraceShot', 'TraceShot_Safe');
+	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'EncroachedBy', 'EncroachedBy');
 	ReplaceFunction( class'XC_Engine_Pawn', class'Pawn', 'FindPathToward_Org', 'FindPathToward');
 	ReplaceFunction( class'Pawn', class'XC_Engine_Pawn', 'FindPathToward', 'FindPathToward_RouteMapper');
 	if ( Level.Game != None )
 		ReplaceFunction( class'PlayerPawn', class'XC_Engine_PlayerPawn', 'ViewPlayerNum', 'ViewPlayerNum_Fast'); //Lag+crash exploit fix
 	ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'Killed', 'Killed');
 	ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'ScoreKill', 'ScoreKill');
+	ReplaceFunction( class'XC_Engine_GameInfo', class'GameInfo', 'RestartPlayer_Original', 'RestartPlayer');
+	ReplaceFunction( class'GameInfo', class'XC_Engine_GameInfo', 'RestartPlayer', 'RestartPlayer_Proxy');
 	ReplaceFunction( class'GameReplicationInfo', class'XC_GameReplicationInfo', 'Timer', 'Timer_Server');
 	ReplaceFunction( class'Mutator', class'XC_CollisionMutator', 'AddMutator', 'AddMutator');
 	ReplaceFunction( class'Weapon', class'XC_Engine_Weapon', 'CheckVisibility', 'CheckVisibility');
@@ -362,7 +404,9 @@ event SetInitialState()
 	{
 		FixLiftCenters();
 		if ( ConfigModule.bEventChainAddon )
+		{
 			class'EventChainSystem'.static.StaticInit( self);
+		}
 	}	
 }
 

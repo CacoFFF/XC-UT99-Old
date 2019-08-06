@@ -16,8 +16,6 @@
 #include "Cacus/Math/Math.h"
 #include "Cacus/AppTime.h"
 
-// TODO: MAKE SHOCKBALLS RELEVANT IN LOW BANDWIDTH NET
-// TODO: LINUX BUILD
 // TODO: PRIORITIZATION BY DISTANCE (?)
 
 

@@ -15,7 +15,6 @@ class FSurfaceFacet;
 #include "XC_LZMA.h"
 #include "Cacus/CacusThread.h"
 #include "Cacus/Atomics.h"
-#include "Cacus/CacusString.h"
 #include "Cacus/AppTime.h"
 
 
@@ -883,7 +882,7 @@ void UXC_Level::CompactSortReachSpecList( TArray<FReachSpec>& ReachSpecs, INT* P
 	// Sort (selection sort)
 	for ( i=0 ; i<Count ; i++ )
 	{
-		INT Lowest = 0;
+		INT Lowest = i;
 		for ( j=i+1 ; j<Count ; j++ )
 			if ( ReachSpecs(Paths[j]).distance < ReachSpecs(Paths[Lowest]).distance )
 				Lowest = j;

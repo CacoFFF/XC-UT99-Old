@@ -4,12 +4,11 @@ function Update()
 {
 	// Is this propagator still relevant?
 	if ( (Counter(Owner) == None) || (Counter(Owner).NumToCount <= 0) )
-	{
 		Destroy();
-		return;
-	}
-	
-	bRoot = false;
-	bActive = true;
-	bInProgress = false;
+}
+
+defaultproperties
+{
+     bLink=True
+     bLinkEnabled=True
 }

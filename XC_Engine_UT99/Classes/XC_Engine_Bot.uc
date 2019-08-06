@@ -1,8 +1,6 @@
 class XC_Engine_Bot expands Bot
 	abstract;
 
-native(3540) final iterator function PawnActors( class<Pawn> PawnClass, out pawn P, optional float Distance, optional vector VOrigin, optional bool bHasPRI);
-
 
 //Usage of GetPropertyText to add compatibility with non-BotReplicationInfo pri's
 //This also allows minimal interaction with non-Bot pawns, FerBotz being the most notable example.
@@ -102,4 +100,31 @@ function SetOrders(name NewOrders, Pawn OrderGiver, optional bool bNoAck)
 	}	
 				
 	PlayerReplicationInfo.SetPropertyText("OrderObject",String(OrderObject));
+}
+
+// Call Super.BaseChange() in all cases, don't shoot bDelaying movers
+singular event BaseChange()
+{
+	local actor HitActor;
+	local vector HitNormal, HitLocation;
+
+	if ( Mover(Base) != None )
+	{
+		// handle shootable secret floors
+		if ( Mover(Base).bDamageTriggered && !Mover(Base).bOpening && !Mover(Base).bDelaying && (MoveTarget != None) )
+		{
+			HitActor = Trace(HitLocation, HitNormal, MoveTarget.Location, Location, true);
+			if ( HitActor == Base )
+			{
+				Target = Base;
+				bShootSpecial = true;
+				FireWeapon();
+				bFire = 0;
+				bAltFire = 0;
+				Base.Trigger(Base, Self);
+				bShootSpecial = false;
+			}
+		}
+	}
+	Super(Pawn).BaseChange();
 }

@@ -2,21 +2,19 @@ class EL_MoverBump expands EventLink;
 
 const EMH = class'EngineMoversHandler';
 
+//Optional AI marker to defer to
+function NavigationPoint DeferTo()
+{
+	if ( (Mover(Owner) != None) && (Mover(Owner).myMarker != None) )
+		return Mover(Owner).myMarker;
+	return AIMarker;
+}
+
 function Update()
 {
-	local Mover M;
-	
 	// Is this mover still relevant?
-	M = Mover(Owner);
-	if ( !EMH.static.IsMoverBumpRelevant(M) )
-	{
+	if ( !EMH.static.IsMoverBumpRelevant( Mover(Owner) ) )
 		Destroy();
-		return;
-	}
-
-	bRoot = true;
-	bActive = true;
-	bInProgress = false;
 }
 
 //Actor can initiate event chain by interacting with owner
@@ -39,4 +37,10 @@ function AnalyzedBy( EventLink Other)
 	Assert( M != None);
 	AnalyzeEvent( M.BumpEvent);
 	AnalyzeEvent( M.PlayerBumpEvent);
+}
+
+defaultproperties
+{
+     bRoot=True
+     bRootEnabled=True
 }

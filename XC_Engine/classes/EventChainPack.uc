@@ -24,10 +24,17 @@ event XC_Init()
 // Spawn event chain handlers here
 function SpawnHandlers()
 {
-	Spawn( class'ElevatorReachspecHandler');
-	Spawn( class'EngineTriggersHandler');
-	Spawn( class'EngineMoversHandler');
-	Spawn( class'EngineInventoryHandler');
+	CreateHandler( class'ElevatorReachspecHandler');
+	CreateHandler( class'EngineTriggersHandler');
+	CreateHandler( class'EngineMoversHandler');
+	CreateHandler( class'EngineInventoryHandler');
+	CreateHandler( class'EngineTeleportersHandler');
 }
 
-
+final function EventChainHandler CreateHandler( class<EventChainHandler> HandlerClass)
+{
+	local EventChainHandler NewHandler;
+	NewHandler = Spawn( HandlerClass, self, 'EventChainHandler');
+	NewHandler.XC_Init();
+	return NewHandler;
+}

@@ -115,9 +115,9 @@ FCheckResult* Grid::LineQuery( const PrecomputedRay& Ray, uint32 ExtraNodeFlags)
 	FCheckResult* Result = nullptr;
 
 	cg::Vector OuterExtent( &Ray.Extent.X);
-	if ( Ray.Org.X < Ray.End.X )		OuterExtent.X *= -1.f;
-	if ( Ray.Org.Y < Ray.End.Y )		OuterExtent.Y *= -1.f;
-	if ( Ray.Org.Z < Ray.End.Z )		OuterExtent.Z *= -1.f;
+	if ( Ray.Org.X > Ray.End.X )		OuterExtent.X *= -1.f;
+	if ( Ray.Org.Y > Ray.End.Y )		OuterExtent.Y *= -1.f;
+	if ( Ray.Org.Z > Ray.End.Z )		OuterExtent.Z *= -1.f;
 
 	cg::Integers iS;
 	cg::Integers iE;

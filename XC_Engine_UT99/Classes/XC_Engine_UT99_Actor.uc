@@ -63,6 +63,7 @@ event XC_Init()
 	//***
 	//Bot
 	ReplaceFunction( class'Bot', class'XC_Engine_Bot', 'SetOrders', 'SetOrders'); //Moved from DLL
+	ReplaceFunction( class'Bot', class'XC_Engine_Bot', 'BaseChange', 'BaseChange');
 	
 	//******************
 	//ChallengeVoicePack
@@ -481,6 +482,7 @@ function FixBarricade()
 	local PathNode P, PP;
 	local InventorySpot IS, Redeemer;
 	local JumpSpot JS;
+	local XC_Engine_LiftExit LE;
 
 	if ( Level.Game.PlayerJumpZScaling() >= 1.09 )
 	{
@@ -505,6 +507,16 @@ function FixBarricade()
 	ForEach NavigationActors( class'InventorySpot', IS, 15, vect(-1430,300,373))
 		ForEach NavigationActors( class'JumpSpot', JS, 15, vect(-720,255,367))
 			EzConnectNavigationPoints( IS, JS, 1, true);
+			
+	LE = Spawn( class'XC_Engine_LiftExit', None, 'XC_Engine_LiftExit', vect(450,262,86));
+	LE.LiftTag = 'hymen';
+	LockToNavigationChain( LE, true);
+	DefinePathsFor( LE);
+	LE = Spawn( class'XC_Engine_LiftExit', None, 'XC_Engine_LiftExit', vect(440,222,404));
+	LE.LiftTag = 'hymen';
+	LockToNavigationChain( LE, true);
+	DefinePathsFor( LE);
+	Spawn( class'XC_Engine_LiftCenter', self, 'XC_Engine_LiftCenter', vect(510,256,86));
 }
 
 defaultproperties

@@ -1,10 +1,8 @@
 class XC_Engine_Pawn expands Pawn
 	abstract;
 
+var bool bDisableTeamEncroach; //Global/default only
 
-native(3541) final iterator function NavigationActors( class<NavigationPoint> NavClass, out NavigationPoint P, optional float Distance, optional vector VOrigin, optional bool bVisible);
-native(3542) final iterator function InventoryActors( class<Inventory> InvClass, out Inventory Inv, optional bool bSubclasses, optional Actor StartFrom); 
-native(3553) final iterator function DynamicActors( class<actor> BaseClass, out actor Actor, optional name MatchTag );
 native(3555) static final operator(22) Actor | (Actor A, skip Actor B);
 
 
@@ -41,11 +39,36 @@ function Actor TraceShot_Safe( out vector HitLocation, out vector HitNormal, vec
 	return Other;
 }
 
+//==============
+//Allow smart pawns to handle Movers
+singular event BaseChange()
+{
+	local float decorMass;
+
+	if ( (Base == None) && (Physics == PHYS_None) )
+		SetPhysics(PHYS_Falling);
+	else if (Pawn(Base) != None)
+	{
+		Base.TakeDamage( (1-Velocity.Z/400)* Mass/Base.Mass, Self,Location,0.5 * Velocity , 'stomped');
+		JumpOffPawn();
+	}
+	else if ( (Decoration(Base) != None) && (Velocity.Z < -400) )
+	{
+		decorMass = FMax(Decoration(Base).Mass, 1);
+		Base.TakeDamage((-2* Mass/decorMass * Velocity.Z/400), Self, Location, 0.5 * Velocity, 'stomped');
+	}
+	else if ( Mover(Base) != None )
+	{
+		if ( !IsA('PlayerPawn') && bCanDoSpecial && (Intelligence == BRAINS_HUMAN) )
+			Mover(Base).HandleDoor(self);
+	}
+}
+
 
 //==============
 // Route mapper version of FindPathToward
 //native(517) final function Actor FindPathToward(actor anActor, optional bool bSinglePath, optional bool bClearPaths);
-final function Actor FindPathToward_Org(actor anActor, optional bool bSinglePath, optional bool bClearPaths);
+final function Actor FindPathToward_Org( Actor anActor, optional bool bSinglePath, optional bool bClearPaths);
 function Actor FindPathToward_RouteMapper( Actor anActor, optional bool bSinglePath, optional bool bClearPaths)
 {
 	local Actor Found;
@@ -64,10 +87,25 @@ function Actor FindPathToward_RouteMapper( Actor anActor, optional bool bSingleP
 			EndPoint = Caller.MapRoutes_FPTW( self,,'FindPathToward_Event');
 			if ( EndPoint != None )
 			{
-				log( EndPoint);
+//				log( EndPoint);
 				Found = class'XC_CoreStatics'.static.BuildRouteCache( EndPoint, RouteCache, self);
 			}
 		}
 	}
 	return Found;
+}
+
+
+//==============
+//Disallow encroaching players among TeamMates
+event EncroachedBy( actor Other )
+{
+	if ( Pawn(Other) != None )
+	{
+		if ( class'XC_Engine_Pawn'.default.bDisableTeamEncroach && Level.Game.bTeamGame 
+		&& (PlayerReplicationInfo != None) && (Pawn(Other).PlayerReplicationInfo != None)
+		&& (PlayerReplicationInfo.Team == Pawn(Other).PlayerReplicationInfo.Team) )
+			return;
+		gibbedBy(Other);
+	}
 }

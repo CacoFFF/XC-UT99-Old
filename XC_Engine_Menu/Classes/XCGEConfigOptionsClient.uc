@@ -28,6 +28,12 @@ var UWindowCheckbox DevLogsCheck;
 var localized string DevLogsText;
 var localized string DevLogsHelp;
 
+// Event Chain System
+var UWindowCheckbox EventChainCheck;
+var localized string EventChainText;
+var localized string EventChainHelp;
+
+
 //=====================
 //==== Map List Sorting
 
@@ -139,13 +145,21 @@ function Created()
 	// Debug
 	ControlOffset += 10;
 
-	// Developer logs //3R
+	// Developer logs //3L
 	DevLogsCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlLeft, ControlOffset, ControlWidth, 1));
 	DevLogsCheck.bChecked = bool(GetPlayerOwner().ConsoleCommand("get XC_GameEngine bEnableDebugLogs"));
 	DevLogsCheck.SetText(DevLogsText);
 	DevLogsCheck.SetHelpText(DevLogsHelp);
 	DevLogsCheck.SetFont(F_Normal);
 	DevLogsCheck.Align = TA_Right;
+	// Event Chain System //3R
+	EventChainCheck = UWindowCheckbox(CreateControl(class'UWindowCheckbox', ControlLeft, ControlOffset, ControlWidth, 1));
+	if ( GetScriptConfig() )
+		EventChainCheck.bChecked = ConfigModule.bEventChainAddon;
+	EventChainCheck.SetText(EventChainText);
+	EventChainCheck.SetHelpText(EventChainHelp);
+	EventChainCheck.SetFont(F_Normal);
+	EventChainCheck.Align = TA_Right;
 	// 3R = nothing here
 	ControlOffset += 25;
 	
@@ -208,6 +222,10 @@ function BeforePaint(Canvas C, float X, float Y)
 	DevLogsCheck.SetSize(ControlWidth, 1);
 	DevLogsCheck.WinLeft = ControlLeft;
 	
+	EventChainCheck.SetSize(ControlWidth, 1);
+	EventChainCheck.WinLeft = ControlRight;
+
+	
 	MapListTitle.SetSize(CenterWidth, 1);
 	MapListTitle.WinLeft = CenterPos;
 	MapSortFolderCheck.SetSize(ControlWidth, 1);
@@ -238,6 +256,9 @@ function Notify(UWindowDialogControl C, byte E)
 			break;
 		case DevLogsCheck:
 			DevLogsChecked();
+			break;
+		case EventChainCheck:
+			EventChainChecked();
 			break;
 		case MapSortFolderCheck:
 			MapSortFolderChecked();
@@ -305,6 +326,15 @@ function DevLogsChecked()
 	DevLogsCheck.bChecked = bool(GetPlayerOwner().ConsoleCommand("get XC_GameEngine bEnableDebugLogs"));
 }
 
+function EventChainChecked()
+{
+	if ( GetScriptConfig() )
+	{
+		ConfigModule.bEventChainAddon = EventChainCheck.bChecked;
+		ConfigModule.SaveConfig();
+	}
+}
+
 
 defaultproperties
 {
@@ -323,6 +353,8 @@ defaultproperties
 	MapSortFolderHelp="Sorts the map list by directories instead of globally."
 	MapSortInvertText="Inverted"
 	MapSortInvertHelp="Reverses the map list order."
+	EventChainText="Event Chain System"
+	EventChainHelp="Improves bot AI by making triggers and other mechanisms interact with the path network."
 }
 
 

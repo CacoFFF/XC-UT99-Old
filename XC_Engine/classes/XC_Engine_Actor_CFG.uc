@@ -156,12 +156,12 @@ function UpgradeVersion()
 	
 	if ( LastVersion < 24 )
 	{
-		AddConditionUnique( "PACKAGE:Predator:XC_UPakPredator.XC_UPakPredator");
+//		AddConditionUnique( "PACKAGE:Predator:XC_UPakPredator.XC_UPakPredator");
 		AddConditionUnique( "XC_Engine.EventChainPack");
 		AddConditionUnique( "PACKAGE:Unreali:XC_Engine_UT99.UT99AddonsPack");
 	}
 	
-	LastVersion = 23;
+	LastVersion = 24;
 }
 /*=============== UpgradeVersion end ===============*/
 
@@ -193,7 +193,7 @@ defaultproperties
 	bPatchUdpServerQuery=True
 	bSpawnServerActor=True
 	bFixMoverTimeMP=True
-	bAnyFaceOnSkin=True
+	bAnyFaceOnSkin=False
 	bEventChainAddon=True
 	LastVersion=21
 }

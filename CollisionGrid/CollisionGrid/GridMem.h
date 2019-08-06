@@ -200,7 +200,7 @@ public:
 				if ( hflags & HF_Destruct )
 					Link->_holder[idx].~T();
 				if ( hflags & HF_ZeroExit )
-					memset( &Link->_holder[idx], 0, sizeof(T) );
+					memset( (char*)&Link->_holder[idx], 0, sizeof(T) );
 				Link->_free[Link->_freecount++] = idx;
 				return true;
 			}

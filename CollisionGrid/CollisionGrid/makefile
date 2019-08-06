@@ -1,26 +1,46 @@
-CXX = g++ -std=gnu++11 -msse -msse2 -mfpmath=sse -m32 -fpermissive -rdynamic -fno-strict-aliasing -O3 -Wall -fvisibility=hidden  
+CXX = g++
 
-OTHERSTUFF = -Wl,--version-script=CG_Exports.txt
-CFLAGS = 
-LDFLAGS = $(CFLAGS) -shared
-TARGET_LIB = CollisionGrid.so
+SONAME = CollisionGrid.so
+
+CXXFLAGS = -std=gnu++11 -m32 -msse -msse2 -O3 -mfpmath=sse -rdynamic -fPIC -flto -fomit-frame-pointer -fpermissive -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -ffunction-sections -fvisibility=hidden -Wall
+
+LDFLAGS = -shared -export-dynamic -Wl,--gc-sections -Wl,-soname,$(SONAME)
+
+OUTPUT = ../../System/$(SONAME)
+
+LIBS = ../../System/Core.so ../../System/Engine.so 
+
+OBJDIR = Obj/
 
 SRCS = API_Generic.cpp CollisionGrid.cpp ContainerLogic.cpp GridQueries.cpp UEImports.cpp
-OBJS = $(SRCS:.cpp=.o)
+
+OBJS = $(SRCS:%.cpp=$(OBJDIR)%.o)
+
+DEPS = $(SRCS:%.cpp=$(OBJDIR)%.d)
+
 
 .PHONY: all
-all: ${TARGET_LIB}
+all: $(OUTPUT)
 
-$(TARGET_LIB): $(OBJS)
-	$(CXX) ${LDFLAGS} -o $@ $^
+#Link
+$(OUTPUT) : $(OBJS)
+	$(CXX) -o $@ $(LDFLAGS) $^ $(LIBS)
+	strip --strip-all --discard-all $(OUTPUT)
 
-$(SRCS:.cpp=.d):%.d:%.cpp
-	$(CXX) ${CFLAGS} -MM $< >$@
+#Compile
+$(OBJS) : $(OBJDIR)%.o : %.cpp
+	$(CXX) -c $(CXXFLAGS) $(INCLUDES) -o $@ $< > $(OBJDIR)$*.lst
 
-include $(SRCS:.cpp=.d)
+#Generate dependancies
+#%.d : %.cpp
+$(DEPS) : $(OBJDIR)%.d : %.cpp
+	@echo $(@:%.d=%.o) $@ : \\ > $@
+	@/bin/sh -ec '$(CXX) -MM $(CXXFLAGS) $< | \
+		sed -e '\''s/.*://'\'' >> $@'
+
+include $(DEPS)
 
 .PHONY: clean
 clean:
-	-${RM} ${TARGET_LIB} ${OBJS} $(SRCS:.cpp=.o)
-	-${RM} ${TARGET_LIB} ${OBJS} $(SRCS:.cpp=.d)
+	-${RM} -f ${OBJS} $(SRCS:%.cpp=$(OBJDIR)%.lst) $(SRCS:%.cpp=$(OBJDIR)%.d)
 

@@ -3,19 +3,9 @@ class EL_RoundRobin expands EventLink;
 
 function Update()
 {
-	local RoundRobin R;
-	
 	// Is this RoundRobin still relevant?
-	R = RoundRobin(Owner);
-	if ( (R == None) || !R.bCollideActors )
-	{
+	if ( (RoundRobin(Owner) == None) || !Owner.bCollideActors )
 		Destroy();
-		return;
-	}
-	
-	bRoot = false;
-	bActive = true;
-	bInProgress = false;
 }
 
 function AnalyzedBy( EventLink Other)
@@ -27,4 +17,10 @@ function AnalyzedBy( EventLink Other)
 	Assert( R != None);
 	for ( i=0 ; i<16 && (R.OutEvents[i] != '') ; i++ )
 		AnalyzeEvent( R.OutEvents[i]);
+}
+
+defaultproperties
+{
+     bLink=True
+     bLinkEnabled=True
 }

@@ -46,10 +46,6 @@ event InitGame_Listen( string Options, out string Error )
 //*** PostLogin
 // Group up skins in batches and avoid spamming a player's log
 // This should also save heaps of bandwidth in maps full of monsters
-native(640) static final function int Array_Length_Tex( out array<Texture> Ar, optional int SetSize);
-native(641) static final function bool Array_Insert_Tex( out array<Texture> Ar, int Offset, optional int Count );
-native(642) static final function bool Array_Remove_Tex( out array<Texture> Ar, int Offset, optional int Count );
-
 
 event PostLogin( PlayerPawn NewPlayer )
 {
@@ -108,7 +104,7 @@ event PostLogin( PlayerPawn NewPlayer )
 	if ( T[0] != None )
 		NewPlayer.ClientReplicateSkins( T[0], T[1], T[2]);
 	if ( TLMax > 0 )
-		Array_Length_Tex( TextureList, 0);
+		Array_Length( TextureList, 0);
 }
 
 	
@@ -231,7 +227,7 @@ function Killed( pawn Killer, pawn Other, name damageType )
 	ScoreKill(Killer, Other);
 }
 
-	
+
 function ScoreKill(pawn Killer, pawn Other)
 {
 	Other.DieCount++;
@@ -248,4 +244,15 @@ function ScoreKill(pawn Killer, pawn Other)
 	}
 
 	BaseMutator.ScoreKill(Killer, Other);
+}
+
+final function bool RestartPlayer_Original( Pawn aPlayer);
+function bool RestartPlayer_Proxy( Pawn aPlayer )	
+{
+	local bool FoundStart;
+
+	class'XC_Engine_Pawn'.default.bDisableTeamEncroach = true;
+	FoundStart = RestartPlayer_Original( APlayer);
+	class'XC_Engine_Pawn'.default.bDisableTeamEncroach = false;
+	return FoundStart;
 }

@@ -5,11 +5,12 @@ function Update()
 	Super.Update();
 	if ( !bDeleteMe )
 	{
-		bRoot = Owner.IsInState('Pickup');
-		bActive = true;
+		bRootEnabled = Owner.IsInState('Pickup');
 		bInProgress = Owner.IsInState('Sleeping');
-		if ( !bRoot && !bInProgress ) //Something not right (item in player's hands?)
+		if ( !bRootEnabled && !bInProgress ) //Something not right (item in player's hands?)
 			Destroy();
+		else if ( bInProgress )
+			SetTimer( Owner.LatentFloat + 0.01, false);
 	}
 }
 
@@ -23,5 +24,5 @@ function NavigationPoint DeferTo()
 //Actor can initiate event chain by interacting with owner
 function bool CanFireEvent( Actor Other)
 {
-	return bRoot && (Pawn(Other) != None) && Pawn(Other).bIsPlayer && (Pawn(Other).Health > 0);
+	return bRootEnabled && (Pawn(Other) != None) && Pawn(Other).bIsPlayer && (Pawn(Other).Health > 0);
 }

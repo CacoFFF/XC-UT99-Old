@@ -5,18 +5,14 @@
 //=============================================================================
 class ElevatorReachspecHandler expands EventChainHandler;
 
+//Occurs during PostBeginPlay, and these are processed after LiftCenter
 function InitializeHandler()
 {
 	local LiftCenter LC;
-		
+
 	ForEach NavigationActors( class'LiftCenter', LC)
-	{
-		if ( LC.MyLift == None )
-			LC.MyLift = FindElevatorForLC( LC);
-			
 		if ( LC.MyLift != None )
 			RegisterElevatorPath( LC, LC.MyLift);
-	}
 }
 
 event KillCredit( Actor A)

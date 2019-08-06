@@ -1,6 +1,5 @@
 class EL_Dispatcher expands EventLink;
 
-var(EventLink) bool bOldProgress;
 
 function Update()
 {
@@ -14,15 +13,9 @@ function Update()
 		return;
 	}
 	
-	bRoot = false;
-	bActive = true;
-	bOldProgress = bInProgress;
 	bInProgress = D.LatentFloat > 0;
-	
 	if ( bInProgress )
 		SetTimer( D.LatentFloat + 0.001, false);
-	if ( bOldProgress && !bInProgress )
-		EndEvent();
 }
 
 function AnalyzedBy( EventLink Other)
@@ -45,18 +38,12 @@ function AutoRegisterNotify( name aEvent)
 {
 }
 
-function Trigger( Actor Other, pawn EventInstigator )
+
+defaultproperties
 {
-	if ( !bOldProgress )
-		BeginEvent();
+     bLink=True
+     bLinkEnabled=True
 }
-
-event Timer()
-{
-	Update();
-}
-
-
 
 
 

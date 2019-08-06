@@ -7,12 +7,12 @@ native(3538) final function NavigationPoint MapRoutes_ELBP( Pawn Seeker, Navigat
 
 function Update()
 {
-	SetTimer( 0.5, false);
-}
-
-event Timer()
-{
-	local EventLink LastRoot;
+	//Do not update at level startup
+	if ( Level.bStartup )
+	{
+		SetTimer( FRand(), false);
+		return;
+	}
 
 	if ( (BlockedPath(Owner) == None) || (BlockedPath(Owner).ExtraCost == 0) )
 	{
@@ -21,19 +21,15 @@ event Timer()
 	}
 	
 	DestroyAIMarker();
-	LastRoot = GetLastRoot();
-	Unlocker = LastRoot;
+	Unlocker = GetEnabledRoot();
 	DefineAttractor();
 	SetTimer( 20 + FRand() * 30, false);
 }
 
 
-
-
 function DefineAttractor()
 {
 	local int rIdx, i;
-	local ReachSpec R;
 	local Actor End;
 	local int Lowest;
 	local FV_Scout Scout;
@@ -47,7 +43,6 @@ function DefineAttractor()
 			Unlocker.CreateAIMarker();
 		}
 
-			
 		if ( (Unlocker.DeferTo() != None) && (Unlocker.DeferTo().Paths[15] == -1) )
 		{
 			Scout = Spawn( class'FV_Scout');
@@ -66,28 +61,13 @@ function DefineAttractor()
 				Unlocker.DeferTo().Location + vect(0,0,10) + Normal(Unlocker.Owner.Location - Unlocker.DeferTo().Location) * 5 );
 			SimpleObjectiveAttractor(AIMarker).AttractTo = Unlocker.Owner;
 			LockToNavigationChain( AIMarker, true);
-
-			R.Start = Unlocker.DeferTo();
-			R.End = AIMarker;
-			R.Distance = 1;
-			R.ReachFlags = R_SPECIAL | R_PLAYERONLY;
-			R.CollisionHeight = 200;
-			R.CollisionRadius = 200;
-			CreateReachSpec( R);
-			
-			R.Start = AIMarker;
-			R.Distance = Lowest + 500;
+			SpecialConnectNavigationPoints( Unlocker.DeferTo(), AIMarker, 1, R_SPECIAL | R_PLAYERONLY);
 			ForEach class'XC_CoreStatics'.static.ConnectedDests( BlockedPath(Owner), End, rIdx, i)
 			{
 				NEnd = NavigationPoint(End);
 				// Consider this as potential link
-				Log( "Consider "$End@NavigationPoint(End).VisitedWeight@(Lowest + 5000));
 				if ( (NEnd != None) && (GetWeight(NEnd) >= Lowest + 5000) )
-				{
-					R.End = End;
-					Log( R.Start @ R.End @ R.Distance);
-					CreateReachSpec( R);
-				}
+					SpecialConnectNavigationPoints( AIMarker, NEnd, Lowest + 500, R_SPECIAL | R_PLAYERONLY);
 			}
 		}
 	}

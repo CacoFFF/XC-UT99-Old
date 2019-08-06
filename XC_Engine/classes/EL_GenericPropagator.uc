@@ -4,13 +4,11 @@ function Update()
 {
 	// Is this propagator still relevant?
 	if ( Owner == None || Owner.Event == '' )
-	{
 		Destroy();
-		return;
-	}
-	
-	bRoot = false;
-	bActive = true;
-	bInProgress = false;
 }
 
+defaultproperties
+{
+     bLink=True
+     bLinkEnabled=True
+}

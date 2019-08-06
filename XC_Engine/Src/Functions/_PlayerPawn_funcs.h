@@ -49,6 +49,9 @@ struct APlayerPawn_Dummy : public APlayerPawn
 	void eventCalcBehindView( FVector& CameraLocation, FRotator& CameraRotation, float Dist)
 	{
 		APlayerPawn_eventCalcBehindView_Parms Params;
+		Params.CameraLocation = CameraLocation;
+		Params.CameraRotation = CameraRotation;
+		Params.Dist = Dist;
 		ProcessEvent( FindFunctionChecked(NAME_PP_CalcBehindView), &Params);
 		CameraLocation = Params.CameraLocation;
 		CameraRotation = Params.CameraRotation;
@@ -115,8 +118,7 @@ void APlayerPawn_Dummy::ViewClass( UClass* aClass, UBOOL bQuiet )
 	
 	AActor* First = NULL;
 	UBOOL bFound = 0;
-	INT i=0;
-	for ( ; i<XLevel->Actors.Num() ; i++ )
+	for ( INT i=0 ; i<XLevel->Actors.Num() ; i++ )
 	{
 		AActor* Other = XLevel->Actors(i);
 		if ( Other && !Other->bDeleteMe && Other->IsA( aClass) )
@@ -159,7 +161,7 @@ void APlayerPawn_Dummy::PlayerCalcView( AActor*& ViewActor, FVector& CameraLocat
 {
 	if ( ViewTarget )
 	{
-		ViewTarget = ViewActor;
+		ViewActor = ViewTarget;
 		CameraLocation = ViewTarget->Location;
 		CameraRotation = ViewTarget->Rotation;
 		APawn* PTarget = Cast<APawn>(ViewTarget);
@@ -247,7 +249,7 @@ void APlayerPawn_Dummy::execPlayerCalcView( FFrame& Stack, RESULT_DECL)
 	if ( !(NAMES_PlayerPawn_Funcs & 0x00000002) )
 	{
 		NAMES_PlayerPawn_Funcs |= 0x00000002;
-		NAME_PP_CalcBehindView		= FName(TEXT("CalcBehindView"), FNAME_Intrinsic);
+		NAME_PP_CalcBehindView = FName(TEXT("CalcBehindView"), FNAME_Intrinsic);
 	}
 
 	//Classify our node's execution stack
@@ -256,7 +258,6 @@ void APlayerPawn_Dummy::execPlayerCalcView( FFrame& Stack, RESULT_DECL)
 	//Called via ProcessEvent >>> Native to Script
 	if ( F && F->Func == (Native)&APlayerPawn_Dummy::execPlayerCalcView )
 	{
-		//PlayerCalcView( AActor*& ViewActor, FVector& CameraLocation, FRotator& CameraRotation); 
 		AActor**     ViewActorRef      = (AActor**)    (Stack.Locals + 0);
 		FVector*     CameraLocationRef = (FVector*)    (Stack.Locals + 4);
 		FRotator*    CameraRotationRef = (FRotator*)   (Stack.Locals + 16);

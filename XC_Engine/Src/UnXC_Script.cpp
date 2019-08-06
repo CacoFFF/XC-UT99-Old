@@ -12,6 +12,57 @@
 #include "FPathBuilderMaster.h"
 #include "UnNet.h"
 
+
+#define	xc_guard			{ try{
+#if _MSC_VER
+	#define xc_unguard(msg)		}catch(TCHAR*Err){throw Err;}catch(...){appUnwindf msg; throw;}}
+#else
+	#define xc_unguard(msg)		}catch(char*Err){throw Err;}catch(...){appUnwindf msg; throw;}}
+#endif
+
+
+//*************************************************
+//************* SINGULAR FUNCTION RECORD KEEPER
+//
+// Assuming UScript is single threaded by design.
+// We'll use this to auto-set a hack where multiple singular functions can be called.
+// The specific case to fix is where both a function and it's Super/Global are singular and need to be called.
+// Example: Bot.BaseChange calls Pawn.BaseChange (and both are singular)
+//
+struct SingularRecord
+{
+	UObject* Object;
+	UBOOL bHacked;
+
+	SingularRecord( FFrame& Stack, UFunction* InFunction, UObject* InObject);
+	~SingularRecord();
+};
+
+SingularRecord::SingularRecord( FFrame& Stack, UFunction* Function, UObject* InObject)
+	: Object(InObject), bHacked(0)
+{
+	UFunction* PrevFunction;
+	if ( (Function->FunctionFlags & FUNC_Singular)      //Singular function
+	  && (Stack.Object == Object)                       //Same Object as Previous call
+	  && (Object->GetFlags() & FUNC_Singular)           //Object in singular state
+	  && (PrevFunction=Cast<UFunction>(Stack.Node)) != NULL //Rooted from another function call
+	  && (PrevFunction->GetFName() == Function->GetFName()) //Both functions have the same name
+	  && PrevFunction != Function )                     //Not re-entrant
+	{
+		bHacked = 1;
+		Object->ClearFlags( FUNC_Singular); //Remove singular flag
+	}
+}
+
+SingularRecord::~SingularRecord()
+{
+	if ( bHacked )
+		Object->SetFlags( FUNC_Singular); //Add previously removed singular flag
+}
+
+
+
+
 //*************************************************
 //************* CONFIG FILE MANIPULATORS
 //
@@ -180,13 +231,38 @@ void AXC_Engine_Actor::NewDynArrayRemove( FFrame& Stack, RESULT_DECL )
 	}
 }
 
+
+
+
 void AXC_Engine_Actor::NewVirtualFunction( FFrame& Stack, RESULT_DECL )
 {
 	FName FuncName = Stack.ReadName();
-	guard(ScriptDebugV);
-	CallFunction( Stack, Result, FindFunctionChecked(FuncName) );
-	unguardf( (TEXT("%s.%s"), GetName(), *FuncName ) );
+	xc_guard
+	UFunction* Function = FindFunctionChecked(FuncName);
+//	SingularRecord Record( Function, this); //Neither Super or Global compile a EX_VirtualFunction token
+	CallFunction( Stack, Result, Function);
+	xc_unguard( (TEXT("%s.%s"), GetName(), *FuncName ) );
 }
+
+void AXC_Engine_Actor::NewFinalFunction( FFrame& Stack, RESULT_DECL )
+{
+	UFunction* Function = (UFunction*)Stack.ReadObject();
+	xc_guard
+	SingularRecord Record( Stack, Function, this);
+	CallFunction( Stack, Result, Function);
+	xc_unguard( (TEXT("%s.%s"), GetName(), Function->GetName() ) );
+}
+
+void AXC_Engine_Actor::NewGlobalFunction( FFrame& Stack, RESULT_DECL )
+{
+	FName FuncName = Stack.ReadName();
+	xc_guard
+	UFunction* Function = FindFunctionChecked(FuncName,1); //Global
+	SingularRecord Record( Stack, Function, this);
+	CallFunction( Stack, Result, Function);
+	xc_unguard( (TEXT("%s.%s"), GetName(), *FuncName ) );
+}
+
 
 
 
@@ -501,7 +577,17 @@ void AXC_Engine_Actor::execSetReachSpec( FFrame& Stack, RESULT_DECL)
 	P_GET_UBOOL_OPTX(bAutoSet,false);
 	P_FINISH;
 
-	if ( GPropAddr && (Idx >= 0) && (Idx < GetLevel()->ReachSpecs.Num()) )
+	if ( Idx == INDEX_NONE )
+	{
+		for ( int i=GetLevel()->ReachSpecs.Num()-1 ; i>=0 ; i-- )
+			if ( !GetLevel()->ReachSpecs(i).Start && !GetLevel()->ReachSpecs(i).End )
+				Idx = i;
+		if ( Idx == INDEX_NONE )
+			Idx = GetLevel()->ReachSpecs.AddZeroed();
+		bAutoSet = true;
+	}
+
+	if ( (Idx >= 0) && (Idx < GetLevel()->ReachSpecs.Num()) )
 	{
 		if ( bAutoSet )
 			UXC_Level::UpdateReachSpec( GetLevel()->ReachSpecs(Idx), Spec, Idx);
@@ -547,20 +633,38 @@ void AXC_Engine_Actor::execFindReachSpec( FFrame& Stack, RESULT_DECL)
 	P_FINISH;
 
 	*(INT*)Result = -1;
+	TArray<FReachSpec>& ReachSpecs = GetLevel()->ReachSpecs;
 
-	INT iNum = GetLevel()->ReachSpecs.Num();
-	if ( iNum )
+	INT iPaths = 0;
+	INT* Paths[3] = {};
+
+	// FAST: Try Start and End point local lists
+	if ( Start && Start->IsA(ANavigationPoint::StaticClass()) )
 	{
-		FReachSpec* Specs = (FReachSpec*) GetLevel()->ReachSpecs.GetData();
-		for ( INT i=0 ; i<iNum ; i++ )
-		{
-			if ( Specs[i].Start == Start && Specs[i].End == End )
-			{
-				*(INT*)Result = i;
-				break;
-			}
-		}
+		Paths[iPaths++] = ((ANavigationPoint*)Start)->Paths;
+		Paths[iPaths++] = ((ANavigationPoint*)Start)->PrunedPaths;
 	}
+	if ( End && End->IsA(ANavigationPoint::StaticClass()) )
+		Paths[iPaths++] = ((ANavigationPoint*)End)->upstreamPaths;
+
+	INT rIdx;
+	while ( iPaths-- > 0 )
+	{
+		for ( INT i=0 ; i<16 && (rIdx=Paths[iPaths][i])>=0 && rIdx<ReachSpecs.Num() ; i++ )
+			if ( (ReachSpecs(rIdx).Start == Start) && (ReachSpecs(rIdx).End == End) )
+			{
+				*(INT*)Result = rIdx;
+				return;
+			}
+	}
+
+	// SLOW: Try the ReachSpec list
+	for ( INT i=0 ; i<ReachSpecs.Num() ; i++ )
+		if ( (ReachSpecs(i).Start == Start) && (ReachSpecs(i).End == End) )
+		{
+			*(INT*)Result = i;
+			return;
+		}
 	unguard;
 }
 
@@ -573,45 +677,44 @@ void AXC_Engine_Actor::execCompactPathList( FFrame& Stack, RESULT_DECL)
 	if ( !N )
 		return;
 
-	UXC_Level::CompactSortReachSpecList( GetLevel()->ReachSpecs, N->Paths);
-	UXC_Level::CompactSortReachSpecList( GetLevel()->ReachSpecs, N->upstreamPaths);
-	UXC_Level::CompactSortReachSpecList( GetLevel()->ReachSpecs, N->PrunedPaths);
+	TArray<FReachSpec>& ReachSpecs = N->GetLevel()->ReachSpecs;
+	UXC_Level::CompactSortReachSpecList( ReachSpecs, N->Paths);
+	UXC_Level::CompactSortReachSpecList( ReachSpecs, N->upstreamPaths);
+	UXC_Level::CompactSortReachSpecList( ReachSpecs, N->PrunedPaths);
 	unguard;
 }
 
 void AXC_Engine_Actor::execLockToNavigationChain( FFrame& Stack, RESULT_DECL)
 {
 	guard(AXC_Engine_Actor::execLockToNavigationChain);
-	P_GET_NAVIG(nBase);
+	P_GET_NAVIG(N);
 	P_GET_UBOOL(bLock);
 	P_FINISH;
 
-	if ( !nBase )
+	if ( !N )
 	{
 		GWarn->Log( TEXT("LockToNavigationChain called with null parameter") );
 		return;
 	}
 
-	ANavigationPoint** NR = &(Level->NavigationPointList);
+
 	//Find path in chain, unlock if present
-	while ( *NR )
-	{
-		if ( *NR == nBase )
+	for ( ANavigationPoint** NRef=&(N->Level->NavigationPointList) ; *NRef ; NRef=&((*NRef)->nextNavigationPoint) )
+		if ( *NRef == N )
 		{
 			if ( !bLock )
 			{
-				*NR = nBase->nextNavigationPoint;
-				nBase->nextNavigationPoint = NULL;
+				*NRef = N->nextNavigationPoint;
+				N->nextNavigationPoint = NULL;
 			}
 			return;
 		}
-		NR = &((*NR)->nextNavigationPoint);
-	}
-	//If not found, lock if necessary
+
+	//If not found, lock if intended
 	if ( bLock )
 	{
-		nBase->nextNavigationPoint = Level->NavigationPointList;
-		Level->NavigationPointList = nBase;
+		N->nextNavigationPoint = N->Level->NavigationPointList;
+		N->Level->NavigationPointList = N;
 	}
 	unguard;
 }

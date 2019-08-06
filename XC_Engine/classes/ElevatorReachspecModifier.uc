@@ -34,7 +34,7 @@ function Setup( NavigationPoint InPath, Mover InLift)
 		if ( NavigationPoint(End) != None )
 		{
 			OutboundReachSpecs[Outbound].Index = ReachSpecIdx;
-			OutboundReachSpecs[Outbound].KeyFrame = class'XC_EngineStatics'.static.NearestMoverKeyframe( Lift, End.Location, MarkerPos);
+			OutboundReachSpecs[Outbound].KeyFrame = XCS.static.NearestMoverKeyframe( Lift, End.Location, MarkerPos);
 			OutboundReachSpecs[Outbound].MarkerPos = MarkerPos;
 			Outbound++;
 		}
@@ -46,7 +46,7 @@ function Setup( NavigationPoint InPath, Mover InLift)
 		if ( (End == Path) && (NavigationPoint(Start) != None) )
 		{
 			InboundReachSpecs[Inbound].Index = Path.upstreamPaths[i];
-			InboundReachSpecs[Inbound].KeyFrame = class'XC_EngineStatics'.static.NearestMoverKeyframe( Lift, Start.Location, MarkerPos);
+			InboundReachSpecs[Inbound].KeyFrame = XCS.static.NearestMoverKeyframe( Lift, Start.Location, MarkerPos);
 			InboundReachSpecs[Inbound].MarkerPos = MarkerPos;
 			Inbound++;
 		}
@@ -56,34 +56,40 @@ function Setup( NavigationPoint InPath, Mover InLift)
 	SetTimer( 0.1 + InLift.MoveTime * 0.1, true);
 }
 
+// Do not disrupt timer
+event Trigger( Actor Other, Pawn EventInstigator)
+{
+}
 
 event Timer()
 {
 	local float AccumulatedTime;
 	local float Dist;
-	local int i, Keys;
+	local float Mult;
+	local int i, Keys, KeyNum;
 	local float ReachTimes[8]; //Times to reach each keyframe based on current
 	local bool bUp;
 	local ReachSpec Spec;
 	
-	bUp = (Lift.PrevKeyNum < Lift.KeyNum) || (Lift.KeyNum == 0 && !Lift.bInterpolating);
-
+	KeyNum = Lift.KeyNum; //Become INT
+	bUp = (Lift.PrevKeyNum < KeyNum) || (KeyNum == 0 && !Lift.bInterpolating);
+	
 	//Calc arrival time of target keyframe
 	if ( Lift.bInterpolating )
-		ReachTimes[Lift.KeyNum] = (1.0 - Lift.PhysAlpha) * Lift.MoveTime;
-	AccumulatedTime = ReachTimes[Lift.KeyNum];
+		ReachTimes[KeyNum] = (1.0 - Lift.PhysAlpha) * Lift.MoveTime;
+	AccumulatedTime = ReachTimes[KeyNum];
 	
 	//Calc times for keyframes in my direction
 	Keys = Min( 8, Lift.NumKeys);
 	if ( bUp )
 	{
-		For ( i=Lift.KeyNum+1 ; i<Keys ; i++ )
+		For ( i=KeyNum+1 ; i<Keys ; i++ )
 		{
 			ReachTimes[i] = Lift.MoveTime + AccumulatedTime;
 			AccumulatedTime = ReachTimes[i];
 		}
 		AccumulatedTime *= 2; //Needs to go back thru same keys we're about to hit (approx)
-		For ( i=Lift.KeyNum-1 ; i>=0 ; i-- )
+		For ( i=KeyNum-1 ; i>=0 ; i-- )
 		{
 			ReachTimes[i] = Lift.MoveTime + AccumulatedTime;
 			AccumulatedTime = ReachTimes[i];
@@ -91,13 +97,13 @@ event Timer()
 	}
 	else
 	{
-		For ( i=Lift.KeyNum-1 ; i>=0 ; i-- )
+		For ( i=KeyNum-1 ; i>=0 ; i-- )
 		{
 			ReachTimes[i] = Lift.MoveTime + AccumulatedTime;
 			AccumulatedTime = ReachTimes[i];
 		}
 		AccumulatedTime *= 2; //Needs to go back thru same keys we're about to hit (approx)
-		For ( i=Lift.KeyNum+1 ; i<Keys ; i++ )
+		For ( i=KeyNum+1 ; i<Keys ; i++ )
 		{
 			ReachTimes[i] = Lift.MoveTime + AccumulatedTime;
 			AccumulatedTime = ReachTimes[i];
@@ -107,17 +113,17 @@ event Timer()
 	For ( i=0 ; i<Inbound ; i++ )
 		if ( GetReachSpec( Spec, InboundReachSpecs[i].Index) )
 		{
+			Mult = 1;
 			if ( InboundReachSpecs[i].MarkerPos.Z - 50 > Path.Location.Z ) //User needs to jump down
 			{
-				Spec.Distance = int( 50.0 * ReachTimes[InboundReachSpecs[i].KeyFrame]);
-				if ( InboundReachSpecs[i].MarkerPos.Z - 1000 > Path.Location.Z )
-					Spec.Distance *= 3; //Tough fall
-				else if ( class'XC_CoreStatics'.static.HSize(Path.Location - InboundReachSpecs[i].MarkerPos) < 100 )
-					Spec.Distance = 0; //Vertical path
+				Mult += (HSize(Path.Location - InboundReachSpecs[i].MarkerPos) / 200)
+				- XCS.static.Phys_FreeFallVelocity( Path.Location.Z-InboundReachSpecs[i].MarkerPos.Z, Path.Region.Zone.ZoneGravity.Z) / 800;
+				Spec.Distance = int( 50.0 * ReachTimes[InboundReachSpecs[i].KeyFrame] * Mult);
 			}
 			else
 				Spec.Distance = int( 200.0 * ReachTimes[InboundReachSpecs[i].KeyFrame]);
-			Spec.Distance += int( VSize( Spec.Start.Location - InboundReachSpecs[i].MarkerPos)); //SHOULD BE CACHED AS BASE COST
+			Spec.Distance += int( VSize( Spec.Start.Location - InboundReachSpecs[i].MarkerPos) * Mult); //SHOULD BE CACHED AS BASE COST
+			Spec.Distance = Max( Spec.Distance, 1);
 			SetReachSpec( Spec, InboundReachSpecs[i].Index, false);
 		}
 		
